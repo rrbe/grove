@@ -13,6 +13,7 @@ import {
   saveRepoConfigs,
   startRepoWorktree,
 } from "./lib/api";
+import { useI18n, type Locale, type Translations } from "./lib/i18n";
 import type {
   ActionResponse,
   ApprovalRequest,
@@ -21,7 +22,6 @@ import type {
   CreateWorktreeInput,
   HookStep,
   LauncherProfile,
-  LogLevel,
   RepoSnapshot,
   RunLog,
   ToolStatus,
@@ -46,18 +46,20 @@ const createInitialForm = (repo?: RepoSnapshot): CreateFormState => ({
   autoStartLaunchers: [],
 });
 
-function relativeTime(iso: string): string {
+function relativeTime(iso: string, t: Translations): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return t.justNow;
+  if (mins < 60) return t.minutesAgo(mins);
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return t.hoursAgo(hrs);
   const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+  return t.daysAgo(days);
 }
 
 export default function App() {
+  const { t, locale, setLocale } = useI18n();
+
   const [bootstrapState, setBootstrapState] = useState<BootstrapResponse>({
     recentRepos: [],
     toolStatuses: [],
@@ -137,7 +139,7 @@ export default function App() {
       const snapshot = await openRepo(trimmed);
       setRepo(snapshot);
       setRepoInput(snapshot.repoRoot);
-      appendLogs([{ level: "success", message: `Loaded ${snapshot.repoRoot}` }]);
+      appendLogs([{ level: "success", message: t.logLoaded(snapshot.repoRoot) }]);
     } catch (reason) {
       setError(String(reason));
     } finally {
@@ -153,7 +155,7 @@ export default function App() {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Choose a Git repository",
+      title: t.chooseRepo,
     });
     if (typeof selected === "string") {
       setRepoInput(selected);
@@ -222,7 +224,7 @@ export default function App() {
         localConfigText,
       });
       setRepo(snapshot);
-      appendLogs([{ level: "success", message: "Saved repo config files." }]);
+      appendLogs([{ level: "success", message: t.logSavedConfig }]);
     } catch (reason) {
       setError(String(reason));
       appendLogs([{ level: "error", message: String(reason) }]);
@@ -292,8 +294,8 @@ export default function App() {
           level: preview.length > 0 ? "info" : "success",
           message:
             preview.length > 0
-              ? `Found ${preview.length} prune candidate(s).`
-              : "No prune candidates detected.",
+              ? t.logPruneCandidates(preview.length)
+              : t.logNoPruneCandidates,
         },
       ]);
     } catch (reason) {
@@ -314,11 +316,12 @@ export default function App() {
 
   return (
     <div className="shell">
-      {/* ─── Sidebar ─── */}
+      {/* Sidebar */}
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-badge">WT</div>
-          <h1>Worktree Switcher</h1>
+          <div className="brand-badge">G</div>
+          <h1>{t.brandName}</h1>
+          <LanguageSwitcher locale={locale} setLocale={setLocale} />
         </div>
 
         {/* Repo Picker */}
@@ -327,14 +330,14 @@ export default function App() {
             <input
               value={repoInput}
               onChange={(e) => setRepoInput(e.target.value)}
-              placeholder="/path/to/repo"
+              placeholder={t.repoPlaceholder}
               onKeyDown={(e) => e.key === "Enter" && void loadRepo(repoInput)}
             />
             <button className="ghost-button" onClick={browseForRepo} disabled={isBusy}>
-              ...
+              {t.browse}
             </button>
             <button className="primary-button" onClick={() => void loadRepo(repoInput)} disabled={isBusy}>
-              {isBusy ? "..." : "Load"}
+              {isBusy ? t.loading : t.load}
             </button>
           </div>
           {bootstrapState.recentRepos.length > 0 && (
@@ -360,15 +363,15 @@ export default function App() {
           {repo?.worktrees.map((wt) =>
             deleteConfirmId === wt.id ? (
               <div key={wt.id} className="delete-confirm">
-                <span>Delete {wt.branch ?? "worktree"}?</span>
+                <span>{t.deleteConfirm(wt.branch ?? "worktree")}</span>
                 <button className="ghost-button" onClick={() => setDeleteConfirmId(null)}>
-                  Cancel
+                  {t.cancel}
                 </button>
                 <button
                   className="danger-button"
                   onClick={() => void handleRemove(wt, wt.dirty || !!wt.lockedReason)}
                 >
-                  {wt.dirty || wt.lockedReason ? "Force" : "Delete"}
+                  {wt.dirty || wt.lockedReason ? t.force : t.delete}
                 </button>
               </div>
             ) : (
@@ -376,6 +379,7 @@ export default function App() {
                 key={wt.id}
                 worktree={wt}
                 active={wt.id === selectedWorktreeId}
+                t={t}
                 onSelect={() => {
                   setSelectedWorktreeId(wt.id);
                   setDeleteConfirmId(null);
@@ -388,7 +392,7 @@ export default function App() {
             ),
           )}
           {repo && repo.worktrees.length === 0 && (
-            <p className="empty-copy">No worktrees found.</p>
+            <p className="empty-copy">{t.noWorktrees}</p>
           )}
         </div>
 
@@ -400,7 +404,7 @@ export default function App() {
             <input
               value={createForm.branch}
               onChange={(e) => setCreateForm((c) => ({ ...c, branch: e.target.value }))}
-              placeholder="branch name"
+              placeholder={t.branchPlaceholder}
               onKeyDown={(e) => e.key === "Enter" && void handleCreateWorktree()}
             />
             <button
@@ -408,29 +412,29 @@ export default function App() {
               onClick={() => void handleCreateWorktree()}
               disabled={isBusy || !repo || !createForm.branch.trim()}
             >
-              Create
+              {t.create}
             </button>
           </div>
           <button className="advanced-toggle" onClick={() => setShowAdvancedCreate((v) => !v)}>
-            {showAdvancedCreate ? "Hide advanced" : "Advanced..."}
+            {showAdvancedCreate ? t.hideAdvanced : t.showAdvanced}
           </button>
           {showAdvancedCreate && (
             <div className="stack" style={{ gap: 8 }}>
               <label className="field-label">
-                Mode
+                {t.mode}
                 <select
                   value={createForm.mode}
                   onChange={(e) =>
                     setCreateForm((c) => ({ ...c, mode: e.target.value as CreateMode }))
                   }
                 >
-                  <option value="new-branch">New branch</option>
-                  <option value="existing-branch">Existing branch</option>
-                  <option value="remote-branch">Remote branch</option>
+                  <option value="new-branch">{t.modeNewBranch}</option>
+                  <option value="existing-branch">{t.modeExistingBranch}</option>
+                  <option value="remote-branch">{t.modeRemoteBranch}</option>
                 </select>
               </label>
               <label className="field-label">
-                Base ref
+                {t.baseRef}
                 <input
                   value={createForm.baseRef}
                   onChange={(e) => setCreateForm((c) => ({ ...c, baseRef: e.target.value }))}
@@ -439,20 +443,20 @@ export default function App() {
               </label>
               {createForm.mode === "remote-branch" && (
                 <label className="field-label">
-                  Remote ref
+                  {t.remoteRef}
                   <input
                     value={createForm.remoteRef}
                     onChange={(e) => setCreateForm((c) => ({ ...c, remoteRef: e.target.value }))}
-                    placeholder="origin/branch"
+                    placeholder={t.remoteRefPlaceholder}
                   />
                 </label>
               )}
               <label className="field-label">
-                Custom path
+                {t.customPath}
                 <input
                   value={createForm.path}
                   onChange={(e) => setCreateForm((c) => ({ ...c, path: e.target.value }))}
-                  placeholder="optional"
+                  placeholder={t.optional}
                 />
               </label>
             </div>
@@ -464,35 +468,33 @@ export default function App() {
           <div className="sidebar-bottom-row">
             {hooks.length > 0 && (
               <button className="ghost-button" onClick={() => setShowHooksModal(true)} style={{ flex: 1 }}>
-                Hooks ({hooks.length})
+                {t.hooks} ({hooks.length})
               </button>
             )}
           </div>
         </div>
       </aside>
 
-      {/* ─── Detail Panel ─── */}
+      {/* Detail Panel */}
       <main className="main">
         {error && <div className="error-banner">{error}</div>}
 
         {!repo && (
           <section className="hero card">
-            <h2>Start with a local Git repository</h2>
-            <p>
-              Pick any repo to scan worktrees, manage launchers, and run hooks from one place.
-            </p>
+            <h2>{t.heroTitle}</h2>
+            <p>{t.heroDescription}</p>
             <ul className="hero-points">
-              <li>Uses native <code>git worktree</code> porcelain output.</li>
-              <li>Project-defined commands require one-time approval.</li>
-              <li>Warmup helpers copy files and generate deterministic ports.</li>
+              <li>{t.heroPoint1}</li>
+              <li>{t.heroPoint2}</li>
+              <li>{t.heroPoint3}</li>
             </ul>
           </section>
         )}
 
         {repo && !selectedWorktree && (
           <section className="hero card">
-            <h2>No worktree selected</h2>
-            <p>Select a worktree from the sidebar, or create a new one.</p>
+            <h2>{t.noWorktreeSelected}</h2>
+            <p>{t.selectWorktreeHint}</p>
           </section>
         )}
 
@@ -502,6 +504,7 @@ export default function App() {
             worktree={selectedWorktree}
             launchers={launchers}
             isBusy={isBusy}
+            t={t}
             onStart={() => void handleStart(selectedWorktree)}
             onLaunch={(launcher) => void handleLaunch(selectedWorktree, launcher)}
             prunePreview={prunePreview}
@@ -536,6 +539,7 @@ export default function App() {
             pendingReplay.current = null;
           }}
           isBusy={isBusy}
+          t={t}
         />
       )}
 
@@ -546,9 +550,30 @@ export default function App() {
           onRunPostScan={() => void handleRunPostScan()}
           onClose={() => setShowHooksModal(false)}
           isBusy={isBusy}
+          t={t}
         />
       )}
     </div>
+  );
+}
+
+/* ─── LanguageSwitcher ─── */
+
+function LanguageSwitcher({
+  locale,
+  setLocale,
+}: {
+  locale: Locale;
+  setLocale: (l: Locale) => void;
+}) {
+  return (
+    <button
+      className="ghost-button"
+      style={{ marginLeft: "auto", fontSize: "0.75rem", padding: "4px 10px" }}
+      onClick={() => setLocale(locale === "zh-CN" ? "en" : "zh-CN")}
+    >
+      {locale === "zh-CN" ? "EN" : "中文"}
+    </button>
   );
 }
 
@@ -557,11 +582,13 @@ export default function App() {
 function WorktreeListItem({
   worktree,
   active,
+  t,
   onSelect,
   onDelete,
 }: {
   worktree: WorktreeRecord;
   active: boolean;
+  t: Translations;
   onSelect: () => void;
   onDelete: () => void;
 }) {
@@ -573,7 +600,7 @@ function WorktreeListItem({
     >
       <div className="worktree-list-item-info">
         <div className="worktree-list-item-branch">
-          {worktree.branch ?? "(detached)"}
+          {worktree.branch ?? t.detachedShort}
         </div>
         <div className="worktree-list-item-meta">
           <span className="worktree-list-item-dir">{dirName}</span>
@@ -581,9 +608,9 @@ function WorktreeListItem({
             <span className="pr-badge">#{worktree.prNumber}</span>
           )}
           {worktree.lastOpenedAt && (
-            <span>{relativeTime(worktree.lastOpenedAt)}</span>
+            <span>{relativeTime(worktree.lastOpenedAt, t)}</span>
           )}
-          {worktree.dirty && <Badge label="dirty" tone="danger" />}
+          {worktree.dirty && <Badge label={t.dirty} tone="danger" />}
         </div>
       </div>
       {!worktree.isMain && (
@@ -608,6 +635,7 @@ function WorktreeDetail({
   worktree,
   launchers,
   isBusy,
+  t,
   onStart,
   onLaunch,
   prunePreview,
@@ -633,6 +661,7 @@ function WorktreeDetail({
   worktree: WorktreeRecord;
   launchers: LauncherProfile[];
   isBusy: boolean;
+  t: Translations;
   onStart: () => void;
   onLaunch: (launcher: LauncherProfile) => void;
   prunePreview: string[];
@@ -659,39 +688,39 @@ function WorktreeDetail({
       {/* Worktree Header */}
       <section className="card stack">
         <div className="detail-header">
-          <h2>{worktree.branch ?? "(detached HEAD)"}</h2>
+          <h2>{worktree.branch ?? t.detached}</h2>
           <p className="detail-path">{worktree.path}</p>
           <div className="status-strip">
-            <Badge label={worktree.isMain ? "main" : "linked"} tone="neutral" />
+            <Badge label={worktree.isMain ? t.main : t.linked} tone="neutral" />
             <Badge
-              label={worktree.dirty ? "dirty" : "clean"}
+              label={worktree.dirty ? t.dirty : t.clean}
               tone={worktree.dirty ? "danger" : "good"}
             />
-            {worktree.lockedReason && <Badge label="locked" tone="warning" />}
-            {worktree.prunableReason && <Badge label="prunable" tone="warning" />}
+            {worktree.lockedReason && <Badge label={t.locked} tone="warning" />}
+            {worktree.prunableReason && <Badge label={t.prunable} tone="warning" />}
           </div>
         </div>
 
         <div className="detail-meta">
           <div className="detail-meta-item">
-            <span>HEAD</span>
+            <span>{t.head}</span>
             <strong>{worktree.headSha.slice(0, 12)}</strong>
           </div>
           <div className="detail-meta-item">
-            <span>Sync</span>
+            <span>{t.sync}</span>
             <strong>
               ↑{worktree.ahead} ↓{worktree.behind}
             </strong>
           </div>
           {worktree.lastOpenedAt && (
             <div className="detail-meta-item">
-              <span>Last launched</span>
-              <strong>{relativeTime(worktree.lastOpenedAt)}</strong>
+              <span>{t.lastLaunched}</span>
+              <strong>{relativeTime(worktree.lastOpenedAt, t)}</strong>
             </div>
           )}
           {worktree.prNumber && worktree.prUrl && (
             <div className="detail-meta-item">
-              <span>Pull Request</span>
+              <span>{t.pullRequest}</span>
               <a
                 className="pr-link"
                 href={worktree.prUrl}
@@ -708,7 +737,7 @@ function WorktreeDetail({
       {/* Action Buttons */}
       <section className="card stack">
         <div className="section-heading">
-          <span>Actions</span>
+          <span>{t.actions}</span>
         </div>
         <div className="action-grid">
           {launchers.map((launcher) => {
@@ -719,14 +748,14 @@ function WorktreeDetail({
                 className="ghost-button"
                 onClick={() => onLaunch(launcher)}
                 disabled={isBusy || !tool?.available}
-                title={tool?.available ? launcher.appOrCmd : `${launcher.name} not detected`}
+                title={tool?.available ? launcher.appOrCmd : t.notDetectedSuffix(launcher.name)}
               >
                 {launcher.name}
               </button>
             );
           })}
           <button className="ghost-button" onClick={onStart} disabled={isBusy}>
-            Run post-start
+            {t.runPostStart}
           </button>
         </div>
       </section>
@@ -736,11 +765,11 @@ function WorktreeDetail({
         worktree.warmupPreview.ports.length > 0) && (
         <section className="card stack">
           <div className="section-heading">
-            <span>Warmup</span>
+            <span>{t.warmup}</span>
           </div>
           {worktree.warmupPreview.copyCandidates.length > 0 && (
             <div className="inline-panel">
-              <strong>Copy candidates</strong>
+              <strong>{t.copyCandidates}</strong>
               <p>{worktree.warmupPreview.copyCandidates.join(", ")}</p>
             </div>
           )}
@@ -764,19 +793,19 @@ function WorktreeDetail({
           <div>
             <h2 style={{ fontSize: "1rem" }}>{repo.repoRoot}</h2>
             <p style={{ fontSize: "0.85rem" }}>
-              {repo.worktrees.length} worktrees, base{" "}
+              {t.worktreeCount(repo.worktrees.length)}, {t.baseBranch}{" "}
               <code>{repo.mergedConfig.settings.defaultBaseBranch}</code>
             </p>
           </div>
           <div className="overview-actions">
             <button className="ghost-button" onClick={onPreviewPrune} disabled={isBusy}>
-              Preview Prune
+              {t.previewPrune}
             </button>
             <button className="ghost-button" onClick={onRunPostScan} disabled={isBusy}>
-              Post-scan hooks
+              {t.postScanHooks}
             </button>
             <button className="primary-button" onClick={onPrune} disabled={isBusy}>
-              Prune
+              {t.prune}
             </button>
           </div>
         </div>
@@ -789,7 +818,7 @@ function WorktreeDetail({
         )}
         {prunePreview.length > 0 && (
           <div className="prune-preview">
-            <h3>Prune preview</h3>
+            <h3>{t.prunePreview}</h3>
             <ul>
               {prunePreview.map((line) => (
                 <li key={line}>{line}</li>
@@ -803,14 +832,14 @@ function WorktreeDetail({
       <section className="card">
         <div className="collapsible-header" onClick={onToggleTooling}>
           <span className="section-heading" style={{ flex: 1 }}>
-            Tooling
+            {t.tooling}
           </span>
           <span className="subtle">{showTooling ? "▾" : "▸"}</span>
         </div>
         {showTooling && (
           <div className="tool-list" style={{ marginTop: 8 }}>
             {toolStatuses.map((tool) => (
-              <ToolRow key={tool.id} tool={tool} />
+              <ToolRow key={tool.id} tool={tool} t={t} />
             ))}
           </div>
         )}
@@ -820,7 +849,7 @@ function WorktreeDetail({
       <section className="card">
         <div className="collapsible-header" onClick={onToggleActionLog}>
           <span className="section-heading" style={{ flex: 1 }}>
-            Action Log
+            {t.actionLog}
             {logs.length > 0 && <span className="subtle" style={{ marginLeft: 8 }}>{logs.length}</span>}
           </span>
           <span className="subtle">{showActionLog ? "▾" : "▸"}</span>
@@ -829,11 +858,11 @@ function WorktreeDetail({
           <div style={{ marginTop: 8 }}>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
               <button className="ghost-button" onClick={onClearLogs} style={{ fontSize: "0.78rem", padding: "4px 10px" }}>
-                Clear
+                {t.clear}
               </button>
             </div>
             <div className="log-list">
-              {logs.length === 0 && <p className="empty-copy">No actions yet.</p>}
+              {logs.length === 0 && <p className="empty-copy">{t.noActionsYet}</p>}
               {logs.map((log, i) => (
                 <div key={`${log.message}-${i}`} className={`log-item log-${log.level}`}>
                   <strong>{log.level}</strong>
@@ -849,7 +878,7 @@ function WorktreeDetail({
       <section className="card">
         <div className="collapsible-header" onClick={onToggleConfigEditor}>
           <span className="section-heading" style={{ flex: 1 }}>
-            Config Files
+            {t.configFiles}
           </span>
           <span className="subtle">{showConfigEditor ? "▾" : "▸"}</span>
         </div>
@@ -857,16 +886,16 @@ function WorktreeDetail({
           <div className="stack" style={{ marginTop: 8 }}>
             <div className="path-grid">
               <div>
-                <strong>Project</strong>
+                <strong>{t.project}</strong>
                 <p>{repo.configPaths.projectPath}</p>
               </div>
               <div>
-                <strong>Local</strong>
+                <strong>{t.local}</strong>
                 <p>{repo.configPaths.localPath}</p>
               </div>
             </div>
             <label className="field-label">
-              Project config TOML
+              {t.projectConfigToml}
               <textarea
                 value={projectConfigText}
                 onChange={(e) => onProjectConfigChange(e.target.value)}
@@ -874,7 +903,7 @@ function WorktreeDetail({
               />
             </label>
             <label className="field-label">
-              Local override TOML
+              {t.localOverrideToml}
               <textarea
                 value={localConfigText}
                 onChange={(e) => onLocalConfigChange(e.target.value)}
@@ -882,7 +911,7 @@ function WorktreeDetail({
               />
             </label>
             <button className="primary-button" onClick={onSaveConfigs} disabled={isBusy}>
-              Save Config
+              {t.saveConfig}
             </button>
           </div>
         )}
@@ -898,11 +927,13 @@ function HooksModal({
   onRunPostScan,
   onClose,
   isBusy,
+  t,
 }: {
   hooks: HookStep[];
   onRunPostScan: () => void;
   onClose: () => void;
   isBusy: boolean;
+  t: Translations;
 }) {
   const grouped = new Map<string, HookStep[]>();
   for (const hook of hooks) {
@@ -915,9 +946,9 @@ function HooksModal({
     <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal-card">
         <div className="section-heading">
-          <span>Hooks</span>
+          <span>{t.hooks}</span>
           <button className="ghost-button" onClick={onClose}>
-            Close
+            {t.close}
           </button>
         </div>
         <div className="hooks-list" style={{ marginTop: 12 }}>
@@ -931,7 +962,7 @@ function HooksModal({
                   <div className="hook-item-header">
                     <strong>{hook.id}</strong>
                     <Badge
-                      label={hook.enabled ? "enabled" : "disabled"}
+                      label={hook.enabled ? t.enabled : t.disabled}
                       tone={hook.enabled ? "good" : "neutral"}
                     />
                   </div>
@@ -946,7 +977,7 @@ function HooksModal({
         </div>
         <div className="modal-actions">
           <button className="ghost-button" onClick={onRunPostScan} disabled={isBusy}>
-            Run post-scan
+            {t.runPostScan}
           </button>
         </div>
       </div>
@@ -956,14 +987,14 @@ function HooksModal({
 
 /* ─── Shared Components ─── */
 
-function ToolRow({ tool }: { tool: ToolStatus }) {
+function ToolRow({ tool, t }: { tool: ToolStatus; t: Translations }) {
   return (
     <div className="tool-row">
       <div>
         <strong>{tool.label}</strong>
-        <p>{tool.location ?? "Not detected"}</p>
+        <p>{tool.location ?? t.notDetected}</p>
       </div>
-      <Badge label={tool.available ? "ready" : "missing"} tone={tool.available ? "good" : "warning"} />
+      <Badge label={tool.available ? t.ready : t.missing} tone={tool.available ? "good" : "warning"} />
     </div>
   );
 }
@@ -977,23 +1008,22 @@ function ApprovalModal({
   onApprove,
   onCancel,
   isBusy,
+  t,
 }: {
   approvals: ApprovalRequest[];
   onApprove: () => void;
   onCancel: () => void;
   isBusy: boolean;
+  t: Translations;
 }) {
   return (
     <div className="modal-backdrop">
       <div className="modal-card">
         <div className="section-heading">
-          <span>Approve Project Commands</span>
-          <span className="subtle">{approvals.length} command(s)</span>
+          <span>{t.approveProjectCommands}</span>
+          <span className="subtle">{t.commandCount(approvals.length)}</span>
         </div>
-        <p className="modal-copy">
-          These commands came from project-level hooks or terminal launchers. They will be remembered
-          for this repository until the command content changes.
-        </p>
+        <p className="modal-copy">{t.approvalCopy}</p>
         <div className="approval-list">
           {approvals.map((approval) => (
             <div key={approval.fingerprint} className="approval-item">
@@ -1005,10 +1035,10 @@ function ApprovalModal({
         </div>
         <div className="modal-actions">
           <button className="ghost-button" onClick={onCancel} disabled={isBusy}>
-            Cancel
+            {t.cancel}
           </button>
           <button className="primary-button" onClick={onApprove} disabled={isBusy}>
-            Approve And Retry
+            {t.approveAndRetry}
           </button>
         </div>
       </div>

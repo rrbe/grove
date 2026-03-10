@@ -8,6 +8,14 @@ use std::{
 };
 use tauri::{AppHandle, Manager};
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrCacheEntry {
+    pub pr_number: u32,
+    pub pr_url: String,
+    pub fetched_at: String,
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppStore {
@@ -17,6 +25,10 @@ pub struct AppStore {
     pub approvals: Vec<ApprovalRecord>,
     #[serde(default)]
     pub last_opened: BTreeMap<String, String>,
+    #[serde(default)]
+    pub last_active_repo: Option<String>,
+    #[serde(default)]
+    pub pr_cache: BTreeMap<String, PrCacheEntry>,
 }
 
 pub struct SharedState {

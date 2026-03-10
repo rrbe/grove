@@ -19,6 +19,7 @@ import type {
   BootstrapResponse,
   CreateMode,
   CreateWorktreeInput,
+  HookStep,
   LauncherProfile,
   LogLevel,
   RepoSnapshot,
@@ -45,10 +46,22 @@ const createInitialForm = (repo?: RepoSnapshot): CreateFormState => ({
   autoStartLaunchers: [],
 });
 
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
 export default function App() {
   const [bootstrapState, setBootstrapState] = useState<BootstrapResponse>({
     recentRepos: [],
     toolStatuses: [],
+    lastActiveRepo: null,
   });
   const [repoInput, setRepoInput] = useState("");
   const [repo, setRepo] = useState<RepoSnapshot | null>(null);
@@ -62,30 +75,41 @@ export default function App() {
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const pendingReplay = useRef<(() => Promise<void>) | null>(null);
 
+  const [selectedWorktreeId, setSelectedWorktreeId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [showHooksModal, setShowHooksModal] = useState(false);
+  const [showAdvancedCreate, setShowAdvancedCreate] = useState(false);
+  const [showTooling, setShowTooling] = useState(false);
+  const [showActionLog, setShowActionLog] = useState(false);
+  const [showConfigEditor, setShowConfigEditor] = useState(false);
+
+  const selectedWorktree = repo?.worktrees.find((w) => w.id === selectedWorktreeId) ?? null;
+
+  // Bootstrap
   useEffect(() => {
     void (async () => {
       try {
         const data = await bootstrap();
         setBootstrapState(data);
-        if (data.recentRepos[0]) {
+        if (data.lastActiveRepo) {
+          setRepoInput(data.lastActiveRepo);
+          await loadRepoInner(data.lastActiveRepo);
+        } else if (data.recentRepos[0]) {
           setRepoInput(data.recentRepos[0]);
         }
       } catch (reason) {
         setError(String(reason));
       }
     })();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Sync config text when repo changes
   useEffect(() => {
-    if (!repo) {
-      return;
-    }
+    if (!repo) return;
     setProjectConfigText(repo.projectConfigText);
     setLocalConfigText(repo.localConfigText);
     setCreateForm((current) => {
-      if (current.branch || current.path || current.remoteRef) {
-        return current;
-      }
+      if (current.branch || current.path || current.remoteRef) return current;
       return createInitialForm(repo);
     });
     setBootstrapState((current) => ({
@@ -95,11 +119,18 @@ export default function App() {
     }));
   }, [repo]);
 
-  async function loadRepo(candidate: string) {
+  // Auto-select worktree when repo changes
+  useEffect(() => {
+    if (!repo) return;
+    if (selectedWorktreeId && repo.worktrees.some((w) => w.id === selectedWorktreeId)) return;
+    const nonMain = repo.worktrees.find((w) => !w.isMain);
+    setSelectedWorktreeId(nonMain?.id ?? repo.worktrees[0]?.id ?? null);
+    setDeleteConfirmId(null);
+  }, [repo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function loadRepoInner(candidate: string) {
     const trimmed = candidate.trim();
-    if (!trimmed) {
-      return;
-    }
+    if (!trimmed) return;
     setError(null);
     setIsBusy(true);
     try {
@@ -112,6 +143,10 @@ export default function App() {
     } finally {
       setIsBusy(false);
     }
+  }
+
+  async function loadRepo(candidate: string) {
+    await loadRepoInner(candidate);
   }
 
   async function browseForRepo() {
@@ -152,9 +187,7 @@ export default function App() {
   }
 
   async function approveAndRetry() {
-    if (!repo || pendingApprovals.length === 0) {
-      return;
-    }
+    if (!repo || pendingApprovals.length === 0) return;
     setIsBusy(true);
     setError(null);
     try {
@@ -165,9 +198,7 @@ export default function App() {
       const replay = pendingReplay.current;
       setPendingApprovals([]);
       pendingReplay.current = null;
-      if (replay) {
-        await replay();
-      }
+      if (replay) await replay();
     } catch (reason) {
       setError(String(reason));
     } finally {
@@ -176,16 +207,12 @@ export default function App() {
   }
 
   function appendLogs(nextLogs: RunLog[]) {
-    if (nextLogs.length === 0) {
-      return;
-    }
+    if (nextLogs.length === 0) return;
     setLogs((current) => [...nextLogs, ...current].slice(0, 120));
   }
 
   async function handleSaveConfigs() {
-    if (!repo) {
-      return;
-    }
+    if (!repo) return;
     setIsBusy(true);
     setError(null);
     try {
@@ -205,9 +232,7 @@ export default function App() {
   }
 
   async function handleCreateWorktree() {
-    if (!repo || !createForm.branch.trim()) {
-      return;
-    }
+    if (!repo || !createForm.branch.trim()) return;
     const input: CreateWorktreeInput = {
       repoRoot: repo.repoRoot,
       mode: createForm.mode,
@@ -222,21 +247,14 @@ export default function App() {
   }
 
   async function handleStart(worktree: WorktreeRecord) {
-    if (!repo) {
-      return;
-    }
+    if (!repo) return;
     await runAction(() =>
-      startRepoWorktree({
-        repoRoot: repo.repoRoot,
-        worktreePath: worktree.path,
-      }),
+      startRepoWorktree({ repoRoot: repo.repoRoot, worktreePath: worktree.path }),
     );
   }
 
   async function handleLaunch(worktree: WorktreeRecord, launcher: LauncherProfile) {
-    if (!repo) {
-      return;
-    }
+    if (!repo) return;
     await runAction(() =>
       launchRepoWorktree({
         repoRoot: repo.repoRoot,
@@ -248,35 +266,22 @@ export default function App() {
   }
 
   async function handleRemove(worktree: WorktreeRecord, force: boolean) {
-    if (!repo) {
-      return;
-    }
+    if (!repo) return;
     await runAction(() =>
-      removeRepoWorktree({
-        repoRoot: repo.repoRoot,
-        worktreePath: worktree.path,
-        force,
-      }),
+      removeRepoWorktree({ repoRoot: repo.repoRoot, worktreePath: worktree.path, force }),
     );
+    setDeleteConfirmId(null);
   }
 
   async function handleRunPostScan() {
-    if (!repo) {
-      return;
-    }
+    if (!repo) return;
     await runAction(() =>
-      runRepoHookEvent({
-        repoRoot: repo.repoRoot,
-        event: "post-scan",
-        worktreePath: null,
-      }),
+      runRepoHookEvent({ repoRoot: repo.repoRoot, event: "post-scan", worktreePath: null }),
     );
   }
 
   async function handlePreviewPrune() {
-    if (!repo) {
-      return;
-    }
+    if (!repo) return;
     setIsBusy(true);
     setError(null);
     try {
@@ -299,44 +304,39 @@ export default function App() {
   }
 
   async function handlePrune() {
-    if (!repo) {
-      return;
-    }
+    if (!repo) return;
     await runAction(() => pruneRepoMetadata(repo.repoRoot));
     setPrunePreview([]);
   }
 
   const launchers = repo?.mergedConfig.launchers ?? [];
+  const hooks = repo?.mergedConfig.hooks ?? [];
 
   return (
     <div className="shell">
+      {/* ─── Sidebar ─── */}
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-badge">WT</div>
-          <div>
-            <h1>Worktree Switcher</h1>
-            <p>scan, warmup, hook, and launch Git worktrees from one place</p>
-          </div>
+          <h1>Worktree Switcher</h1>
         </div>
 
-        <section className="card stack">
-          <div className="section-heading">
-            <span>Repo Picker</span>
-            <button className="ghost-button" onClick={browseForRepo} disabled={isBusy}>
-              Browse
-            </button>
-          </div>
-          <label className="field-label">
-            Repository path
+        {/* Repo Picker */}
+        <div className="repo-picker">
+          <div className="repo-picker-row">
             <input
               value={repoInput}
-              onChange={(event) => setRepoInput(event.target.value)}
-              placeholder="/Users/you/code/repo"
+              onChange={(e) => setRepoInput(e.target.value)}
+              placeholder="/path/to/repo"
+              onKeyDown={(e) => e.key === "Enter" && void loadRepo(repoInput)}
             />
-          </label>
-          <button className="primary-button" onClick={() => void loadRepo(repoInput)} disabled={isBusy}>
-            {isBusy ? "Working…" : "Load Repository"}
-          </button>
+            <button className="ghost-button" onClick={browseForRepo} disabled={isBusy}>
+              ...
+            </button>
+            <button className="primary-button" onClick={() => void loadRepo(repoInput)} disabled={isBusy}>
+              {isBusy ? "..." : "Load"}
+            </button>
+          </div>
           {bootstrapState.recentRepos.length > 0 && (
             <div className="pill-list">
               {bootstrapState.recentRepos.map((item) => (
@@ -346,44 +346,132 @@ export default function App() {
                   onClick={() => void loadRepo(item)}
                   disabled={isBusy}
                 >
-                  {item}
+                  {item.split("/").pop()}
                 </button>
               ))}
             </div>
           )}
-        </section>
+        </div>
 
-        <section className="card stack">
-          <div className="section-heading">
-            <span>Tooling</span>
-            <span className="subtle">{bootstrapState.toolStatuses.filter((item) => item.available).length} ready</span>
-          </div>
-          <div className="tool-list">
-            {(repo?.toolStatuses ?? bootstrapState.toolStatuses).map((tool) => (
-              <ToolRow key={tool.id} tool={tool} />
-            ))}
-          </div>
-        </section>
+        <div className="sidebar-divider" />
 
-        <section className="card stack">
-          <div className="section-heading">
-            <span>Action Log</span>
-            <button className="ghost-button" onClick={() => setLogs([])}>
-              Clear
+        {/* Worktree List */}
+        <div className="worktree-list">
+          {repo?.worktrees.map((wt) =>
+            deleteConfirmId === wt.id ? (
+              <div key={wt.id} className="delete-confirm">
+                <span>Delete {wt.branch ?? "worktree"}?</span>
+                <button className="ghost-button" onClick={() => setDeleteConfirmId(null)}>
+                  Cancel
+                </button>
+                <button
+                  className="danger-button"
+                  onClick={() => void handleRemove(wt, wt.dirty || !!wt.lockedReason)}
+                >
+                  {wt.dirty || wt.lockedReason ? "Force" : "Delete"}
+                </button>
+              </div>
+            ) : (
+              <WorktreeListItem
+                key={wt.id}
+                worktree={wt}
+                active={wt.id === selectedWorktreeId}
+                onSelect={() => {
+                  setSelectedWorktreeId(wt.id);
+                  setDeleteConfirmId(null);
+                }}
+                onDelete={() => {
+                  if (wt.isMain) return;
+                  setDeleteConfirmId(wt.id);
+                }}
+              />
+            ),
+          )}
+          {repo && repo.worktrees.length === 0 && (
+            <p className="empty-copy">No worktrees found.</p>
+          )}
+        </div>
+
+        <div className="sidebar-divider" />
+
+        {/* Create Worktree */}
+        <div className="sidebar-create">
+          <div className="sidebar-create-row">
+            <input
+              value={createForm.branch}
+              onChange={(e) => setCreateForm((c) => ({ ...c, branch: e.target.value }))}
+              placeholder="branch name"
+              onKeyDown={(e) => e.key === "Enter" && void handleCreateWorktree()}
+            />
+            <button
+              className="primary-button"
+              onClick={() => void handleCreateWorktree()}
+              disabled={isBusy || !repo || !createForm.branch.trim()}
+            >
+              Create
             </button>
           </div>
-          <div className="log-list">
-            {logs.length === 0 && <p className="empty-copy">No actions yet.</p>}
-            {logs.map((log, index) => (
-              <div key={`${log.message}-${index}`} className={`log-item log-${log.level}`}>
-                <strong>{log.level}</strong>
-                <span>{log.message}</span>
-              </div>
-            ))}
+          <button className="advanced-toggle" onClick={() => setShowAdvancedCreate((v) => !v)}>
+            {showAdvancedCreate ? "Hide advanced" : "Advanced..."}
+          </button>
+          {showAdvancedCreate && (
+            <div className="stack" style={{ gap: 8 }}>
+              <label className="field-label">
+                Mode
+                <select
+                  value={createForm.mode}
+                  onChange={(e) =>
+                    setCreateForm((c) => ({ ...c, mode: e.target.value as CreateMode }))
+                  }
+                >
+                  <option value="new-branch">New branch</option>
+                  <option value="existing-branch">Existing branch</option>
+                  <option value="remote-branch">Remote branch</option>
+                </select>
+              </label>
+              <label className="field-label">
+                Base ref
+                <input
+                  value={createForm.baseRef}
+                  onChange={(e) => setCreateForm((c) => ({ ...c, baseRef: e.target.value }))}
+                  placeholder="main"
+                />
+              </label>
+              {createForm.mode === "remote-branch" && (
+                <label className="field-label">
+                  Remote ref
+                  <input
+                    value={createForm.remoteRef}
+                    onChange={(e) => setCreateForm((c) => ({ ...c, remoteRef: e.target.value }))}
+                    placeholder="origin/branch"
+                  />
+                </label>
+              )}
+              <label className="field-label">
+                Custom path
+                <input
+                  value={createForm.path}
+                  onChange={(e) => setCreateForm((c) => ({ ...c, path: e.target.value }))}
+                  placeholder="optional"
+                />
+              </label>
+            </div>
+          )}
+        </div>
+
+        {/* Bottom buttons */}
+        <div className="sidebar-bottom">
+          <div className="sidebar-bottom-row">
+            {hooks.length > 0 && (
+              <button className="ghost-button" onClick={() => setShowHooksModal(true)} style={{ flex: 1 }}>
+                Hooks ({hooks.length})
+              </button>
+            )}
           </div>
-        </section>
+        </div>
       </aside>
 
+      {/* ─── Detail Panel ─── */}
       <main className="main">
         {error && <div className="error-banner">{error}</div>}
 
@@ -391,293 +479,54 @@ export default function App() {
           <section className="hero card">
             <h2>Start with a local Git repository</h2>
             <p>
-              Pick any repo, and the app will scan existing worktrees, expose create/remove flows,
-              render project hooks from <code>.worktree-switcher/config.toml</code>, and offer one-click
-              launchers for Terminal, editors, and AI CLIs.
+              Pick any repo to scan worktrees, manage launchers, and run hooks from one place.
             </p>
             <ul className="hero-points">
               <li>Uses native <code>git worktree</code> porcelain output.</li>
               <li>Project-defined commands require one-time approval.</li>
-              <li>Warmup helpers can copy ignored files and generate deterministic ports.</li>
+              <li>Warmup helpers copy files and generate deterministic ports.</li>
             </ul>
           </section>
         )}
 
-        {repo && (
-          <>
-            <section className="card overview">
-              <div className="overview-heading">
-                <div>
-                  <h2>{repo.repoRoot}</h2>
-                  <p>
-                    {repo.worktrees.length} worktrees, base branch{" "}
-                    <code>{repo.mergedConfig.settings.defaultBaseBranch}</code>, worktree root{" "}
-                    <code>{repo.mergedConfig.settings.worktreeRoot}</code>
-                  </p>
-                </div>
-                <div className="overview-actions">
-                  <button className="ghost-button" onClick={handlePreviewPrune} disabled={isBusy}>
-                    Preview Prune
-                  </button>
-                  <button className="ghost-button" onClick={handleRunPostScan} disabled={isBusy}>
-                    Run post-scan hooks
-                  </button>
-                  <button className="primary-button" onClick={handlePrune} disabled={isBusy}>
-                    Prune Metadata
-                  </button>
-                </div>
-              </div>
-              {repo.configErrors.length > 0 && (
-                <div className="warning-panel">
-                  {repo.configErrors.map((message) => (
-                    <p key={message}>{message}</p>
-                  ))}
-                </div>
-              )}
-              {prunePreview.length > 0 && (
-                <div className="prune-preview">
-                  <h3>Prune preview</h3>
-                  <ul>
-                    {prunePreview.map((line) => (
-                      <li key={line}>{line}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </section>
+        {repo && !selectedWorktree && (
+          <section className="hero card">
+            <h2>No worktree selected</h2>
+            <p>Select a worktree from the sidebar, or create a new one.</p>
+          </section>
+        )}
 
-            <section className="grid-two">
-              <section className="card stack">
-                <div className="section-heading">
-                  <span>Create Worktree</span>
-                  <span className="subtle">macOS-first, common flows only</span>
-                </div>
-                <div className="form-grid">
-                  <label className="field-label">
-                    Create mode
-                    <select
-                      value={createForm.mode}
-                      onChange={(event) =>
-                        setCreateForm((current) => ({
-                          ...current,
-                          mode: event.target.value as CreateMode,
-                        }))
-                      }
-                    >
-                      <option value="new-branch">New branch from base</option>
-                      <option value="existing-branch">Existing local branch</option>
-                      <option value="remote-branch">Remote branch to tracking branch</option>
-                    </select>
-                  </label>
-                  <label className="field-label">
-                    Branch name
-                    <input
-                      value={createForm.branch}
-                      onChange={(event) =>
-                        setCreateForm((current) => ({ ...current, branch: event.target.value }))
-                      }
-                      placeholder="feature/worktree-dashboard"
-                    />
-                  </label>
-                  <label className="field-label">
-                    Base ref
-                    <input
-                      value={createForm.baseRef}
-                      onChange={(event) =>
-                        setCreateForm((current) => ({ ...current, baseRef: event.target.value }))
-                      }
-                      placeholder="main"
-                    />
-                  </label>
-                  <label className="field-label">
-                    Remote ref
-                    <input
-                      value={createForm.remoteRef}
-                      onChange={(event) =>
-                        setCreateForm((current) => ({ ...current, remoteRef: event.target.value }))
-                      }
-                      placeholder="origin/feature/worktree-dashboard"
-                      disabled={createForm.mode !== "remote-branch"}
-                    />
-                  </label>
-                  <label className="field-label full-span">
-                    Custom path
-                    <input
-                      value={createForm.path}
-                      onChange={(event) =>
-                        setCreateForm((current) => ({ ...current, path: event.target.value }))
-                      }
-                      placeholder={`${repo.repoRoot}/${repo.mergedConfig.settings.worktreeRoot}/feature-worktree-dashboard`}
-                    />
-                  </label>
-                </div>
-                <div className="stack">
-                  <span className="field-label">Auto-start launchers after creation</span>
-                  <div className="checkbox-grid">
-                    {launchers.map((launcher) => (
-                      <label key={launcher.id} className="checkbox-row">
-                        <input
-                          type="checkbox"
-                          checked={createForm.autoStartLaunchers.includes(launcher.id)}
-                          onChange={(event) =>
-                            setCreateForm((current) => ({
-                              ...current,
-                              autoStartLaunchers: event.target.checked
-                                ? [...current.autoStartLaunchers, launcher.id]
-                                : current.autoStartLaunchers.filter((item) => item !== launcher.id),
-                            }))
-                          }
-                        />
-                        <span>{launcher.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <button className="primary-button" onClick={handleCreateWorktree} disabled={isBusy}>
-                  Create Worktree
-                </button>
-              </section>
-
-              <section className="card stack">
-                <div className="section-heading">
-                  <span>Config Files</span>
-                  <button className="primary-button" onClick={handleSaveConfigs} disabled={isBusy}>
-                    Save Config
-                  </button>
-                </div>
-                <div className="path-grid">
-                  <div>
-                    <strong>Project</strong>
-                    <p>{repo.configPaths.projectPath}</p>
-                  </div>
-                  <div>
-                    <strong>Local</strong>
-                    <p>{repo.configPaths.localPath}</p>
-                  </div>
-                </div>
-                <label className="field-label">
-                  Project config TOML
-                  <textarea
-                    value={projectConfigText}
-                    onChange={(event) => setProjectConfigText(event.target.value)}
-                    rows={16}
-                  />
-                </label>
-                <label className="field-label">
-                  Local override TOML
-                  <textarea
-                    value={localConfigText}
-                    onChange={(event) => setLocalConfigText(event.target.value)}
-                    rows={10}
-                  />
-                </label>
-              </section>
-            </section>
-
-            <section className="card stack">
-              <div className="section-heading">
-                <span>Worktrees</span>
-                <span className="subtle">{repo.worktrees.length} scanned</span>
-              </div>
-              <div className="worktree-grid">
-                {repo.worktrees.map((worktree) => (
-                  <article key={worktree.id} className="worktree-card">
-                    <div className="worktree-header">
-                      <div>
-                        <h3>{worktree.branch ?? "(detached)"}</h3>
-                        <p>{worktree.path}</p>
-                      </div>
-                      <div className="status-strip">
-                        <Badge label={worktree.isMain ? "main" : "linked"} tone="neutral" />
-                        <Badge label={worktree.dirty ? "dirty" : "clean"} tone={worktree.dirty ? "danger" : "good"} />
-                        {worktree.lockedReason && <Badge label="locked" tone="warning" />}
-                        {worktree.prunableReason && <Badge label="prunable" tone="warning" />}
-                      </div>
-                    </div>
-
-                    <div className="meta-grid">
-                      <div>
-                        <span>HEAD</span>
-                        <strong>{worktree.headSha.slice(0, 12)}</strong>
-                      </div>
-                      <div>
-                        <span>Sync</span>
-                        <strong>
-                          ↑ {worktree.ahead} / ↓ {worktree.behind}
-                        </strong>
-                      </div>
-                      <div>
-                        <span>Last launched</span>
-                        <strong>{worktree.lastOpenedAt ?? "Never"}</strong>
-                      </div>
-                    </div>
-
-                    {worktree.warmupPreview.copyCandidates.length > 0 && (
-                      <div className="inline-panel">
-                        <strong>Warmup copy</strong>
-                        <p>{worktree.warmupPreview.copyCandidates.join(", ")}</p>
-                      </div>
-                    )}
-
-                    {worktree.warmupPreview.ports.length > 0 && (
-                      <div className="inline-panel">
-                        <strong>Ports</strong>
-                        <div className="port-list">
-                          {worktree.warmupPreview.ports.map((port) => (
-                            <div key={`${worktree.id}-${port.name}`} className="port-chip">
-                              <span>{port.name}</span>
-                              <code>{port.port}</code>
-                              {port.url && <small>{port.url}</small>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="launcher-row">
-                      <button className="ghost-button" onClick={() => void handleStart(worktree)} disabled={isBusy}>
-                        Run post-start
-                      </button>
-                      {launchers.map((launcher) => {
-                        const tool = findTool(repo, launcher.id);
-                        return (
-                          <button
-                            key={`${worktree.id}-${launcher.id}`}
-                            className="ghost-button"
-                            onClick={() => void handleLaunch(worktree, launcher)}
-                            disabled={isBusy || !tool?.available}
-                            title={tool?.available ? launcher.appOrCmd : `${launcher.name} not detected`}
-                          >
-                            {launcher.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="danger-row">
-                      <button
-                        className="ghost-button"
-                        onClick={() => void handleRemove(worktree, false)}
-                        disabled={isBusy || worktree.isMain}
-                      >
-                        Remove
-                      </button>
-                      <button
-                        className="danger-button"
-                        onClick={() => void handleRemove(worktree, true)}
-                        disabled={isBusy || worktree.isMain}
-                      >
-                        Force Remove
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-          </>
+        {repo && selectedWorktree && (
+          <WorktreeDetail
+            repo={repo}
+            worktree={selectedWorktree}
+            launchers={launchers}
+            isBusy={isBusy}
+            onStart={() => void handleStart(selectedWorktree)}
+            onLaunch={(launcher) => void handleLaunch(selectedWorktree, launcher)}
+            prunePreview={prunePreview}
+            onPreviewPrune={() => void handlePreviewPrune()}
+            onPrune={() => void handlePrune()}
+            onRunPostScan={() => void handleRunPostScan()}
+            showTooling={showTooling}
+            onToggleTooling={() => setShowTooling((v) => !v)}
+            toolStatuses={repo.toolStatuses ?? bootstrapState.toolStatuses}
+            showActionLog={showActionLog}
+            onToggleActionLog={() => setShowActionLog((v) => !v)}
+            logs={logs}
+            onClearLogs={() => setLogs([])}
+            showConfigEditor={showConfigEditor}
+            onToggleConfigEditor={() => setShowConfigEditor((v) => !v)}
+            projectConfigText={projectConfigText}
+            localConfigText={localConfigText}
+            onProjectConfigChange={setProjectConfigText}
+            onLocalConfigChange={setLocalConfigText}
+            onSaveConfigs={() => void handleSaveConfigs()}
+          />
         )}
       </main>
 
+      {/* Approval Modal */}
       {pendingApprovals.length > 0 && (
         <ApprovalModal
           approvals={pendingApprovals}
@@ -689,9 +538,423 @@ export default function App() {
           isBusy={isBusy}
         />
       )}
+
+      {/* Hooks Modal */}
+      {showHooksModal && (
+        <HooksModal
+          hooks={hooks}
+          onRunPostScan={() => void handleRunPostScan()}
+          onClose={() => setShowHooksModal(false)}
+          isBusy={isBusy}
+        />
+      )}
     </div>
   );
 }
+
+/* ─── WorktreeListItem ─── */
+
+function WorktreeListItem({
+  worktree,
+  active,
+  onSelect,
+  onDelete,
+}: {
+  worktree: WorktreeRecord;
+  active: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const dirName = worktree.path.split("/").pop() ?? worktree.path;
+  return (
+    <div
+      className={`worktree-list-item ${active ? "active" : ""}`}
+      onClick={onSelect}
+    >
+      <div className="worktree-list-item-info">
+        <div className="worktree-list-item-branch">
+          {worktree.branch ?? "(detached)"}
+        </div>
+        <div className="worktree-list-item-meta">
+          <span className="worktree-list-item-dir">{dirName}</span>
+          {worktree.prNumber && (
+            <span className="pr-badge">#{worktree.prNumber}</span>
+          )}
+          {worktree.lastOpenedAt && (
+            <span>{relativeTime(worktree.lastOpenedAt)}</span>
+          )}
+          {worktree.dirty && <Badge label="dirty" tone="danger" />}
+        </div>
+      </div>
+      {!worktree.isMain && (
+        <button
+          className="worktree-list-item-delete"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+        >
+          &times;
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ─── WorktreeDetail ─── */
+
+function WorktreeDetail({
+  repo,
+  worktree,
+  launchers,
+  isBusy,
+  onStart,
+  onLaunch,
+  prunePreview,
+  onPreviewPrune,
+  onPrune,
+  onRunPostScan,
+  showTooling,
+  onToggleTooling,
+  toolStatuses,
+  showActionLog,
+  onToggleActionLog,
+  logs,
+  onClearLogs,
+  showConfigEditor,
+  onToggleConfigEditor,
+  projectConfigText,
+  localConfigText,
+  onProjectConfigChange,
+  onLocalConfigChange,
+  onSaveConfigs,
+}: {
+  repo: RepoSnapshot;
+  worktree: WorktreeRecord;
+  launchers: LauncherProfile[];
+  isBusy: boolean;
+  onStart: () => void;
+  onLaunch: (launcher: LauncherProfile) => void;
+  prunePreview: string[];
+  onPreviewPrune: () => void;
+  onPrune: () => void;
+  onRunPostScan: () => void;
+  showTooling: boolean;
+  onToggleTooling: () => void;
+  toolStatuses: ToolStatus[];
+  showActionLog: boolean;
+  onToggleActionLog: () => void;
+  logs: RunLog[];
+  onClearLogs: () => void;
+  showConfigEditor: boolean;
+  onToggleConfigEditor: () => void;
+  projectConfigText: string;
+  localConfigText: string;
+  onProjectConfigChange: (v: string) => void;
+  onLocalConfigChange: (v: string) => void;
+  onSaveConfigs: () => void;
+}) {
+  return (
+    <>
+      {/* Worktree Header */}
+      <section className="card stack">
+        <div className="detail-header">
+          <h2>{worktree.branch ?? "(detached HEAD)"}</h2>
+          <p className="detail-path">{worktree.path}</p>
+          <div className="status-strip">
+            <Badge label={worktree.isMain ? "main" : "linked"} tone="neutral" />
+            <Badge
+              label={worktree.dirty ? "dirty" : "clean"}
+              tone={worktree.dirty ? "danger" : "good"}
+            />
+            {worktree.lockedReason && <Badge label="locked" tone="warning" />}
+            {worktree.prunableReason && <Badge label="prunable" tone="warning" />}
+          </div>
+        </div>
+
+        <div className="detail-meta">
+          <div className="detail-meta-item">
+            <span>HEAD</span>
+            <strong>{worktree.headSha.slice(0, 12)}</strong>
+          </div>
+          <div className="detail-meta-item">
+            <span>Sync</span>
+            <strong>
+              ↑{worktree.ahead} ↓{worktree.behind}
+            </strong>
+          </div>
+          {worktree.lastOpenedAt && (
+            <div className="detail-meta-item">
+              <span>Last launched</span>
+              <strong>{relativeTime(worktree.lastOpenedAt)}</strong>
+            </div>
+          )}
+          {worktree.prNumber && worktree.prUrl && (
+            <div className="detail-meta-item">
+              <span>Pull Request</span>
+              <a
+                className="pr-link"
+                href={worktree.prUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                #{worktree.prNumber}
+              </a>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Action Buttons */}
+      <section className="card stack">
+        <div className="section-heading">
+          <span>Actions</span>
+        </div>
+        <div className="action-grid">
+          {launchers.map((launcher) => {
+            const tool = findTool(repo, launcher.id);
+            return (
+              <button
+                key={launcher.id}
+                className="ghost-button"
+                onClick={() => onLaunch(launcher)}
+                disabled={isBusy || !tool?.available}
+                title={tool?.available ? launcher.appOrCmd : `${launcher.name} not detected`}
+              >
+                {launcher.name}
+              </button>
+            );
+          })}
+          <button className="ghost-button" onClick={onStart} disabled={isBusy}>
+            Run post-start
+          </button>
+        </div>
+      </section>
+
+      {/* Warmup Info */}
+      {(worktree.warmupPreview.copyCandidates.length > 0 ||
+        worktree.warmupPreview.ports.length > 0) && (
+        <section className="card stack">
+          <div className="section-heading">
+            <span>Warmup</span>
+          </div>
+          {worktree.warmupPreview.copyCandidates.length > 0 && (
+            <div className="inline-panel">
+              <strong>Copy candidates</strong>
+              <p>{worktree.warmupPreview.copyCandidates.join(", ")}</p>
+            </div>
+          )}
+          {worktree.warmupPreview.ports.length > 0 && (
+            <div className="port-list">
+              {worktree.warmupPreview.ports.map((port) => (
+                <div key={port.name} className="port-chip">
+                  <span>{port.name}</span>
+                  <code>{port.port}</code>
+                  {port.url && <small>{port.url}</small>}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Repo Overview */}
+      <section className="card stack">
+        <div className="overview-heading">
+          <div>
+            <h2 style={{ fontSize: "1rem" }}>{repo.repoRoot}</h2>
+            <p style={{ fontSize: "0.85rem" }}>
+              {repo.worktrees.length} worktrees, base{" "}
+              <code>{repo.mergedConfig.settings.defaultBaseBranch}</code>
+            </p>
+          </div>
+          <div className="overview-actions">
+            <button className="ghost-button" onClick={onPreviewPrune} disabled={isBusy}>
+              Preview Prune
+            </button>
+            <button className="ghost-button" onClick={onRunPostScan} disabled={isBusy}>
+              Post-scan hooks
+            </button>
+            <button className="primary-button" onClick={onPrune} disabled={isBusy}>
+              Prune
+            </button>
+          </div>
+        </div>
+        {repo.configErrors.length > 0 && (
+          <div className="warning-panel">
+            {repo.configErrors.map((msg) => (
+              <p key={msg}>{msg}</p>
+            ))}
+          </div>
+        )}
+        {prunePreview.length > 0 && (
+          <div className="prune-preview">
+            <h3>Prune preview</h3>
+            <ul>
+              {prunePreview.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
+
+      {/* Tooling (collapsible) */}
+      <section className="card">
+        <div className="collapsible-header" onClick={onToggleTooling}>
+          <span className="section-heading" style={{ flex: 1 }}>
+            Tooling
+          </span>
+          <span className="subtle">{showTooling ? "▾" : "▸"}</span>
+        </div>
+        {showTooling && (
+          <div className="tool-list" style={{ marginTop: 8 }}>
+            {toolStatuses.map((tool) => (
+              <ToolRow key={tool.id} tool={tool} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Action Log (collapsible) */}
+      <section className="card">
+        <div className="collapsible-header" onClick={onToggleActionLog}>
+          <span className="section-heading" style={{ flex: 1 }}>
+            Action Log
+            {logs.length > 0 && <span className="subtle" style={{ marginLeft: 8 }}>{logs.length}</span>}
+          </span>
+          <span className="subtle">{showActionLog ? "▾" : "▸"}</span>
+        </div>
+        {showActionLog && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+              <button className="ghost-button" onClick={onClearLogs} style={{ fontSize: "0.78rem", padding: "4px 10px" }}>
+                Clear
+              </button>
+            </div>
+            <div className="log-list">
+              {logs.length === 0 && <p className="empty-copy">No actions yet.</p>}
+              {logs.map((log, i) => (
+                <div key={`${log.message}-${i}`} className={`log-item log-${log.level}`}>
+                  <strong>{log.level}</strong>
+                  <span>{log.message}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Config Editor (collapsible) */}
+      <section className="card">
+        <div className="collapsible-header" onClick={onToggleConfigEditor}>
+          <span className="section-heading" style={{ flex: 1 }}>
+            Config Files
+          </span>
+          <span className="subtle">{showConfigEditor ? "▾" : "▸"}</span>
+        </div>
+        {showConfigEditor && (
+          <div className="stack" style={{ marginTop: 8 }}>
+            <div className="path-grid">
+              <div>
+                <strong>Project</strong>
+                <p>{repo.configPaths.projectPath}</p>
+              </div>
+              <div>
+                <strong>Local</strong>
+                <p>{repo.configPaths.localPath}</p>
+              </div>
+            </div>
+            <label className="field-label">
+              Project config TOML
+              <textarea
+                value={projectConfigText}
+                onChange={(e) => onProjectConfigChange(e.target.value)}
+                rows={14}
+              />
+            </label>
+            <label className="field-label">
+              Local override TOML
+              <textarea
+                value={localConfigText}
+                onChange={(e) => onLocalConfigChange(e.target.value)}
+                rows={8}
+              />
+            </label>
+            <button className="primary-button" onClick={onSaveConfigs} disabled={isBusy}>
+              Save Config
+            </button>
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
+/* ─── HooksModal ─── */
+
+function HooksModal({
+  hooks,
+  onRunPostScan,
+  onClose,
+  isBusy,
+}: {
+  hooks: HookStep[];
+  onRunPostScan: () => void;
+  onClose: () => void;
+  isBusy: boolean;
+}) {
+  const grouped = new Map<string, HookStep[]>();
+  for (const hook of hooks) {
+    const list = grouped.get(hook.event) ?? [];
+    list.push(hook);
+    grouped.set(hook.event, list);
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal-card">
+        <div className="section-heading">
+          <span>Hooks</span>
+          <button className="ghost-button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <div className="hooks-list" style={{ marginTop: 12 }}>
+          {Array.from(grouped.entries()).map(([event, items]) => (
+            <div key={event}>
+              <div className="section-heading" style={{ fontSize: "0.78rem", marginBottom: 6 }}>
+                <span>{event}</span>
+              </div>
+              {items.map((hook) => (
+                <div key={hook.id} className="hook-item">
+                  <div className="hook-item-header">
+                    <strong>{hook.id}</strong>
+                    <Badge
+                      label={hook.enabled ? "enabled" : "disabled"}
+                      tone={hook.enabled ? "good" : "neutral"}
+                    />
+                  </div>
+                  <div className="hook-item-detail">
+                    {hook.type} {hook.run && `— ${hook.run}`}
+                    {hook.launcherId && `— launcher: ${hook.launcherId}`}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+        <div className="modal-actions">
+          <button className="ghost-button" onClick={onRunPostScan} disabled={isBusy}>
+            Run post-scan
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Shared Components ─── */
 
 function ToolRow({ tool }: { tool: ToolStatus }) {
   return (

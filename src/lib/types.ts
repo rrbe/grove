@@ -15,6 +15,7 @@ export type LogLevel = "info" | "success" | "error";
 export interface BootstrapResponse {
   recentRepos: string[];
   toolStatuses: ToolStatus[];
+  lastActiveRepo: string | null;
 }
 
 export interface ToolStatus {
@@ -102,6 +103,8 @@ export interface WorktreeRecord {
   behind: number;
   lastOpenedAt: string | null;
   warmupPreview: WarmupPreview;
+  prNumber: number | null;
+  prUrl: string | null;
 }
 
 export interface RepoSnapshot {

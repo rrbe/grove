@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct BootstrapResponse {
     pub recent_repos: Vec<String>,
     pub tool_statuses: Vec<ToolStatus>,
+    pub last_active_repo: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -46,6 +47,8 @@ pub struct WorktreeRecord {
     pub behind: u32,
     pub last_opened_at: Option<String>,
     pub warmup_preview: WarmupPreview,
+    pub pr_number: Option<u32>,
+    pub pr_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

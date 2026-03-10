@@ -2,6 +2,7 @@ use crate::models::{ColdStartConfig, PortAssignment, WarmupPreview, WorktreeReco
 use crate::store::AppStore;
 use sha2::{Digest, Sha256};
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -39,6 +40,13 @@ pub fn scan_worktrees(
     let output = run_git_bytes(repo_root, ["worktree", "list", "--porcelain", "-z"])?;
     let parsed = parse_worktree_porcelain(&output)?;
     let main_root = canonicalize(repo_root)?;
+
+    let branches: Vec<String> = parsed
+        .iter()
+        .filter_map(|entry| entry.branch.clone())
+        .collect();
+    let pr_map = lookup_prs_batch(repo_root, &branches, store);
+
     parsed
         .into_iter()
         .map(|entry| {
@@ -46,6 +54,12 @@ pub fn scan_worktrees(
             let (dirty, ahead, behind) = git_status_details(&canonical)?;
             let warmup_preview =
                 build_warmup_preview(repo_root, &canonical, entry.branch.as_deref(), cold_start);
+            let (pr_number, pr_url) = entry
+                .branch
+                .as_deref()
+                .and_then(|b| pr_map.get(b))
+                .map(|(n, u)| (Some(*n), Some(u.clone())))
+                .unwrap_or((None, None));
             Ok(WorktreeRecord {
                 id: canonical.to_string_lossy().to_string(),
                 path: canonical.to_string_lossy().to_string(),
@@ -59,9 +73,72 @@ pub fn scan_worktrees(
                 behind,
                 last_opened_at: crate::store::last_opened(store, &canonical),
                 warmup_preview,
+                pr_number,
+                pr_url,
             })
         })
         .collect()
+}
+
+pub fn lookup_prs_batch(
+    repo_root: &Path,
+    branches: &[String],
+    store: &AppStore,
+) -> BTreeMap<String, (u32, String)> {
+    let mut result = BTreeMap::new();
+    if branches.is_empty() {
+        return result;
+    }
+
+    // Check cache first
+    let mut uncached: Vec<&String> = Vec::new();
+    for branch in branches {
+        if let Some(entry) = store.pr_cache.get(branch) {
+            result.insert(branch.clone(), (entry.pr_number, entry.pr_url.clone()));
+        } else {
+            uncached.push(branch);
+        }
+    }
+
+    // If all branches are cached, return early
+    if uncached.is_empty() {
+        return result;
+    }
+
+    // Try to fetch from gh CLI
+    let output = Command::new("gh")
+        .arg("pr")
+        .arg("list")
+        .arg("--state")
+        .arg("open")
+        .arg("--json")
+        .arg("number,url,headRefName")
+        .arg("--limit")
+        .arg("100")
+        .current_dir(repo_root)
+        .output();
+
+    let output = match output {
+        Ok(o) if o.status.success() => o,
+        _ => return result, // gh not installed or not a GitHub repo
+    };
+
+    let json_str = String::from_utf8_lossy(&output.stdout);
+    let prs: Vec<serde_json::Value> = match serde_json::from_str(&json_str) {
+        Ok(v) => v,
+        Err(_) => return result,
+    };
+
+    for pr in prs {
+        let branch = pr["headRefName"].as_str().unwrap_or_default().to_string();
+        let number = pr["number"].as_u64().unwrap_or(0) as u32;
+        let url = pr["url"].as_str().unwrap_or_default().to_string();
+        if number > 0 && branches.contains(&branch) {
+            result.insert(branch, (number, url));
+        }
+    }
+
+    result
 }
 
 pub fn detect_default_remote(repo_root: &Path) -> Option<String> {

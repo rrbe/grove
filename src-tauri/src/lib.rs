@@ -22,6 +22,7 @@ fn bootstrap(state: State<'_, SharedState>) -> BootstrapResponse {
     BootstrapResponse {
         recent_repos: store.recent_repos.clone(),
         tool_statuses: detect_tools(),
+        last_active_repo: store.last_active_repo.clone(),
     }
 }
 
@@ -42,9 +43,29 @@ pub fn load_repo_snapshot(
     let repo_root = git::resolve_repo_root(&repo_root)?;
     let loaded = config::load(&repo_root)?;
     let mut store = state.store.lock().unwrap();
-    push_recent(&mut store, &repo_root.to_string_lossy());
+    let repo_root_str = repo_root.to_string_lossy().to_string();
+    push_recent(&mut store, &repo_root_str);
+    store.last_active_repo = Some(repo_root_str.clone());
     store::persist(app, &store)?;
     let worktrees = git::scan_worktrees(&repo_root, &loaded.merged.cold_start, &store)?;
+
+    // Update PR cache with freshly fetched data
+    for wt in &worktrees {
+        if let (Some(branch), Some(pr_number), Some(pr_url)) =
+            (&wt.branch, wt.pr_number, &wt.pr_url)
+        {
+            store.pr_cache.insert(
+                branch.clone(),
+                store::PrCacheEntry {
+                    pr_number,
+                    pr_url: pr_url.clone(),
+                    fetched_at: chrono::Utc::now().to_rfc3339(),
+                },
+            );
+        }
+    }
+    let _ = store::persist(app, &store);
+
     let main_worktree_path = worktrees
         .iter()
         .find(|worktree| worktree.is_main)

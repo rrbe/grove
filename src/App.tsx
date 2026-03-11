@@ -384,6 +384,12 @@ export default function App() {
               onSelect={(item) => void loadRepo(item)}
             />
           )}
+          {repo && (
+            <div className="repo-info-line">
+              {t.worktreeCount(repo.worktrees.length)} · {t.baseBranch}{" "}
+              <code>{repo.mergedConfig.settings.defaultBaseBranch}</code>
+            </div>
+          )}
         </div>
 
         <div className="sidebar-divider" />
@@ -431,24 +437,21 @@ export default function App() {
 
         {/* Bottom buttons */}
         <div className="sidebar-bottom">
-          <div className="sidebar-bottom-row">
-            <button
-              className="primary-button"
-              style={{ flex: 1 }}
-              onClick={() => {
-                setCreateForm(createInitialForm(repo ?? undefined));
-                setShowCreateModal(true);
-              }}
-              disabled={!repo || isBusy}
-            >
-              + {t.newWorktree}
+          <button
+            className="primary-button sidebar-bottom-btn"
+            onClick={() => {
+              setCreateForm(createInitialForm(repo ?? undefined));
+              setShowCreateModal(true);
+            }}
+            disabled={!repo || isBusy}
+          >
+            + {t.newWorktree}
+          </button>
+          {hooks.length > 0 && (
+            <button className="ghost-button sidebar-bottom-btn" onClick={() => setShowHooksModal(true)}>
+              🪝 {t.hooks} ({hooks.length})
             </button>
-            {hooks.length > 0 && (
-              <button className="ghost-button" onClick={() => setShowHooksModal(true)}>
-                🪝 {t.hooks} ({hooks.length})
-              </button>
-            )}
-          </div>
+          )}
           <div className="sidebar-bottom-settings">
             <button
               className="settings-icon-button"
@@ -484,6 +487,10 @@ export default function App() {
             onProjectConfigChange={setProjectConfigText}
             onLocalConfigChange={setLocalConfigText}
             onSaveConfigs={() => void handleSaveConfigs()}
+            prunePreview={prunePreview}
+            onPreviewPrune={() => void handlePreviewPrune()}
+            onPrune={() => void handlePrune()}
+            onRunPostScan={() => void handleRunPostScan()}
             isBusy={isBusy}
             t={t}
           />
@@ -517,10 +524,6 @@ export default function App() {
                 t={t}
                 onStart={() => void handleStart(selectedWorktree)}
                 onLaunch={(launcher) => void handleLaunch(selectedWorktree, launcher)}
-                prunePreview={prunePreview}
-                onPreviewPrune={() => void handlePreviewPrune()}
-                onPrune={() => void handlePrune()}
-                onRunPostScan={() => void handleRunPostScan()}
                 showActionLog={showActionLog}
                 onToggleActionLog={() => setShowActionLog((v) => !v)}
                 logs={logs.filter((l) => l.repoRoot === repo.repoRoot)}
@@ -753,10 +756,6 @@ function WorktreeDetail({
   t,
   onStart,
   onLaunch,
-  prunePreview,
-  onPreviewPrune,
-  onPrune,
-  onRunPostScan,
   showActionLog,
   onToggleActionLog,
   logs,
@@ -769,10 +768,6 @@ function WorktreeDetail({
   t: Translations;
   onStart: () => void;
   onLaunch: (launcher: LauncherProfile) => void;
-  prunePreview: string[];
-  onPreviewPrune: () => void;
-  onPrune: () => void;
-  onRunPostScan: () => void;
   showActionLog: boolean;
   onToggleActionLog: () => void;
   logs: TaggedLog[];
@@ -873,47 +868,6 @@ function WorktreeDetail({
         </div>
       </section>
 
-      {/* Repo Overview */}
-      <section className="card stack">
-        <div className="overview-heading">
-          <div>
-            <h2 style={{ fontSize: "1rem" }}>{repo.repoRoot}</h2>
-            <p style={{ fontSize: "0.85rem" }}>
-              {t.worktreeCount(repo.worktrees.length)}, {t.baseBranch}{" "}
-              <code>{repo.mergedConfig.settings.defaultBaseBranch}</code>
-            </p>
-          </div>
-          <div className="overview-actions">
-            <button className="ghost-button" onClick={onPreviewPrune} disabled={isBusy}>
-              {t.previewPrune}
-            </button>
-            <button className="ghost-button" onClick={onRunPostScan} disabled={isBusy}>
-              {t.postScanHooks}
-            </button>
-            <button className="primary-button" onClick={onPrune} disabled={isBusy}>
-              {t.prune}
-            </button>
-          </div>
-        </div>
-        {repo.configErrors.length > 0 && (
-          <div className="warning-panel">
-            {repo.configErrors.map((msg) => (
-              <p key={msg}>{msg}</p>
-            ))}
-          </div>
-        )}
-        {prunePreview.length > 0 && (
-          <div className="prune-preview">
-            <h3>{t.prunePreview}</h3>
-            <ul>
-              {prunePreview.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </section>
-
       {/* Action Log (collapsible) */}
       <section className="card">
         <div className="collapsible-header" onClick={onToggleActionLog}>
@@ -959,6 +913,10 @@ function SettingsPage({
   onProjectConfigChange,
   onLocalConfigChange,
   onSaveConfigs,
+  prunePreview,
+  onPreviewPrune,
+  onPrune,
+  onRunPostScan,
   isBusy,
   t,
 }: {
@@ -971,6 +929,10 @@ function SettingsPage({
   onProjectConfigChange: (v: string) => void;
   onLocalConfigChange: (v: string) => void;
   onSaveConfigs: () => void;
+  prunePreview: string[];
+  onPreviewPrune: () => void;
+  onPrune: () => void;
+  onRunPostScan: () => void;
   isBusy: boolean;
   t: Translations;
 }) {
@@ -978,6 +940,43 @@ function SettingsPage({
 
   return (
     <>
+      {/* Maintenance */}
+      {repo && (
+        <section className="card stack">
+          <div className="section-heading">
+            <span>{t.prune}</span>
+            <div className="overview-actions">
+              <button className="ghost-button" onClick={onPreviewPrune} disabled={isBusy}>
+                {t.previewPrune}
+              </button>
+              <button className="ghost-button" onClick={onRunPostScan} disabled={isBusy}>
+                {t.postScanHooks}
+              </button>
+              <button className="primary-button" onClick={onPrune} disabled={isBusy}>
+                {t.prune}
+              </button>
+            </div>
+          </div>
+          {repo.configErrors.length > 0 && (
+            <div className="warning-panel">
+              {repo.configErrors.map((msg) => (
+                <p key={msg}>{msg}</p>
+              ))}
+            </div>
+          )}
+          {prunePreview.length > 0 && (
+            <div className="prune-preview">
+              <h3>{t.prunePreview}</h3>
+              <ul>
+                {prunePreview.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Tooling — always expanded */}
       <section className="card stack">
         <div className="section-heading">

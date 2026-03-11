@@ -787,9 +787,8 @@ textarea {
   padding-top: 4px;
 }
 
-.sidebar-bottom-row {
-  display: flex;
-  gap: 8px;
+.sidebar-bottom-btn {
+  width: 100%;
 }
 
 .sidebar-bottom-settings {
@@ -921,6 +920,17 @@ textarea {
 .recent-repos-toggle:hover {
   color: #2e6b63;
   transform: none;
+}
+
+.repo-info-line {
+  font-size: 0.75rem;
+  color: rgba(16, 33, 46, 0.55);
+  padding: 0 2px;
+}
+
+.repo-info-line code {
+  font-size: 0.73rem;
+  color: rgba(46, 107, 99, 0.8);
 }
 
 .repo-picker-actions button {

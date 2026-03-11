@@ -779,53 +779,77 @@ textarea {
   margin-top: 18px;
 }
 
-/* Sidebar create form */
-.sidebar-create {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 4px;
-}
-
-.sidebar-create-row {
-  display: flex;
-  gap: 8px;
-}
-
-.sidebar-create-row input {
-  flex: 1;
-  padding: 8px 12px;
-  font-size: 0.85rem;
-}
-
-.sidebar-create-row button {
-  flex-shrink: 0;
-}
-
-.advanced-toggle {
-  background: none;
-  color: rgba(16, 33, 46, 0.58);
-  font-size: 0.78rem;
-  padding: 4px 0;
-  text-align: left;
-}
-
-.advanced-toggle:hover {
-  color: #2e6b63;
-  transform: none;
-}
-
 /* Sidebar bottom area */
 .sidebar-bottom {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   padding-top: 4px;
 }
 
 .sidebar-bottom-row {
   display: flex;
   gap: 8px;
+}
+
+.sidebar-bottom-settings {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.settings-icon-button {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(16, 33, 46, 0.45);
+  font-size: 1rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+
+.settings-icon-button:hover {
+  background: rgba(16, 33, 46, 0.08);
+  color: rgba(16, 33, 46, 0.7);
+  transform: none;
+}
+
+/* Create Worktree modal (right slide-out) */
+.create-modal-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(480px, calc(100vw - 60px));
+  height: 100vh;
+  background: rgba(254, 251, 246, 0.98);
+  box-shadow: -8px 0 40px rgba(16, 33, 46, 0.18);
+  padding: 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  animation: slideInRight 180ms ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.path-preview {
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+  font-size: 0.82rem;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(49, 143, 114, 0.08);
+  border: 1px solid rgba(49, 143, 114, 0.15);
+  color: #185b46;
+  word-break: break-all;
 }
 
 /* Hooks modal */

@@ -7,8 +7,9 @@ export interface Translations {
   chooseRepo: string;
   branchPlaceholder: string;
   create: string;
-  hideAdvanced: string;
-  showAdvanced: string;
+  newWorktree: string;
+  createWorktree: string;
+  pathPreview: string;
   mode: string;
   modeNewBranch: string;
   modeExistingBranch: string;

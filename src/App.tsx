@@ -84,7 +84,7 @@ export default function App() {
   const [selectedWorktreeId, setSelectedWorktreeId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showHooksModal, setShowHooksModal] = useState(false);
-  const [showAdvancedCreate, setShowAdvancedCreate] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [view, setView] = useState<"detail" | "settings">("detail");
   const [showActionLog, setShowActionLog] = useState(false);
 
@@ -108,6 +108,18 @@ export default function App() {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
+  }, []);
+
+  // Cmd+, toggles settings
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey && e.key === ",") {
+        e.preventDefault();
+        setView((v) => (v === "settings" ? "detail" : "settings"));
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   const selectedWorktree = repo?.worktrees.find((w) => w.id === selectedWorktreeId) ?? null;
@@ -417,85 +429,33 @@ export default function App() {
 
         <div className="sidebar-divider" />
 
-        {/* Create Worktree */}
-        <div className="sidebar-create">
-          <div className="sidebar-create-row">
-            <input
-              value={createForm.branch}
-              onChange={(e) => setCreateForm((c) => ({ ...c, branch: e.target.value }))}
-              placeholder={t.branchPlaceholder}
-              onKeyDown={(e) => e.key === "Enter" && void handleCreateWorktree()}
-            />
-            <button
-              className="primary-button"
-              onClick={() => void handleCreateWorktree()}
-              disabled={isBusy || !repo || !createForm.branch.trim()}
-            >
-              {t.create}
-            </button>
-          </div>
-          <button className="advanced-toggle" onClick={() => setShowAdvancedCreate((v) => !v)}>
-            {showAdvancedCreate ? t.hideAdvanced : t.showAdvanced}
-          </button>
-          {showAdvancedCreate && (
-            <div className="stack" style={{ gap: 8 }}>
-              <label className="field-label">
-                {t.mode}
-                <select
-                  value={createForm.mode}
-                  onChange={(e) =>
-                    setCreateForm((c) => ({ ...c, mode: e.target.value as CreateMode }))
-                  }
-                >
-                  <option value="new-branch">{t.modeNewBranch}</option>
-                  <option value="existing-branch">{t.modeExistingBranch}</option>
-                  <option value="remote-branch">{t.modeRemoteBranch}</option>
-                </select>
-              </label>
-              <label className="field-label">
-                {t.baseRef}
-                <input
-                  value={createForm.baseRef}
-                  onChange={(e) => setCreateForm((c) => ({ ...c, baseRef: e.target.value }))}
-                  placeholder="main"
-                />
-              </label>
-              {createForm.mode === "remote-branch" && (
-                <label className="field-label">
-                  {t.remoteRef}
-                  <input
-                    value={createForm.remoteRef}
-                    onChange={(e) => setCreateForm((c) => ({ ...c, remoteRef: e.target.value }))}
-                    placeholder={t.remoteRefPlaceholder}
-                  />
-                </label>
-              )}
-              <label className="field-label">
-                {t.customPath}
-                <input
-                  value={createForm.path}
-                  onChange={(e) => setCreateForm((c) => ({ ...c, path: e.target.value }))}
-                  placeholder={t.optional}
-                />
-              </label>
-            </div>
-          )}
-        </div>
-
         {/* Bottom buttons */}
         <div className="sidebar-bottom">
           <div className="sidebar-bottom-row">
+            <button
+              className="primary-button"
+              style={{ flex: 1 }}
+              onClick={() => {
+                setCreateForm(createInitialForm(repo ?? undefined));
+                setShowCreateModal(true);
+              }}
+              disabled={!repo || isBusy}
+            >
+              + {t.newWorktree}
+            </button>
             {hooks.length > 0 && (
-              <button className="ghost-button" onClick={() => setShowHooksModal(true)} style={{ flex: 1 }}>
-                {t.hooks} ({hooks.length})
+              <button className="ghost-button" onClick={() => setShowHooksModal(true)}>
+                🪝 {t.hooks} ({hooks.length})
               </button>
             )}
+          </div>
+          <div className="sidebar-bottom-settings">
             <button
-              className="ghost-button"
+              className="settings-icon-button"
               onClick={() => setView((v) => (v === "settings" ? "detail" : "settings"))}
-              style={{ flex: 1 }}
+              title={`${t.settings} ⌘,`}
             >
-              {t.settings}
+              ⚙
             </button>
           </div>
         </div>
@@ -591,6 +551,22 @@ export default function App() {
           hooks={hooks}
           onRunPostScan={() => void handleRunPostScan()}
           onClose={() => setShowHooksModal(false)}
+          isBusy={isBusy}
+          t={t}
+        />
+      )}
+
+      {/* Create Worktree Modal */}
+      {showCreateModal && repo && (
+        <CreateWorktreeModal
+          repo={repo}
+          form={createForm}
+          onFormChange={setCreateForm}
+          onCreate={() => {
+            void handleCreateWorktree();
+            setShowCreateModal(false);
+          }}
+          onClose={() => setShowCreateModal(false)}
           isBusy={isBusy}
           t={t}
         />
@@ -1149,6 +1125,138 @@ function HooksModal({
         <div className="modal-actions">
           <button className="ghost-button" onClick={onRunPostScan} disabled={isBusy}>
             {t.runPostScan}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── CreateWorktreeModal ─── */
+
+function sanitizeBranch(branch: string): string {
+  return branch
+    .split("")
+    .map((ch) => (/[a-zA-Z0-9\-_]/.test(ch) ? ch : "-"))
+    .join("");
+}
+
+function CreateWorktreeModal({
+  repo,
+  form,
+  onFormChange,
+  onCreate,
+  onClose,
+  isBusy,
+  t,
+}: {
+  repo: RepoSnapshot;
+  form: CreateFormState;
+  onFormChange: (fn: (prev: CreateFormState) => CreateFormState) => void;
+  onCreate: () => void;
+  onClose: () => void;
+  isBusy: boolean;
+  t: Translations;
+}) {
+  const pathPreview = form.branch.trim()
+    ? `${repo.repoRoot}/${repo.mergedConfig.settings.worktreeRoot}/${sanitizeBranch(form.branch.trim())}`
+    : null;
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="create-modal-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="section-heading">
+          <span>{t.createWorktree}</span>
+          <button className="ghost-button" onClick={onClose} style={{ fontSize: "0.78rem", padding: "4px 10px" }}>
+            {t.close}
+          </button>
+        </div>
+
+        <div className="stack" style={{ gap: 14, marginTop: 16 }}>
+          <label className="field-label">
+            {t.branchPlaceholder}
+            <input
+              autoFocus
+              value={form.branch}
+              onChange={(e) => onFormChange((c) => ({ ...c, branch: e.target.value }))}
+              placeholder={t.branchPlaceholder}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && form.branch.trim()) onCreate();
+              }}
+            />
+          </label>
+
+          <label className="field-label">
+            {t.mode}
+            <select
+              value={form.mode}
+              onChange={(e) =>
+                onFormChange((c) => ({ ...c, mode: e.target.value as CreateMode }))
+              }
+            >
+              <option value="new-branch">{t.modeNewBranch}</option>
+              <option value="existing-branch">{t.modeExistingBranch}</option>
+              <option value="remote-branch">{t.modeRemoteBranch}</option>
+            </select>
+          </label>
+
+          {form.mode === "new-branch" && (
+            <label className="field-label">
+              {t.baseRef}
+              <input
+                value={form.baseRef}
+                onChange={(e) => onFormChange((c) => ({ ...c, baseRef: e.target.value }))}
+                placeholder="main"
+              />
+            </label>
+          )}
+
+          {form.mode === "remote-branch" && (
+            <label className="field-label">
+              {t.remoteRef}
+              <input
+                value={form.remoteRef}
+                onChange={(e) => onFormChange((c) => ({ ...c, remoteRef: e.target.value }))}
+                placeholder={t.remoteRefPlaceholder}
+              />
+            </label>
+          )}
+
+          {pathPreview && !form.path.trim() && (
+            <div className="field-label">
+              {t.pathPreview}
+              <div className="path-preview">{pathPreview}</div>
+            </div>
+          )}
+
+          <label className="field-label">
+            {t.customPath}
+            <input
+              value={form.path}
+              onChange={(e) => onFormChange((c) => ({ ...c, path: e.target.value }))}
+              placeholder={t.optional}
+            />
+          </label>
+        </div>
+
+        <div className="modal-actions">
+          <button className="ghost-button" onClick={onClose}>
+            {t.cancel}
+          </button>
+          <button
+            className="primary-button"
+            onClick={onCreate}
+            disabled={isBusy || !form.branch.trim()}
+          >
+            {t.createWorktree}
           </button>
         </div>
       </div>

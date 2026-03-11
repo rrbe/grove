@@ -92,4 +92,5 @@ export const en: Translations = {
   language: "Language",
   langZhCN: "中文",
   langEn: "English",
+  recentRepos: "Recent",
 };

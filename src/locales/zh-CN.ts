@@ -90,4 +90,5 @@ export const zhCN: Translations = {
   language: "语言",
   langZhCN: "中文",
   langEn: "English",
+  recentRepos: "历史仓库",
 };

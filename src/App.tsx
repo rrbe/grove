@@ -342,40 +342,31 @@ export default function App() {
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-badge">G</div>
           <h1>{t.brandName}</h1>
           <LanguageSwitcher locale={locale} setLocale={setLocale} />
         </div>
 
         {/* Repo Picker */}
         <div className="repo-picker">
-          <div className="repo-picker-row">
-            <input
-              value={repoInput}
-              onChange={(e) => setRepoInput(e.target.value)}
-              placeholder={t.repoPlaceholder}
-              onKeyDown={(e) => e.key === "Enter" && void loadRepo(repoInput)}
-            />
-            <button className="ghost-button" onClick={browseForRepo} disabled={isBusy}>
-              {t.browse}
-            </button>
-            <button className="primary-button" onClick={() => void loadRepo(repoInput)} disabled={isBusy}>
-              {isBusy ? t.loading : t.load}
+          <input
+            value={repoInput}
+            onChange={(e) => setRepoInput(e.target.value)}
+            placeholder={t.repoPlaceholder}
+            onKeyDown={(e) => e.key === "Enter" && void loadRepo(repoInput)}
+            className="repo-picker-input"
+          />
+          <div className="repo-picker-actions">
+            <button className="primary-button" onClick={browseForRepo} disabled={isBusy}>
+              {t.chooseRepo}
             </button>
           </div>
           {bootstrapState.recentRepos.length > 0 && (
-            <div className="pill-list">
-              {bootstrapState.recentRepos.map((item) => (
-                <button
-                  key={item}
-                  className="pill"
-                  onClick={() => void loadRepo(item)}
-                  disabled={isBusy}
-                >
-                  {item.split("/").pop()}
-                </button>
-              ))}
-            </div>
+            <RecentRepos
+              repos={bootstrapState.recentRepos}
+              isBusy={isBusy}
+              t={t}
+              onSelect={(item) => void loadRepo(item)}
+            />
           )}
         </div>
 
@@ -605,6 +596,44 @@ function LanguageSwitcher({
     >
       {locale === "zh-CN" ? "EN" : "中文"}
     </button>
+  );
+}
+
+/* ─── RecentRepos ─── */
+
+function RecentRepos({
+  repos,
+  isBusy,
+  t,
+  onSelect,
+}: {
+  repos: string[];
+  isBusy: boolean;
+  t: Translations;
+  onSelect: (repo: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="recent-repos">
+      <button className="recent-repos-toggle" onClick={() => setOpen((v) => !v)}>
+        <span>{t.recentRepos}</span>
+        <span className="subtle">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div className="pill-list">
+          {repos.map((item) => (
+            <button
+              key={item}
+              className="pill"
+              onClick={() => onSelect(item)}
+              disabled={isBusy}
+            >
+              {item.split("/").pop()}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

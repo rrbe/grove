@@ -97,28 +97,17 @@ pre {
 
 .brand h1 {
   margin: 0;
-  font-family: "Iowan Old Style", "Georgia", serif;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  font-size: 0.85rem;
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-size: 1.1rem;
 }
 
 .brand p {
   display: none;
 }
 
-.brand-badge {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(140deg, #10212e 0%, #2e6b63 100%);
-  color: white;
-  font-weight: 700;
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-}
+/* brand-badge removed — reserved for app icon */
 
 .hero h2,
 .overview h2 {
@@ -868,27 +857,46 @@ textarea {
   margin: 2px 4px;
 }
 
-/* Repo picker compact */
+/* Repo picker */
 .repo-picker {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-
-.repo-picker-row {
-  display: flex;
   gap: 6px;
 }
 
-.repo-picker-row input {
-  flex: 1;
+.repo-picker-input {
+  width: 100%;
   padding: 8px 12px;
   font-size: 0.85rem;
   border-radius: 12px;
 }
 
-.repo-picker-row button {
-  flex-shrink: 0;
+.recent-repos {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.recent-repos-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: none;
+  color: rgba(16, 33, 46, 0.55);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 0;
+  text-align: left;
+  letter-spacing: 0.03em;
+}
+
+.recent-repos-toggle:hover {
+  color: #2e6b63;
+  transform: none;
+}
+
+.repo-picker-actions button {
+  width: 100%;
   font-size: 0.82rem;
   padding: 8px 12px;
 }

@@ -88,4 +88,5 @@ export interface Translations {
   language: string;
   langZhCN: string;
   langEn: string;
+  recentRepos: string;
 }

@@ -671,8 +671,8 @@ function WorktreeListItem({
               #{worktree.prNumber}
             </span>
           )}
-          {worktree.lastOpenedAt && (
-            <span>{relativeTime(worktree.lastOpenedAt, t)}</span>
+          {worktree.headCommitDate && (
+            <span className="worktree-list-item-time">{t.lastCommit}: {relativeTime(worktree.headCommitDate, t)}</span>
           )}
           {worktree.dirty && <Badge label={t.dirty} tone="danger" />}
         </div>
@@ -802,6 +802,12 @@ function WorktreeDetail({
               ↑{worktree.ahead} ↓{worktree.behind}
             </strong>
           </div>
+          {worktree.headCommitDate && (
+            <div className="detail-meta-item">
+              <span>{t.lastCommit}</span>
+              <strong>{relativeTime(worktree.headCommitDate, t)}</strong>
+            </div>
+          )}
           {worktree.lastOpenedAt && (
             <div className="detail-meta-item">
               <span>{t.lastLaunched}</span>

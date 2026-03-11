@@ -86,6 +86,7 @@ export const zhCN: Translations = {
   logPruneCandidates: (n) => `发现 ${n} 个可清理项。`,
   logNoPruneCandidates: "未检测到可清理项。",
   openInFinder: "在 Finder 中打开",
+  lastCommit: "最近提交",
   language: "语言",
   langZhCN: "中文",
   langEn: "English",

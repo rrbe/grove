@@ -60,6 +60,7 @@ pub fn scan_worktrees(
                 .and_then(|b| pr_map.get(b))
                 .map(|(n, u)| (Some(*n), Some(u.clone())))
                 .unwrap_or((None, None));
+            let commit_date = head_commit_date(&canonical);
             Ok(WorktreeRecord {
                 id: canonical.to_string_lossy().to_string(),
                 path: canonical.to_string_lossy().to_string(),
@@ -72,6 +73,7 @@ pub fn scan_worktrees(
                 ahead,
                 behind,
                 last_opened_at: crate::store::last_opened(store, &canonical),
+                head_commit_date: commit_date,
                 warmup_preview,
                 pr_number,
                 pr_url,
@@ -158,6 +160,13 @@ pub fn detect_default_remote(repo_root: &Path) -> Option<String> {
 
 pub fn resolve_head_sha(repo_root: &Path, reference: &str) -> Result<String, String> {
     run_git_text(repo_root, ["rev-parse", reference]).map(|sha| sha.trim().to_string())
+}
+
+pub fn head_commit_date(worktree_path: &Path) -> Option<String> {
+    run_git_text(worktree_path, ["log", "-1", "--format=%aI", "HEAD"])
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 pub fn list_prune_candidates(repo_root: &Path) -> Result<Vec<String>, String> {

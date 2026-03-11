@@ -46,6 +46,7 @@ pub struct WorktreeRecord {
     pub ahead: u32,
     pub behind: u32,
     pub last_opened_at: Option<String>,
+    pub head_commit_date: Option<String>,
     pub warmup_preview: WarmupPreview,
     pub pr_number: Option<u32>,
     pub pr_url: Option<String>,

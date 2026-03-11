@@ -402,10 +402,16 @@ textarea {
 .worktree-list-item-meta {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 2px;
   font-size: 0.75rem;
   color: rgba(16, 33, 46, 0.55);
+}
+
+.worktree-list-item-time {
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .worktree-list-item-dir {

@@ -88,6 +88,7 @@ export const en: Translations = {
   logPruneCandidates: (n) => `Found ${n} prune candidate(s).`,
   logNoPruneCandidates: "No prune candidates detected.",
   openInFinder: "Open in Finder",
+  lastCommit: "Last Commit",
   language: "Language",
   langZhCN: "中文",
   langEn: "English",

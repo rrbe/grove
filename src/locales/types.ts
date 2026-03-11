@@ -84,6 +84,7 @@ export interface Translations {
   logPruneCandidates: (n: number) => string;
   logNoPruneCandidates: string;
   openInFinder: string;
+  lastCommit: string;
   language: string;
   langZhCN: string;
   langEn: string;

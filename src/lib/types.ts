@@ -102,6 +102,7 @@ export interface WorktreeRecord {
   ahead: number;
   behind: number;
   lastOpenedAt: string | null;
+  headCommitDate: string | null;
   warmupPreview: WarmupPreview;
   prNumber: number | null;
   prUrl: string | null;

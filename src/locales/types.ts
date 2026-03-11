@@ -83,6 +83,7 @@ export interface Translations {
   logSavedConfig: string;
   logPruneCandidates: (n: number) => string;
   logNoPruneCandidates: string;
+  openInFinder: string;
   language: string;
   langZhCN: string;
   langEn: string;

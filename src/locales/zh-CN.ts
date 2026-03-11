@@ -85,6 +85,7 @@ export const zhCN: Translations = {
   logSavedConfig: "已保存仓库配置文件。",
   logPruneCandidates: (n) => `发现 ${n} 个可清理项。`,
   logNoPruneCandidates: "未检测到可清理项。",
+  openInFinder: "在 Finder 中打开",
   language: "语言",
   langZhCN: "中文",
   langEn: "English",

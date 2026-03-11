@@ -139,7 +139,11 @@ fn start_repo_worktree(
     state: State<'_, SharedState>,
     input: StartWorktreeInput,
 ) -> Result<models::ActionResponse, String> {
-    start_worktree(&app, &state, input)
+    let response = start_worktree(&app, &state, input.clone())?;
+    if response.status == models::ActionStatus::Completed {
+        let _ = mark_worktree_opened(&app, &state, &input.worktree_path);
+    }
+    Ok(response)
 }
 
 #[tauri::command]

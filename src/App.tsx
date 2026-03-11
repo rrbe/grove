@@ -1,4 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import {
   approveRepoCommands,
@@ -84,6 +85,28 @@ export default function App() {
   const [showTooling, setShowTooling] = useState(false);
   const [showActionLog, setShowActionLog] = useState(false);
   const [showConfigEditor, setShowConfigEditor] = useState(false);
+
+  const [sidebarWidth, setSidebarWidth] = useState(320);
+  const isDragging = useRef(false);
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      const clamped = Math.min(500, Math.max(220, e.clientX));
+      setSidebarWidth(clamped);
+    };
+    const onMouseUp = () => {
+      isDragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
 
   const selectedWorktree = repo?.worktrees.find((w) => w.id === selectedWorktreeId) ?? null;
 
@@ -315,7 +338,7 @@ export default function App() {
   const hooks = repo?.mergedConfig.hooks ?? [];
 
   return (
-    <div className="shell">
+    <div className="shell" style={{ gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr)` }}>
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="brand">
@@ -473,6 +496,14 @@ export default function App() {
             )}
           </div>
         </div>
+        <div
+          className="sidebar-resize-handle"
+          onMouseDown={() => {
+            isDragging.current = true;
+            document.body.style.cursor = "col-resize";
+            document.body.style.userSelect = "none";
+          }}
+        />
       </aside>
 
       {/* Detail Panel */}
@@ -593,19 +624,52 @@ function WorktreeListItem({
   onDelete: () => void;
 }) {
   const dirName = worktree.path.split("/").pop() ?? worktree.path;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [menuOpen]);
+
   return (
     <div
       className={`worktree-list-item ${active ? "active" : ""}`}
       onClick={onSelect}
     >
       <div className="worktree-list-item-info">
-        <div className="worktree-list-item-branch">
+        <div className="worktree-list-item-branch" title={worktree.branch ?? t.detachedShort}>
+          <span className="worktree-icon">{worktree.isMain ? "🪵" : "🌿"}</span>
           {worktree.branch ?? t.detachedShort}
         </div>
+        <div
+          className="worktree-list-item-path"
+          onClick={(e) => {
+            e.stopPropagation();
+            void revealItemInDir(worktree.path);
+          }}
+        >
+          <span className="worktree-list-item-path-icon">📂</span>
+          <span className="worktree-list-item-path-text">{dirName}</span>
+        </div>
         <div className="worktree-list-item-meta">
-          <span className="worktree-list-item-dir">{dirName}</span>
           {worktree.prNumber && (
-            <span className="pr-badge">#{worktree.prNumber}</span>
+            <span
+              className={`pr-badge ${worktree.prUrl ? "pr-badge-link" : ""}`}
+              onClick={(e) => {
+                if (!worktree.prUrl) return;
+                e.stopPropagation();
+                void openUrl(worktree.prUrl);
+              }}
+            >
+              #{worktree.prNumber}
+            </span>
           )}
           {worktree.lastOpenedAt && (
             <span>{relativeTime(worktree.lastOpenedAt, t)}</span>
@@ -613,17 +677,43 @@ function WorktreeListItem({
           {worktree.dirty && <Badge label={t.dirty} tone="danger" />}
         </div>
       </div>
-      {!worktree.isMain && (
+      <div className="worktree-list-item-menu" ref={menuRef}>
         <button
-          className="worktree-list-item-delete"
+          className="worktree-menu-trigger"
           onClick={(e) => {
             e.stopPropagation();
-            onDelete();
+            setMenuOpen((v) => !v);
           }}
         >
-          &times;
+          ⋮
         </button>
-      )}
+        {menuOpen && (
+          <div className="worktree-menu-popup">
+            <button
+              className="worktree-menu-item"
+              onClick={(e) => {
+                e.stopPropagation();
+                void revealItemInDir(worktree.path);
+                setMenuOpen(false);
+              }}
+            >
+              {t.openInFinder}
+            </button>
+            {!worktree.isMain && (
+              <button
+                className="worktree-menu-item worktree-menu-item-danger"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                  onDelete();
+                }}
+              >
+                {t.delete}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

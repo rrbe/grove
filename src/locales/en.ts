@@ -87,6 +87,7 @@ export const en: Translations = {
   logSavedConfig: "Saved repo config files.",
   logPruneCandidates: (n) => `Found ${n} prune candidate(s).`,
   logNoPruneCandidates: "No prune candidates detected.",
+  openInFinder: "Open in Finder",
   language: "Language",
   langZhCN: "中文",
   langEn: "English",

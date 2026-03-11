@@ -68,6 +68,7 @@ pre {
 }
 
 .sidebar {
+  position: relative;
   border-right: 1px solid rgba(16, 33, 46, 0.12);
   background: rgba(255, 248, 238, 0.76);
   backdrop-filter: blur(24px);
@@ -358,11 +359,44 @@ textarea {
 }
 
 .worktree-list-item-branch {
-  font-weight: 600;
-  font-size: 0.88rem;
+  font-weight: 700;
+  font-size: 0.92rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.worktree-icon {
+  margin-right: 4px;
+  font-size: 0.78rem;
+}
+
+.worktree-list-item-path {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 1px;
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.worktree-list-item-path-icon {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+}
+
+.worktree-list-item-path-text {
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+  font-size: 0.73rem;
+  color: rgba(16, 33, 46, 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.worktree-list-item-path:hover .worktree-list-item-path-text {
+  text-decoration: underline;
+  color: rgba(46, 107, 99, 0.8);
 }
 
 .worktree-list-item-meta {
@@ -392,29 +426,88 @@ textarea {
   white-space: nowrap;
 }
 
-.worktree-list-item-delete {
+.pr-badge-link {
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+
+.pr-badge-link:hover {
+  background: rgba(88, 66, 186, 0.22);
+  text-decoration: underline;
+}
+
+.worktree-list-item-menu {
+  position: relative;
   flex-shrink: 0;
+}
+
+.worktree-menu-trigger {
   width: 24px;
   height: 24px;
   border-radius: 6px;
   display: grid;
   place-items: center;
   background: transparent;
-  color: rgba(16, 33, 46, 0.35);
-  font-size: 0.82rem;
+  color: rgba(16, 33, 46, 0.4);
+  font-size: 1.15rem;
+  font-weight: 900;
   padding: 0;
   opacity: 0;
   transition: opacity 100ms ease;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  -webkit-text-stroke: 0.5px currentColor;
 }
 
-.worktree-list-item:hover .worktree-list-item-delete {
+.worktree-list-item:hover .worktree-menu-trigger {
   opacity: 1;
 }
 
-.worktree-list-item-delete:hover {
-  background: rgba(197, 61, 46, 0.12);
-  color: #8e2319;
+.worktree-menu-trigger:hover {
+  background: rgba(16, 33, 46, 0.1);
+  color: rgba(16, 33, 46, 0.7);
   transform: none;
+}
+
+.worktree-menu-popup {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  min-width: 140px;
+  background: rgba(254, 251, 246, 0.98);
+  border: 1px solid rgba(16, 33, 46, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(16, 33, 46, 0.15);
+  padding: 4px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+
+.worktree-menu-item {
+  width: 100%;
+  padding: 7px 12px;
+  border-radius: 7px;
+  background: transparent;
+  color: #10212e;
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.worktree-menu-item:hover {
+  background: rgba(16, 33, 46, 0.07);
+  transform: none;
+}
+
+.worktree-menu-item-danger {
+  color: #8e2319;
+}
+
+.worktree-menu-item-danger:hover {
+  background: rgba(197, 61, 46, 0.1);
 }
 
 /* Delete confirmation inline */
@@ -792,6 +885,23 @@ textarea {
   flex-shrink: 0;
   font-size: 0.82rem;
   padding: 8px 12px;
+}
+
+/* Sidebar resize handle */
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 140ms ease;
+  z-index: 10;
+}
+
+.sidebar-resize-handle:hover {
+  background: rgba(46, 107, 99, 0.35);
 }
 
 /* Danger row for detail */

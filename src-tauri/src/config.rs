@@ -1,3 +1,4 @@
+use crate::git;
 use crate::models::{
     ColdStartConfig, ColdStartPatch, ConfigFile, ConfigPaths, HookEvent, HookStep, HookStepType,
     LauncherKind, LauncherProfile, PortTemplate, RepoSettings, ResolvedConfig, SettingsPatch,
@@ -44,6 +45,8 @@ pub fn load(repo_root: &Path) -> Result<LoadedConfig, String> {
         String::new()
     };
     let mut merged = builtin_config();
+    // Auto-detect default branch from git before applying user config
+    merged.settings.default_base_branch = git::detect_default_branch(repo_root);
     if !project_text.trim().is_empty() {
         match toml::from_str::<ConfigFile>(&project_text) {
             Ok(file) => merged = merge_config(merged, file),

@@ -106,6 +106,14 @@ export interface WorktreeRecord {
   warmupPreview: WarmupPreview;
   prNumber: number | null;
   prUrl: string | null;
+  recentCommits: CommitSummary[];
+}
+
+export interface CommitSummary {
+  sha: string;
+  message: string;
+  date: string;
+  author: string;
 }
 
 export interface RepoSnapshot {

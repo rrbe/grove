@@ -1,4 +1,4 @@
-use crate::models::{ColdStartConfig, PortAssignment, WarmupPreview, WorktreeRecord};
+use crate::models::{ColdStartConfig, CommitSummary, PortAssignment, WarmupPreview, WorktreeRecord};
 use crate::store::AppStore;
 use sha2::{Digest, Sha256};
 use std::{
@@ -61,6 +61,7 @@ pub fn scan_worktrees(
                 .map(|(n, u)| (Some(*n), Some(u.clone())))
                 .unwrap_or((None, None));
             let commit_date = head_commit_date(&canonical);
+            let commits = recent_commits(&canonical, 3);
             Ok(WorktreeRecord {
                 id: canonical.to_string_lossy().to_string(),
                 path: canonical.to_string_lossy().to_string(),
@@ -77,6 +78,7 @@ pub fn scan_worktrees(
                 warmup_preview,
                 pr_number,
                 pr_url,
+                recent_commits: commits,
             })
         })
         .collect()
@@ -158,6 +160,27 @@ pub fn detect_default_remote(repo_root: &Path) -> Option<String> {
         .map(|line| line.trim().to_string())
 }
 
+/// Detect the default branch by checking `origin/HEAD` symref, falling back to "main".
+pub fn detect_default_branch(repo_root: &Path) -> String {
+    // Try symbolic-ref of origin/HEAD → "refs/remotes/origin/main"
+    if let Ok(symref) = run_git_text(repo_root, ["symbolic-ref", "refs/remotes/origin/HEAD"]) {
+        let trimmed = symref.trim();
+        if let Some(branch) = trimmed.strip_prefix("refs/remotes/origin/") {
+            if !branch.is_empty() {
+                return branch.to_string();
+            }
+        }
+    }
+    // Fallback: check if "main" or "master" exists as a local branch
+    if run_git_text(repo_root, ["rev-parse", "--verify", "refs/heads/main"]).is_ok() {
+        return "main".into();
+    }
+    if run_git_text(repo_root, ["rev-parse", "--verify", "refs/heads/master"]).is_ok() {
+        return "master".into();
+    }
+    "main".into()
+}
+
 pub fn resolve_head_sha(repo_root: &Path, reference: &str) -> Result<String, String> {
     run_git_text(repo_root, ["rev-parse", reference]).map(|sha| sha.trim().to_string())
 }
@@ -167,6 +190,30 @@ pub fn head_commit_date(worktree_path: &Path) -> Option<String> {
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+}
+
+pub fn recent_commits(worktree_path: &Path, count: usize) -> Vec<CommitSummary> {
+    let args = vec![
+        "log".to_string(),
+        format!("-{count}"),
+        "--format=%H\t%s\t%aI\t%an".to_string(),
+        "HEAD".to_string(),
+    ];
+    match run_git_owned(worktree_path, &args) {
+        Ok(output) => output
+            .lines()
+            .filter(|l| !l.is_empty())
+            .filter_map(|line| {
+                let mut parts = line.splitn(4, '\t');
+                let sha = parts.next()?.to_string();
+                let message = parts.next()?.to_string();
+                let date = parts.next()?.to_string();
+                let author = parts.next().unwrap_or("").to_string();
+                Some(CommitSummary { sha, message, date, author })
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    }
 }
 
 pub fn list_prune_candidates(repo_root: &Path) -> Result<Vec<String>, String> {

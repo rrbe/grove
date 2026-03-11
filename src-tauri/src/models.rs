@@ -50,6 +50,16 @@ pub struct WorktreeRecord {
     pub warmup_preview: WarmupPreview,
     pub pr_number: Option<u32>,
     pub pr_url: Option<String>,
+    pub recent_commits: Vec<CommitSummary>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitSummary {
+    pub sha: String,
+    pub message: String,
+    pub date: String,
+    pub author: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

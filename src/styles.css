@@ -542,49 +542,71 @@ textarea {
 }
 
 /* Detail panel */
-.detail-header {
+.detail-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
+  padding: 22px 24px;
 }
 
-.detail-header h2 {
+.detail-header-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.detail-branch {
   margin: 0;
+  flex: 1;
+  min-width: 0;
   font-family: "Iowan Old Style", "Georgia", serif;
   font-weight: 700;
   letter-spacing: -0.03em;
-  font-size: 1.4rem;
+  font-size: 1.3rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .detail-path {
   font-family: "SF Mono", "JetBrains Mono", monospace;
-  font-size: 0.82rem;
-  color: rgba(16, 33, 46, 0.58);
+  font-size: 0.78rem;
+  color: rgba(16, 33, 46, 0.45);
   word-break: break-all;
+  margin: 0;
 }
 
-.detail-meta {
+.detail-meta-grid {
   display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  font-size: 0.85rem;
+  gap: 0;
+  margin-top: 10px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(16, 33, 46, 0.08);
 }
 
-.detail-meta-item {
+.detail-meta-cell {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  padding: 0 18px;
+  border-left: 1px solid rgba(16, 33, 46, 0.08);
 }
 
-.detail-meta-item span:first-child {
-  color: rgba(16, 33, 46, 0.55);
-  font-size: 0.75rem;
+.detail-meta-cell:first-child {
+  padding-left: 0;
+  border-left: none;
+}
+
+.detail-meta-label {
+  color: rgba(16, 33, 46, 0.45);
+  font-size: 0.7rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
+  font-weight: 600;
 }
 
-.detail-meta-item strong {
-  font-size: 0.88rem;
+.detail-meta-cell strong {
+  font-size: 0.85rem;
 }
 
 .pr-link {
@@ -619,12 +641,11 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 5px 10px;
+  padding: 3px 9px;
   border-radius: 999px;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  white-space: nowrap;
 }
 
 .badge-neutral {
@@ -655,23 +676,6 @@ textarea {
   margin-bottom: 5px;
   color: rgba(16, 33, 46, 0.58);
   font-size: 0.82rem;
-}
-
-.port-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.port-chip {
-  min-width: 120px;
-  padding: 8px 10px;
-  border-radius: 14px;
-  background: rgba(16, 33, 46, 0.06);
-  display: grid;
-  gap: 4px;
-  font-size: 0.85rem;
 }
 
 .log-list {
@@ -916,6 +920,50 @@ textarea {
 
 .sidebar-resize-handle:hover {
   background: rgba(46, 107, 99, 0.35);
+}
+
+/* Commit list */
+.commit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.commit-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(16, 33, 46, 0.03);
+  font-size: 0.82rem;
+}
+
+.commit-sha {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: rgba(46, 107, 99, 0.8);
+}
+
+.commit-message {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.commit-author {
+  flex-shrink: 0;
+  color: rgba(88, 66, 186, 0.7);
+  font-size: 0.73rem;
+  white-space: nowrap;
+}
+
+.commit-date {
+  flex-shrink: 0;
+  color: rgba(16, 33, 46, 0.45);
+  font-size: 0.73rem;
 }
 
 /* Danger row for detail */

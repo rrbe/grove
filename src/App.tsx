@@ -19,6 +19,7 @@ import type {
   ActionResponse,
   ApprovalRequest,
   BootstrapResponse,
+  CommitSummary,
   CreateMode,
   CreateWorktreeInput,
   HookStep,
@@ -28,6 +29,8 @@ import type {
   ToolStatus,
   WorktreeRecord,
 } from "./lib/types";
+
+type TaggedLog = RunLog & { repoRoot?: string };
 
 type CreateFormState = {
   mode: CreateMode;
@@ -71,7 +74,7 @@ export default function App() {
   const [projectConfigText, setProjectConfigText] = useState("");
   const [localConfigText, setLocalConfigText] = useState("");
   const [createForm, setCreateForm] = useState<CreateFormState>(createInitialForm());
-  const [logs, setLogs] = useState<RunLog[]>([]);
+  const [logs, setLogs] = useState<TaggedLog[]>([]);
   const [prunePreview, setPrunePreview] = useState<string[]>([]);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,9 +85,8 @@ export default function App() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showHooksModal, setShowHooksModal] = useState(false);
   const [showAdvancedCreate, setShowAdvancedCreate] = useState(false);
-  const [showTooling, setShowTooling] = useState(false);
+  const [view, setView] = useState<"detail" | "settings">("detail");
   const [showActionLog, setShowActionLog] = useState(false);
-  const [showConfigEditor, setShowConfigEditor] = useState(false);
 
   const [sidebarWidth, setSidebarWidth] = useState(320);
   const isDragging = useRef(false);
@@ -162,7 +164,7 @@ export default function App() {
       const snapshot = await openRepo(trimmed);
       setRepo(snapshot);
       setRepoInput(snapshot.repoRoot);
-      appendLogs([{ level: "success", message: t.logLoaded(snapshot.repoRoot) }]);
+      appendLogs([{ level: "success", message: t.logLoaded(snapshot.repoRoot) }], snapshot.repoRoot);
     } catch (reason) {
       setError(String(reason));
     } finally {
@@ -231,9 +233,11 @@ export default function App() {
     }
   }
 
-  function appendLogs(nextLogs: RunLog[]) {
+  function appendLogs(nextLogs: RunLog[], repoRoot?: string) {
     if (nextLogs.length === 0) return;
-    setLogs((current) => [...nextLogs, ...current].slice(0, 120));
+    const root = repoRoot ?? repo?.repoRoot;
+    const tagged: TaggedLog[] = nextLogs.map((log) => ({ ...log, repoRoot: root }));
+    setLogs((current) => [...tagged, ...current].slice(0, 120));
   }
 
   async function handleSaveConfigs() {
@@ -397,6 +401,7 @@ export default function App() {
                 onSelect={() => {
                   setSelectedWorktreeId(wt.id);
                   setDeleteConfirmId(null);
+                  setView("detail");
                 }}
                 onDelete={() => {
                   if (wt.isMain) return;
@@ -485,6 +490,13 @@ export default function App() {
                 {t.hooks} ({hooks.length})
               </button>
             )}
+            <button
+              className="ghost-button"
+              onClick={() => setView((v) => (v === "settings" ? "detail" : "settings"))}
+              style={{ flex: 1 }}
+            >
+              {t.settings}
+            </button>
           </div>
         </div>
         <div
@@ -497,57 +509,65 @@ export default function App() {
         />
       </aside>
 
-      {/* Detail Panel */}
+      {/* Main Panel */}
       <main className="main">
         {error && <div className="error-banner">{error}</div>}
 
-        {!repo && (
-          <section className="hero card">
-            <h2>{t.heroTitle}</h2>
-            <p>{t.heroDescription}</p>
-            <ul className="hero-points">
-              <li>{t.heroPoint1}</li>
-              <li>{t.heroPoint2}</li>
-              <li>{t.heroPoint3}</li>
-            </ul>
-          </section>
-        )}
-
-        {repo && !selectedWorktree && (
-          <section className="hero card">
-            <h2>{t.noWorktreeSelected}</h2>
-            <p>{t.selectWorktreeHint}</p>
-          </section>
-        )}
-
-        {repo && selectedWorktree && (
-          <WorktreeDetail
-            repo={repo}
-            worktree={selectedWorktree}
-            launchers={launchers}
-            isBusy={isBusy}
-            t={t}
-            onStart={() => void handleStart(selectedWorktree)}
-            onLaunch={(launcher) => void handleLaunch(selectedWorktree, launcher)}
-            prunePreview={prunePreview}
-            onPreviewPrune={() => void handlePreviewPrune()}
-            onPrune={() => void handlePrune()}
-            onRunPostScan={() => void handleRunPostScan()}
-            showTooling={showTooling}
-            onToggleTooling={() => setShowTooling((v) => !v)}
-            toolStatuses={repo.toolStatuses ?? bootstrapState.toolStatuses}
-            showActionLog={showActionLog}
-            onToggleActionLog={() => setShowActionLog((v) => !v)}
+        {view === "settings" ? (
+          <SettingsPage
+            toolStatuses={repo?.toolStatuses ?? bootstrapState.toolStatuses}
             logs={logs}
             onClearLogs={() => setLogs([])}
-            showConfigEditor={showConfigEditor}
-            onToggleConfigEditor={() => setShowConfigEditor((v) => !v)}
+            repo={repo}
             projectConfigText={projectConfigText}
             localConfigText={localConfigText}
             onProjectConfigChange={setProjectConfigText}
             onLocalConfigChange={setLocalConfigText}
             onSaveConfigs={() => void handleSaveConfigs()}
+            isBusy={isBusy}
+            t={t}
           />
+        ) : (
+          <>
+            {!repo && (
+              <section className="hero card">
+                <h2>{t.heroTitle}</h2>
+                <p>{t.heroDescription}</p>
+                <ul className="hero-points">
+                  <li>{t.heroPoint1}</li>
+                  <li>{t.heroPoint2}</li>
+                  <li>{t.heroPoint3}</li>
+                </ul>
+              </section>
+            )}
+
+            {repo && !selectedWorktree && (
+              <section className="hero card">
+                <h2>{t.noWorktreeSelected}</h2>
+                <p>{t.selectWorktreeHint}</p>
+              </section>
+            )}
+
+            {repo && selectedWorktree && (
+              <WorktreeDetail
+                repo={repo}
+                worktree={selectedWorktree}
+                launchers={launchers}
+                isBusy={isBusy}
+                t={t}
+                onStart={() => void handleStart(selectedWorktree)}
+                onLaunch={(launcher) => void handleLaunch(selectedWorktree, launcher)}
+                prunePreview={prunePreview}
+                onPreviewPrune={() => void handlePreviewPrune()}
+                onPrune={() => void handlePrune()}
+                onRunPostScan={() => void handleRunPostScan()}
+                showActionLog={showActionLog}
+                onToggleActionLog={() => setShowActionLog((v) => !v)}
+                logs={logs.filter((l) => l.repoRoot === repo.repoRoot)}
+                onClearLogs={() => setLogs([])}
+              />
+            )}
+          </>
         )}
       </main>
 
@@ -701,7 +721,7 @@ function WorktreeListItem({
             </span>
           )}
           {worktree.headCommitDate && (
-            <span className="worktree-list-item-time">{t.lastCommit}: {relativeTime(worktree.headCommitDate, t)}</span>
+            <span className="worktree-list-item-time">{relativeTime(worktree.headCommitDate, t)}</span>
           )}
           {worktree.dirty && <Badge label={t.dirty} tone="danger" />}
         </div>
@@ -761,20 +781,10 @@ function WorktreeDetail({
   onPreviewPrune,
   onPrune,
   onRunPostScan,
-  showTooling,
-  onToggleTooling,
-  toolStatuses,
   showActionLog,
   onToggleActionLog,
   logs,
   onClearLogs,
-  showConfigEditor,
-  onToggleConfigEditor,
-  projectConfigText,
-  localConfigText,
-  onProjectConfigChange,
-  onLocalConfigChange,
-  onSaveConfigs,
 }: {
   repo: RepoSnapshot;
   worktree: WorktreeRecord;
@@ -787,28 +797,17 @@ function WorktreeDetail({
   onPreviewPrune: () => void;
   onPrune: () => void;
   onRunPostScan: () => void;
-  showTooling: boolean;
-  onToggleTooling: () => void;
-  toolStatuses: ToolStatus[];
   showActionLog: boolean;
   onToggleActionLog: () => void;
-  logs: RunLog[];
+  logs: TaggedLog[];
   onClearLogs: () => void;
-  showConfigEditor: boolean;
-  onToggleConfigEditor: () => void;
-  projectConfigText: string;
-  localConfigText: string;
-  onProjectConfigChange: (v: string) => void;
-  onLocalConfigChange: (v: string) => void;
-  onSaveConfigs: () => void;
 }) {
   return (
     <>
       {/* Worktree Header */}
-      <section className="card stack">
-        <div className="detail-header">
-          <h2>{worktree.branch ?? t.detached}</h2>
-          <p className="detail-path">{worktree.path}</p>
+      <section className="card detail-card">
+        <div className="detail-header-top">
+          <h2 className="detail-branch">{worktree.branch ?? t.detached}</h2>
           <div className="status-strip">
             <Badge label={worktree.isMain ? t.main : t.linked} tone="neutral" />
             <Badge
@@ -819,33 +818,32 @@ function WorktreeDetail({
             {worktree.prunableReason && <Badge label={t.prunable} tone="warning" />}
           </div>
         </div>
+        <p className="detail-path">{worktree.path}</p>
 
-        <div className="detail-meta">
-          <div className="detail-meta-item">
-            <span>{t.head}</span>
+        <div className="detail-meta-grid">
+          <div className="detail-meta-cell">
+            <span className="detail-meta-label">{t.head}</span>
             <strong>{worktree.headSha.slice(0, 12)}</strong>
           </div>
-          <div className="detail-meta-item">
-            <span>{t.sync}</span>
-            <strong>
-              ↑{worktree.ahead} ↓{worktree.behind}
-            </strong>
+          <div className="detail-meta-cell">
+            <span className="detail-meta-label">{t.sync}</span>
+            <strong>↑{worktree.ahead} ↓{worktree.behind}</strong>
           </div>
           {worktree.headCommitDate && (
-            <div className="detail-meta-item">
-              <span>{t.lastCommit}</span>
+            <div className="detail-meta-cell">
+              <span className="detail-meta-label">{t.lastCommit}</span>
               <strong>{relativeTime(worktree.headCommitDate, t)}</strong>
             </div>
           )}
           {worktree.lastOpenedAt && (
-            <div className="detail-meta-item">
-              <span>{t.lastLaunched}</span>
+            <div className="detail-meta-cell">
+              <span className="detail-meta-label">{t.lastLaunched}</span>
               <strong>{relativeTime(worktree.lastOpenedAt, t)}</strong>
             </div>
           )}
           {worktree.prNumber && worktree.prUrl && (
-            <div className="detail-meta-item">
-              <span>{t.pullRequest}</span>
+            <div className="detail-meta-cell">
+              <span className="detail-meta-label">{t.pullRequest}</span>
               <a
                 className="pr-link"
                 href={worktree.prUrl}
@@ -858,6 +856,20 @@ function WorktreeDetail({
           )}
         </div>
       </section>
+
+      {/* Recent Commits */}
+      {worktree.recentCommits.length > 0 && (
+        <section className="card stack">
+          <div className="section-heading">
+            <span>{t.recentCommits}</span>
+          </div>
+          <div className="commit-list">
+            {worktree.recentCommits.map((commit) => (
+              <CommitRow key={commit.sha} commit={commit} t={t} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Action Buttons */}
       <section className="card stack">
@@ -884,33 +896,6 @@ function WorktreeDetail({
           </button>
         </div>
       </section>
-
-      {/* Warmup Info */}
-      {(worktree.warmupPreview.copyCandidates.length > 0 ||
-        worktree.warmupPreview.ports.length > 0) && (
-        <section className="card stack">
-          <div className="section-heading">
-            <span>{t.warmup}</span>
-          </div>
-          {worktree.warmupPreview.copyCandidates.length > 0 && (
-            <div className="inline-panel">
-              <strong>{t.copyCandidates}</strong>
-              <p>{worktree.warmupPreview.copyCandidates.join(", ")}</p>
-            </div>
-          )}
-          {worktree.warmupPreview.ports.length > 0 && (
-            <div className="port-list">
-              {worktree.warmupPreview.ports.map((port) => (
-                <div key={port.name} className="port-chip">
-                  <span>{port.name}</span>
-                  <code>{port.port}</code>
-                  {port.url && <small>{port.url}</small>}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
 
       {/* Repo Overview */}
       <section className="card stack">
@@ -953,23 +938,6 @@ function WorktreeDetail({
         )}
       </section>
 
-      {/* Tooling (collapsible) */}
-      <section className="card">
-        <div className="collapsible-header" onClick={onToggleTooling}>
-          <span className="section-heading" style={{ flex: 1 }}>
-            {t.tooling}
-          </span>
-          <span className="subtle">{showTooling ? "▾" : "▸"}</span>
-        </div>
-        {showTooling && (
-          <div className="tool-list" style={{ marginTop: 8 }}>
-            {toolStatuses.map((tool) => (
-              <ToolRow key={tool.id} tool={tool} t={t} />
-            ))}
-          </div>
-        )}
-      </section>
-
       {/* Action Log (collapsible) */}
       <section className="card">
         <div className="collapsible-header" onClick={onToggleActionLog}>
@@ -999,15 +967,91 @@ function WorktreeDetail({
         )}
       </section>
 
-      {/* Config Editor (collapsible) */}
-      <section className="card">
-        <div className="collapsible-header" onClick={onToggleConfigEditor}>
+    </>
+  );
+}
+
+/* ─── SettingsPage ─── */
+
+function SettingsPage({
+  toolStatuses,
+  logs,
+  onClearLogs,
+  repo,
+  projectConfigText,
+  localConfigText,
+  onProjectConfigChange,
+  onLocalConfigChange,
+  onSaveConfigs,
+  isBusy,
+  t,
+}: {
+  toolStatuses: ToolStatus[];
+  logs: TaggedLog[];
+  onClearLogs: () => void;
+  repo: RepoSnapshot | null;
+  projectConfigText: string;
+  localConfigText: string;
+  onProjectConfigChange: (v: string) => void;
+  onLocalConfigChange: (v: string) => void;
+  onSaveConfigs: () => void;
+  isBusy: boolean;
+  t: Translations;
+}) {
+  const [showConfigEditor, setShowConfigEditor] = useState(false);
+
+  return (
+    <>
+      {/* Tooling — always expanded */}
+      <section className="card stack">
+        <div className="section-heading">
+          <span>{t.tooling}</span>
+        </div>
+        <div className="tool-list">
+          {toolStatuses.map((tool) => (
+            <ToolRow key={tool.id} tool={tool} t={t} />
+          ))}
+        </div>
+      </section>
+
+      {/* All Logs — always expanded */}
+      <section className="card stack">
+        <div className="section-heading">
+          <span>{t.allLogs}</span>
+          {logs.length > 0 && <span className="subtle">{logs.length}</span>}
+          <button
+            className="ghost-button"
+            onClick={onClearLogs}
+            style={{ fontSize: "0.78rem", padding: "4px 10px", marginLeft: "auto" }}
+          >
+            {t.clear}
+          </button>
+        </div>
+        <div className="log-list">
+          {logs.length === 0 && <p className="empty-copy">{t.noActionsYet}</p>}
+          {logs.map((log, i) => {
+            const repoShort = log.repoRoot?.split("/").pop() ?? "";
+            return (
+              <div key={`${log.message}-${i}`} className={`log-item log-${log.level}`}>
+                <strong>
+                  {repoShort && `[${repoShort}] `}{log.level}
+                </strong>
+                <span>{log.message}</span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Config Files — collapsible, disabled */}
+      <section className="card" style={{ opacity: 0.6 }}>
+        <div className="collapsible-header" onClick={() => setShowConfigEditor((v) => !v)}>
           <span className="section-heading" style={{ flex: 1 }}>
-            {t.configFiles}
+            {t.configFiles} <span className="subtle">({t.comingSoon})</span>
           </span>
           <span className="subtle">{showConfigEditor ? "▾" : "▸"}</span>
         </div>
-        {showConfigEditor && (
+        {showConfigEditor && repo && (
           <div className="stack" style={{ marginTop: 8 }}>
             <div className="path-grid">
               <div>
@@ -1025,6 +1069,7 @@ function WorktreeDetail({
                 value={projectConfigText}
                 onChange={(e) => onProjectConfigChange(e.target.value)}
                 rows={14}
+                disabled
               />
             </label>
             <label className="field-label">
@@ -1033,9 +1078,10 @@ function WorktreeDetail({
                 value={localConfigText}
                 onChange={(e) => onLocalConfigChange(e.target.value)}
                 rows={8}
+                disabled
               />
             </label>
-            <button className="primary-button" onClick={onSaveConfigs} disabled={isBusy}>
+            <button className="primary-button" onClick={onSaveConfigs} disabled>
               {t.saveConfig}
             </button>
           </div>
@@ -1120,6 +1166,17 @@ function ToolRow({ tool, t }: { tool: ToolStatus; t: Translations }) {
         <p>{tool.location ?? t.notDetected}</p>
       </div>
       <Badge label={tool.available ? t.ready : t.missing} tone={tool.available ? "good" : "warning"} />
+    </div>
+  );
+}
+
+function CommitRow({ commit, t }: { commit: CommitSummary; t: Translations }) {
+  return (
+    <div className="commit-row">
+      <code className="commit-sha">{commit.sha.slice(0, 8)}</code>
+      <span className="commit-message">{commit.message}</span>
+      {commit.author && <span className="commit-author">@{commit.author}</span>}
+      <span className="commit-date">{relativeTime(commit.date, t)}</span>
     </div>
   );
 }

@@ -48,8 +48,9 @@ export interface Translations {
   runPostStart: string;
   notDetected: string;
   notDetectedSuffix: (name: string) => string;
-  warmup: string;
-  copyCandidates: string;
+  settings: string;
+  comingSoon: string;
+  allLogs: string;
   worktreeCount: (n: number) => string;
   baseBranch: string;
   previewPrune: string;
@@ -89,4 +90,5 @@ export interface Translations {
   langZhCN: string;
   langEn: string;
   recentRepos: string;
+  recentCommits: string;
 }

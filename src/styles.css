@@ -95,6 +95,13 @@ pre {
   padding: 0 4px;
 }
 
+.brand-mark {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  filter: drop-shadow(0 10px 22px rgba(16, 33, 46, 0.18));
+}
+
 .brand h1 {
   margin: 0;
   font-family: "SF Mono", "JetBrains Mono", monospace;
@@ -106,8 +113,6 @@ pre {
 .brand p {
   display: none;
 }
-
-/* brand-badge removed — reserved for app icon */
 
 .hero h2,
 .overview h2 {

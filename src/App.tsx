@@ -1,6 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
+import groveMark from "./assets/grove-mark.svg";
 import {
   approveRepoCommands,
   bootstrap,
@@ -358,6 +359,7 @@ export default function App() {
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="brand">
+          <img className="brand-mark" src={groveMark} alt="" aria-hidden="true" />
           <h1>{t.brandName}</h1>
           <LanguageSwitcher locale={locale} setLocale={setLocale} />
         </div>

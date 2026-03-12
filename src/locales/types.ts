@@ -45,7 +45,7 @@ export interface Translations {
   sync: string;
   lastLaunched: string;
   pullRequest: string;
-  actions: string;
+  launchers: string;
   runPostStart: string;
   notDetected: string;
   notDetectedSuffix: (name: string) => string;
@@ -59,9 +59,9 @@ export interface Translations {
   prune: string;
   prunePreview: string;
   tooling: string;
-  actionLog: string;
+  logs: string;
   clear: string;
-  noActionsYet: string;
+  noLogsYet: string;
   configFiles: string;
   project: string;
   local: string;
@@ -87,6 +87,9 @@ export interface Translations {
   logNoPruneCandidates: string;
   openInFinder: string;
   lastCommit: string;
+  branchLabel: string;
+  directoryLabel: string;
+  copied: string;
   language: string;
   langZhCN: string;
   langEn: string;

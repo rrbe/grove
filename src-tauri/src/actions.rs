@@ -764,19 +764,26 @@ impl ExecutionStep {
                 logs.push(info(format!("{label}: {command_preview}")));
                 match launcher.kind {
                     LauncherKind::App => {
-                        let mut command = Command::new("open");
-                        command
-                            .arg("-a")
-                            .arg(&launcher.app_or_cmd)
-                            .args(&rendered_args);
-                        let output = command.current_dir(&cwd).output().map_err(|error| {
-                            format!("failed to launch {}: {error}", launcher.name)
-                        })?;
-                        if !output.status.success() {
-                            return Err(format!(
-                                "{} failed with status {}",
-                                launcher.name, output.status
-                            ));
+                        let app_name = launcher.app_or_cmd.as_str();
+                        if matches!(app_name, "Terminal" | "Ghostty" | "iTerm2") {
+                            let worktree_path = &context.values["worktree_path"];
+                            open_terminal_app(app_name, worktree_path)?;
+                        } else {
+                            let mut command = Command::new("open");
+                            command
+                                .arg("-a")
+                                .arg(&launcher.app_or_cmd)
+                                .args(&rendered_args);
+                            let output =
+                                command.current_dir(&cwd).output().map_err(|error| {
+                                    format!("failed to launch {}: {error}", launcher.name)
+                                })?;
+                            if !output.status.success() {
+                                return Err(format!(
+                                    "{} failed with status {}",
+                                    launcher.name, output.status
+                                ));
+                            }
                         }
                     }
                     LauncherKind::TerminalCli => {
@@ -821,6 +828,66 @@ fn open_terminal_at(cwd: &Path, command: &str, context: &TemplateContext) -> Res
     if !output.status.success() {
         return Err(format!(
             "failed to open Terminal.app, osascript exited with {}",
+            output.status
+        ));
+    }
+    Ok(())
+}
+
+fn open_terminal_app(app_name: &str, cwd: &str) -> Result<(), String> {
+    let script = match app_name {
+        "Terminal" => {
+            format!(
+                "tell application \"Terminal\" to do script {}\ntell application \"Terminal\" to activate",
+                apple_quote(&format!("cd {}", shell_quote(cwd)))
+            )
+        }
+        "Ghostty" => {
+            // Try AppleScript first, fallback to open -a
+            let applescript = format!(
+                "tell application \"Ghostty\"\nactivate\ndelay 0.5\ntell application \"System Events\" to tell process \"Ghostty\" to keystroke \"t\" using command down\ndelay 0.3\ntell application \"System Events\" to tell process \"Ghostty\" to keystroke \"cd {} && clear\\n\"\nend tell",
+                shell_quote(cwd).replace('\'', "")
+            );
+            let output = Command::new("osascript")
+                .arg("-e")
+                .arg(&applescript)
+                .output();
+            match output {
+                Ok(out) if out.status.success() => return Ok(()),
+                _ => {
+                    // Fallback: open -a Ghostty
+                    let output = Command::new("open")
+                        .arg("-a")
+                        .arg("Ghostty")
+                        .arg(cwd)
+                        .output()
+                        .map_err(|e| format!("failed to open Ghostty: {e}"))?;
+                    if !output.status.success() {
+                        return Err(format!(
+                            "Ghostty failed with status {}",
+                            output.status
+                        ));
+                    }
+                    return Ok(());
+                }
+            }
+        }
+        "iTerm2" => {
+            format!(
+                "tell application \"iTerm2\"\nactivate\nset newWindow to (create window with default profile)\ntell current session of newWindow\nwrite text {}\nend tell\nend tell",
+                apple_quote(&format!("cd {}", shell_quote(cwd)))
+            )
+        }
+        _ => return Err(format!("unsupported terminal app: {app_name}")),
+    };
+    let output = Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
+        .output()
+        .map_err(|e| format!("failed to open {app_name}: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "{app_name} osascript failed with status {}",
             output.status
         ));
     }

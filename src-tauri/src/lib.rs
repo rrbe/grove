@@ -219,9 +219,11 @@ pub fn run() {
 
 fn detect_tools() -> Vec<models::ToolStatus> {
     vec![
-        tool_status("terminal", "Terminal", true, None, "app"),
         app_status("vscode", "VS Code", "Visual Studio Code"),
         app_status("cursor", "Cursor", "Cursor"),
+        tool_status("terminal", "Terminal", true, None, "app"),
+        app_status("ghostty", "Ghostty", "Ghostty"),
+        app_status("iterm2", "iTerm2", "iTerm2"),
         cli_status("claude", "Claude CLI"),
         cli_status("codex", "Codex CLI"),
         cli_status("gemini", "Gemini CLI"),

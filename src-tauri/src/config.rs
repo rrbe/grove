@@ -47,7 +47,7 @@ pub fn load(repo_root: &Path) -> Result<LoadedConfig, String> {
     let mut merged = builtin_config();
     // Auto-detect default branch from git before applying user config
     merged.settings.default_base_branch = git::detect_default_branch(repo_root);
-    if !project_text.trim().is_empty() {
+    if project_exists && !project_text.trim().is_empty() {
         match toml::from_str::<ConfigFile>(&project_text) {
             Ok(file) => merged = merge_config(merged, file),
             Err(error) => errors.push(format!("project config parse error: {error}")),
@@ -128,15 +128,6 @@ pub fn builtin_config() -> ResolvedConfig {
 fn builtin_launchers() -> Vec<LauncherProfile> {
     vec![
         LauncherProfile {
-            id: "terminal".into(),
-            name: "Terminal".into(),
-            kind: LauncherKind::App,
-            app_or_cmd: "Terminal".into(),
-            args_template: vec!["{worktree_path}".into()],
-            open_in_terminal: false,
-            prompt_template: None,
-        },
-        LauncherProfile {
             id: "vscode".into(),
             name: "VS Code".into(),
             kind: LauncherKind::App,
@@ -150,6 +141,33 @@ fn builtin_launchers() -> Vec<LauncherProfile> {
             name: "Cursor".into(),
             kind: LauncherKind::App,
             app_or_cmd: "Cursor".into(),
+            args_template: vec!["{worktree_path}".into()],
+            open_in_terminal: false,
+            prompt_template: None,
+        },
+        LauncherProfile {
+            id: "terminal".into(),
+            name: "Terminal".into(),
+            kind: LauncherKind::App,
+            app_or_cmd: "Terminal".into(),
+            args_template: vec!["{worktree_path}".into()],
+            open_in_terminal: false,
+            prompt_template: None,
+        },
+        LauncherProfile {
+            id: "ghostty".into(),
+            name: "Ghostty".into(),
+            kind: LauncherKind::App,
+            app_or_cmd: "Ghostty".into(),
+            args_template: vec!["{worktree_path}".into()],
+            open_in_terminal: false,
+            prompt_template: None,
+        },
+        LauncherProfile {
+            id: "iterm2".into(),
+            name: "iTerm2".into(),
+            kind: LauncherKind::App,
+            app_or_cmd: "iTerm2".into(),
             args_template: vec!["{worktree_path}".into()],
             open_in_terminal: false,
             prompt_template: None,

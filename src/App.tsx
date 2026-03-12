@@ -51,6 +51,13 @@ const createInitialForm = (repo?: RepoSnapshot): CreateFormState => ({
   autoStartLaunchers: [],
 });
 
+const copySvg = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+);
+
 function relativeTime(iso: string, t: Translations): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
@@ -775,12 +782,30 @@ function WorktreeDetail({
   logs: TaggedLog[];
   onClearLogs: () => void;
 }) {
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 1500);
+    });
+  };
+
   return (
     <>
       {/* Worktree Header */}
       <section className="card detail-card">
-        <div className="detail-header-top">
+        <div className="detail-field">
+          <span className="detail-field-label">{t.branchLabel}</span>
           <h2 className="detail-branch">{worktree.branch ?? t.detached}</h2>
+          {worktree.branch && (
+            <button
+              className={`copy-btn${copiedField === "branch" ? " copied" : ""}`}
+              onClick={() => copyToClipboard(worktree.branch!, "branch")}
+              title={t.branchLabel}
+            >
+              {copiedField === "branch" ? t.copied : copySvg}
+            </button>
+          )}
           <div className="status-strip">
             <Badge label={worktree.isMain ? t.main : t.linked} tone="neutral" />
             <Badge
@@ -791,7 +816,17 @@ function WorktreeDetail({
             {worktree.prunableReason && <Badge label={t.prunable} tone="warning" />}
           </div>
         </div>
-        <p className="detail-path">{worktree.path}</p>
+        <div className="detail-field">
+          <span className="detail-field-label">{t.directoryLabel}</span>
+          <span className="detail-field-value mono">{worktree.path}</span>
+          <button
+            className={`copy-btn${copiedField === "path" ? " copied" : ""}`}
+            onClick={() => copyToClipboard(worktree.path, "path")}
+            title={t.directoryLabel}
+          >
+            {copiedField === "path" ? t.copied : copySvg}
+          </button>
+        </div>
 
         <div className="detail-meta-grid">
           <div className="detail-meta-cell">
@@ -847,7 +882,7 @@ function WorktreeDetail({
       {/* Action Buttons */}
       <section className="card stack">
         <div className="section-heading">
-          <span>{t.actions}</span>
+          <span>{t.launchers}</span>
         </div>
         <div className="action-grid">
           {launchers.map((launcher) => {
@@ -874,7 +909,7 @@ function WorktreeDetail({
       <section className="card">
         <div className="collapsible-header" onClick={onToggleActionLog}>
           <span className="section-heading" style={{ flex: 1 }}>
-            {t.actionLog}
+            {t.logs}
             {logs.length > 0 && <span className="subtle" style={{ marginLeft: 8 }}>{logs.length}</span>}
           </span>
           <span className="subtle">{showActionLog ? "▾" : "▸"}</span>
@@ -887,7 +922,7 @@ function WorktreeDetail({
               </button>
             </div>
             <div className="log-list">
-              {logs.length === 0 && <p className="empty-copy">{t.noActionsYet}</p>}
+              {logs.length === 0 && <p className="empty-copy">{t.noLogsYet}</p>}
               {logs.map((log, i) => (
                 <div key={`${log.message}-${i}`} className={`log-item log-${log.level}`}>
                   <strong>{log.level}</strong>
@@ -1005,7 +1040,7 @@ function SettingsPage({
           </button>
         </div>
         <div className="log-list">
-          {logs.length === 0 && <p className="empty-copy">{t.noActionsYet}</p>}
+          {logs.length === 0 && <p className="empty-copy">{t.noLogsYet}</p>}
           {logs.map((log, i) => {
             const repoShort = log.repoRoot?.split("/").pop() ?? "";
             return (

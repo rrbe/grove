@@ -256,6 +256,13 @@ textarea {
   background: rgba(16, 33, 46, 0.04);
 }
 
+.tool-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
 .tool-row p,
 .path-grid p {
   margin: 4px 0 0;
@@ -544,6 +551,158 @@ textarea {
   padding: 10px 14px;
   font-size: 0.85rem;
   border-radius: 14px;
+  min-height: 58px;
+  text-align: left;
+  justify-content: flex-start;
+}
+
+.launcher-button-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.launcher-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.launcher-copy > span:first-child {
+  font-weight: 600;
+}
+
+.launcher-icon-shell {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid rgba(16, 33, 46, 0.08);
+  background: rgba(255, 255, 255, 0.74);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.launcher-icon-shell[data-launcher-id="vscode"] {
+  background: rgba(0, 122, 204, 0.14);
+}
+
+.launcher-icon-shell[data-launcher-id="cursor"] {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.14), transparent 38%),
+    linear-gradient(180deg, #20242a 0%, #08090b 100%);
+  border-color: rgba(16, 33, 46, 0.18);
+}
+
+.launcher-icon-shell[data-launcher-id="terminal"] {
+  background:
+    radial-gradient(circle at top left, rgba(106, 255, 149, 0.18), transparent 42%),
+    linear-gradient(180deg, #20262d 0%, #11161b 100%);
+  border-color: rgba(16, 33, 46, 0.16);
+}
+
+.launcher-icon-shell[data-launcher-id="ghostty"] {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.16), transparent 34%),
+    linear-gradient(135deg, #5a69ff 0%, #7a4df3 52%, #a23cf1 100%);
+  border-color: rgba(90, 105, 255, 0.28);
+}
+
+.launcher-icon-shell[data-launcher-id="iterm2"] {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.12), transparent 34%),
+    radial-gradient(circle at 50% 120%, rgba(99, 0, 124, 0.55), transparent 52%),
+    linear-gradient(180deg, #0f1115 0%, #040507 100%);
+  border-color: rgba(255, 255, 255, 0.08);
+  border-radius: 11px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 4px 10px rgba(0, 0, 0, 0.14);
+}
+
+.launcher-icon-shell[data-launcher-id="claude"] {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.16), transparent 34%),
+    linear-gradient(180deg, #df7c57 0%, #d86f4b 100%);
+  border-color: rgba(205, 95, 47, 0.28);
+  border-radius: 11px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 4px 10px rgba(179, 88, 48, 0.18);
+}
+
+.launcher-icon-shell[data-launcher-id="codex"] {
+  background: rgba(69, 80, 93, 0.14);
+}
+
+.launcher-icon-shell[data-launcher-id="gemini"] {
+  background: rgba(107, 99, 246, 0.14);
+}
+
+.launcher-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  display: block;
+}
+
+.launcher-icon-shell[data-launcher-id="vscode"] .launcher-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.launcher-icon-shell[data-launcher-id="terminal"] .launcher-icon {
+  filter: brightness(0) invert(1);
+}
+
+.launcher-icon-shell[data-launcher-id="cursor"] .launcher-icon {
+  filter: brightness(0) invert(1);
+}
+
+.launcher-icon-shell[data-launcher-id="ghostty"] .launcher-icon {
+  filter: brightness(0) invert(1);
+}
+
+.iterm2-glyph {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: #2bf15c;
+  text-shadow: 0 0 6px rgba(43, 241, 92, 0.28);
+}
+
+.iterm2-dollar {
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+  font-size: 1rem;
+  line-height: 1;
+  font-weight: 700;
+  transform: translateY(-0.5px);
+}
+
+.iterm2-cursor {
+  width: 3px;
+  height: 14px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 6px rgba(43, 241, 92, 0.32);
+}
+
+.claude-app-glyph {
+  width: 19px;
+  height: 19px;
+  color: #fffaf6;
+  display: block;
+}
+
+.launcher-icon-fallback {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .launcher-terminal-hint {

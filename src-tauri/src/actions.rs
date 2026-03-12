@@ -67,6 +67,7 @@ enum ExecutionStep {
         rendered_args: Vec<String>,
         approval: Option<ApprovalRequest>,
         context: TemplateContext,
+        terminal_id: Option<String>,
     },
 }
 
@@ -74,6 +75,7 @@ pub fn create_worktree(
     app: &AppHandle,
     state: &SharedState,
     input: CreateWorktreeInput,
+    default_terminal: Option<&str>,
 ) -> Result<ActionResponse, String> {
     let repo_root = git::resolve_repo_root(&input.repo_root)?;
     let loaded = config::load(&repo_root)?;
@@ -118,6 +120,7 @@ pub fn create_worktree(
         &loaded,
         HookEvent::PreCreate,
         &context,
+        default_terminal,
     )?);
     steps.push(ExecutionStep::GitCreate {
         repo_root: repo_root.clone(),
@@ -143,6 +146,7 @@ pub fn create_worktree(
         &loaded,
         HookEvent::PostCreate,
         &context,
+        default_terminal,
     )?);
 
     if !input.auto_start_launchers.is_empty() {
@@ -151,6 +155,7 @@ pub fn create_worktree(
             &loaded,
             HookEvent::PostStart,
             &context,
+            default_terminal,
         )?);
         for launcher_id in &input.auto_start_launchers {
             steps.extend(plan_launch_action(
@@ -160,6 +165,7 @@ pub fn create_worktree(
                 launcher_id,
                 None,
                 false,
+                default_terminal,
             )?);
         }
     }
@@ -171,6 +177,7 @@ pub fn remove_worktree(
     app: &AppHandle,
     state: &SharedState,
     input: RemoveWorktreeInput,
+    default_terminal: Option<&str>,
 ) -> Result<ActionResponse, String> {
     let repo_root = git::resolve_repo_root(&input.repo_root)?;
     let loaded = config::load(&repo_root)?;
@@ -184,7 +191,7 @@ pub fn remove_worktree(
         return Err("cannot remove the main worktree".into());
     }
     let context = build_context_from_worktree(&repo_root, &loaded, worktree, false);
-    let mut steps = plan_hooks(&repo_root, &loaded, HookEvent::PreRemove, &context)?;
+    let mut steps = plan_hooks(&repo_root, &loaded, HookEvent::PreRemove, &context, default_terminal)?;
     steps.push(ExecutionStep::GitRemove {
         repo_root: repo_root.clone(),
         worktree_path: PathBuf::from(&worktree.path),
@@ -196,6 +203,7 @@ pub fn remove_worktree(
         &loaded,
         HookEvent::PostRemove,
         &context,
+        default_terminal,
     )?);
     execute(app, state, &repo_root, steps)
 }
@@ -204,6 +212,7 @@ pub fn start_worktree(
     app: &AppHandle,
     state: &SharedState,
     input: StartWorktreeInput,
+    default_terminal: Option<&str>,
 ) -> Result<ActionResponse, String> {
     run_event_internal(
         app,
@@ -211,6 +220,7 @@ pub fn start_worktree(
         input.repo_root,
         HookEvent::PostStart,
         Some(input.worktree_path),
+        default_terminal,
     )
 }
 
@@ -218,6 +228,7 @@ pub fn run_hook_event(
     app: &AppHandle,
     state: &SharedState,
     input: RunHookEventInput,
+    default_terminal: Option<&str>,
 ) -> Result<ActionResponse, String> {
     run_event_internal(
         app,
@@ -225,6 +236,7 @@ pub fn run_hook_event(
         input.repo_root,
         input.event,
         input.worktree_path,
+        default_terminal,
     )
 }
 
@@ -232,6 +244,7 @@ pub fn launch_worktree(
     app: &AppHandle,
     state: &SharedState,
     input: LaunchWorktreeInput,
+    default_terminal: Option<&str>,
 ) -> Result<ActionResponse, String> {
     let repo_root = git::resolve_repo_root(&input.repo_root)?;
     let loaded = config::load(&repo_root)?;
@@ -242,7 +255,7 @@ pub fn launch_worktree(
     )?;
     let worktree = find_worktree(&worktrees, &input.worktree_path)?;
     let context = build_context_from_worktree(&repo_root, &loaded, worktree, false);
-    let mut steps = plan_hooks(&repo_root, &loaded, HookEvent::PreLaunch, &context)?;
+    let mut steps = plan_hooks(&repo_root, &loaded, HookEvent::PreLaunch, &context, default_terminal)?;
     steps.extend(plan_launch_action(
         &repo_root,
         &loaded,
@@ -250,12 +263,14 @@ pub fn launch_worktree(
         &input.launcher_id,
         input.prompt_override.as_deref(),
         true,
+        default_terminal,
     )?);
     steps.extend(plan_hooks(
         &repo_root,
         &loaded,
         HookEvent::PostLaunch,
         &context,
+        default_terminal,
     )?);
     execute(app, state, &repo_root, steps)
 }
@@ -283,6 +298,7 @@ fn run_event_internal(
     repo_root: String,
     event: HookEvent,
     worktree_path: Option<String>,
+    default_terminal: Option<&str>,
 ) -> Result<ActionResponse, String> {
     let repo_root = git::resolve_repo_root(&repo_root)?;
     let loaded = config::load(&repo_root)?;
@@ -306,7 +322,7 @@ fn run_event_internal(
             &loaded,
         )
     };
-    let steps = plan_hooks(&repo_root, &loaded, event, &worktree_context)?;
+    let steps = plan_hooks(&repo_root, &loaded, event, &worktree_context, default_terminal)?;
     execute(app, state, &repo_root, steps)
 }
 
@@ -356,6 +372,7 @@ fn plan_hooks(
     loaded: &LoadedConfig,
     event: HookEvent,
     context: &TemplateContext,
+    default_terminal: Option<&str>,
 ) -> Result<Vec<ExecutionStep>, String> {
     let mut steps = Vec::new();
     let hook_cwd = if matches!(event, HookEvent::PreCreate | HookEvent::PostScan) {
@@ -403,6 +420,7 @@ fn plan_hooks(
                     launcher_id,
                     hook.prompt_template.as_deref(),
                     true,
+                    default_terminal,
                 )?);
             }
         }
@@ -411,12 +429,13 @@ fn plan_hooks(
 }
 
 fn plan_launch_action(
-    repo_root: &Path,
+    _repo_root: &Path,
     loaded: &LoadedConfig,
     context: &TemplateContext,
     launcher_id: &str,
     prompt_override: Option<&str>,
     include_label: bool,
+    default_terminal: Option<&str>,
 ) -> Result<Vec<ExecutionStep>, String> {
     let launcher = loaded
         .merged
@@ -447,16 +466,7 @@ fn plan_launch_action(
             .trim()
             .to_string(),
     };
-    let approval = if matches!(launcher.kind, LauncherKind::TerminalCli) {
-        Some(build_approval(
-            repo_root,
-            &format!("launcher:{launcher_id}"),
-            &context.values["worktree_path"],
-            &command_preview,
-        ))
-    } else {
-        None
-    };
+    let approval = None;
 
     Ok(vec![ExecutionStep::Launch {
         label: if include_label {
@@ -470,6 +480,7 @@ fn plan_launch_action(
         rendered_args,
         approval,
         context: context.clone(),
+        terminal_id: default_terminal.map(String::from),
     }])
 }
 
@@ -759,6 +770,7 @@ impl ExecutionStep {
                 command_preview,
                 rendered_args,
                 context,
+                terminal_id,
                 ..
             } => {
                 logs.push(info(format!("{label}: {command_preview}")));
@@ -788,7 +800,8 @@ impl ExecutionStep {
                     }
                     LauncherKind::TerminalCli => {
                         let command = render_terminal_command(&launcher.app_or_cmd, &rendered_args);
-                        open_terminal_at(&cwd, &command, &context)?;
+                        let term = terminal_id.as_deref().unwrap_or("terminal");
+                        open_terminal_at(term, &cwd, &command, &context)?;
                     }
                 }
                 Ok(())
@@ -803,7 +816,12 @@ fn render_terminal_command(cmd: &str, args: &[String]) -> String {
     parts.join(" ")
 }
 
-fn open_terminal_at(cwd: &Path, command: &str, context: &TemplateContext) -> Result<(), String> {
+fn open_terminal_at(
+    terminal_id: &str,
+    cwd: &Path,
+    command: &str,
+    context: &TemplateContext,
+) -> Result<(), String> {
     let mut script = format!("cd {} && {}", shell_quote(&cwd.to_string_lossy()), command);
     let env_exports = build_envs(context)
         .into_iter()
@@ -813,12 +831,21 @@ fn open_terminal_at(cwd: &Path, command: &str, context: &TemplateContext) -> Res
     if !env_exports.is_empty() {
         script = format!("{env_exports}; {script}");
     }
+
+    match terminal_id {
+        "iterm2" => run_script_in_iterm2(&script),
+        "ghostty" => run_script_in_ghostty(&script),
+        _ => run_script_in_terminal_app(&script),
+    }
+}
+
+fn run_script_in_terminal_app(script: &str) -> Result<(), String> {
     let output = Command::new("osascript")
         .args([
             "-e",
             &format!(
                 "tell application \"Terminal\" to do script {}",
-                apple_quote(&script)
+                apple_quote(script)
             ),
             "-e",
             "tell application \"Terminal\" to activate",
@@ -832,6 +859,64 @@ fn open_terminal_at(cwd: &Path, command: &str, context: &TemplateContext) -> Res
         ));
     }
     Ok(())
+}
+
+fn run_script_in_iterm2(script: &str) -> Result<(), String> {
+    let applescript = format!(
+        "tell application \"iTerm2\"\nactivate\nset newWindow to (create window with default profile)\ntell current session of newWindow\nwrite text {}\nend tell\nend tell",
+        apple_quote(script)
+    );
+    let output = Command::new("osascript")
+        .arg("-e")
+        .arg(&applescript)
+        .output()
+        .map_err(|e| format!("failed to open iTerm2: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "iTerm2 osascript failed with status {}",
+            output.status
+        ));
+    }
+    Ok(())
+}
+
+fn run_script_in_ghostty(script: &str) -> Result<(), String> {
+    // Write script to temp file to avoid fragile keystroke simulation for long commands
+    use std::io::Write;
+    let hash = {
+        let mut hasher = Sha256::new();
+        hasher.update(script.as_bytes());
+        format!("{:x}", hasher.finalize())
+    };
+    let tmp_path = format!("/tmp/grove-{}.sh", &hash[..12]);
+    {
+        let mut file = fs::File::create(&tmp_path)
+            .map_err(|e| format!("failed to create temp script: {e}"))?;
+        file.write_all(script.as_bytes())
+            .map_err(|e| format!("failed to write temp script: {e}"))?;
+    }
+
+    let invoke_cmd = format!(
+        "bash {} ; rm -f {}",
+        shell_quote(&tmp_path),
+        shell_quote(&tmp_path)
+    );
+    let applescript = format!(
+        "tell application \"Ghostty\"\nactivate\ndelay 0.5\ntell application \"System Events\" to tell process \"Ghostty\" to keystroke \"t\" using command down\ndelay 0.3\ntell application \"System Events\" to tell process \"Ghostty\" to keystroke {}\nend tell",
+        apple_quote(&format!("{invoke_cmd}\n"))
+    );
+    let output = Command::new("osascript")
+        .arg("-e")
+        .arg(&applescript)
+        .output();
+    match output {
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(out) => Err(format!(
+            "Ghostty osascript failed with status {}",
+            out.status
+        )),
+        Err(e) => Err(format!("failed to open Ghostty: {e}")),
+    }
 }
 
 fn open_terminal_app(app_name: &str, cwd: &str) -> Result<(), String> {

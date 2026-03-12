@@ -29,6 +29,8 @@ pub struct AppStore {
     pub last_active_repo: Option<String>,
     #[serde(default)]
     pub pr_cache: BTreeMap<String, PrCacheEntry>,
+    #[serde(default)]
+    pub default_terminal: Option<String>,
 }
 
 pub struct SharedState {

@@ -121,7 +121,8 @@ fn create_repo_worktree(
     state: State<'_, SharedState>,
     input: CreateWorktreeInput,
 ) -> Result<models::ActionResponse, String> {
-    create_worktree(&app, &state, input)
+    let dt = read_default_terminal(&state);
+    create_worktree(&app, &state, input, dt.as_deref())
 }
 
 #[tauri::command]
@@ -130,7 +131,8 @@ fn remove_repo_worktree(
     state: State<'_, SharedState>,
     input: RemoveWorktreeInput,
 ) -> Result<models::ActionResponse, String> {
-    remove_worktree(&app, &state, input)
+    let dt = read_default_terminal(&state);
+    remove_worktree(&app, &state, input, dt.as_deref())
 }
 
 #[tauri::command]
@@ -139,7 +141,8 @@ fn start_repo_worktree(
     state: State<'_, SharedState>,
     input: StartWorktreeInput,
 ) -> Result<models::ActionResponse, String> {
-    let response = start_worktree(&app, &state, input.clone())?;
+    let dt = read_default_terminal(&state);
+    let response = start_worktree(&app, &state, input.clone(), dt.as_deref())?;
     if response.status == models::ActionStatus::Completed {
         let _ = mark_worktree_opened(&app, &state, &input.worktree_path);
     }
@@ -152,6 +155,7 @@ fn launch_repo_worktree(
     state: State<'_, SharedState>,
     input: LaunchWorktreeInput,
 ) -> Result<models::ActionResponse, String> {
+    let dt = read_default_terminal(&state);
     if let Ok(repo_root) = git::resolve_repo_root(&input.repo_root) {
         let response = launch_worktree(
             &app,
@@ -160,13 +164,14 @@ fn launch_repo_worktree(
                 repo_root: repo_root.to_string_lossy().to_string(),
                 ..input.clone()
             },
+            dt.as_deref(),
         )?;
         if response.status == models::ActionStatus::Completed {
             let _ = mark_worktree_opened(&app, &state, &input.worktree_path);
         }
         return Ok(response);
     }
-    launch_worktree(&app, &state, input)
+    launch_worktree(&app, &state, input, dt.as_deref())
 }
 
 #[tauri::command]
@@ -175,7 +180,8 @@ fn run_repo_hook_event(
     state: State<'_, SharedState>,
     input: RunHookEventInput,
 ) -> Result<models::ActionResponse, String> {
-    run_hook_event(&app, &state, input)
+    let dt = read_default_terminal(&state);
+    run_hook_event(&app, &state, input, dt.as_deref())
 }
 
 #[tauri::command]
@@ -211,10 +217,44 @@ pub fn run() {
             launch_repo_worktree,
             run_repo_hook_event,
             preview_repo_prune,
-            prune_repo_metadata
+            prune_repo_metadata,
+            get_default_terminal,
+            set_default_terminal
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[tauri::command]
+fn get_default_terminal(state: State<'_, SharedState>) -> String {
+    let store = state.store.lock().unwrap();
+    if let Some(ref id) = store.default_terminal {
+        return id.clone();
+    }
+    // Auto-detect: prefer ghostty > iterm2 > terminal
+    drop(store);
+    let tools = detect_tools();
+    for id in &["ghostty", "iterm2", "terminal"] {
+        if tools.iter().any(|t| t.id == *id && t.available) {
+            return id.to_string();
+        }
+    }
+    "terminal".into()
+}
+
+#[tauri::command]
+fn set_default_terminal(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+    terminal_id: String,
+) -> Result<(), String> {
+    let mut store = state.store.lock().unwrap();
+    store.default_terminal = Some(terminal_id);
+    store::persist(&app, &store)
+}
+
+fn read_default_terminal(state: &SharedState) -> Option<String> {
+    state.store.lock().unwrap().default_terminal.clone()
 }
 
 fn detect_tools() -> Vec<models::ToolStatus> {
@@ -223,7 +263,7 @@ fn detect_tools() -> Vec<models::ToolStatus> {
         app_status("cursor", "Cursor", "Cursor"),
         tool_status("terminal", "Terminal", true, None, "app"),
         app_status("ghostty", "Ghostty", "Ghostty"),
-        app_status("iterm2", "iTerm2", "iTerm2"),
+        app_status("iterm2", "iTerm2", "iTerm"),
         cli_status("claude", "Claude CLI"),
         cli_status("codex", "Codex CLI"),
         cli_status("gemini", "Gemini CLI"),

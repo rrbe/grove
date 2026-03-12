@@ -179,21 +179,16 @@ fn builtin_launchers() -> Vec<LauncherProfile> {
             app_or_cmd: "claude".into(),
             args_template: vec![],
             open_in_terminal: true,
-            prompt_template: Some(
-                "Open the repository at {worktree_path} and summarize the current branch {branch}."
-                    .into(),
-            ),
+            prompt_template: None,
         },
         LauncherProfile {
             id: "codex".into(),
             name: "Codex CLI".into(),
             kind: LauncherKind::TerminalCli,
             app_or_cmd: "codex".into(),
-            args_template: vec![],
+            args_template: vec!["--worktree".into()],
             open_in_terminal: true,
-            prompt_template: Some(
-                "Open the repository at {worktree_path} and review branch {branch}.".into(),
-            ),
+            prompt_template: None,
         },
         LauncherProfile {
             id: "gemini".into(),
@@ -202,9 +197,7 @@ fn builtin_launchers() -> Vec<LauncherProfile> {
             app_or_cmd: "gemini".into(),
             args_template: vec![],
             open_in_terminal: true,
-            prompt_template: Some(
-                "Open the repository at {worktree_path} and inspect branch {branch}.".into(),
-            ),
+            prompt_template: None,
         },
     ]
 }
@@ -309,6 +302,16 @@ pub fn merge_config(mut base: ResolvedConfig, patch: ConfigFile) -> ResolvedConf
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn builtin_codex_launcher_uses_worktree_flag() {
+        let codex = builtin_launchers()
+            .into_iter()
+            .find(|launcher| launcher.id == "codex")
+            .expect("codex launcher");
+
+        assert_eq!(codex.args_template, vec!["--worktree"]);
+    }
 
     #[test]
     fn merge_replaces_launcher_and_hook_by_id() {

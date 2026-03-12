@@ -13,7 +13,8 @@ import {
   removeRepoWorktree,
   runRepoHookEvent,
   saveRepoConfigs,
-  startRepoWorktree,
+  getDefaultTerminal,
+  setDefaultTerminal,
 } from "./lib/api";
 import { useI18n, type Locale, type Translations } from "./lib/i18n";
 import type {
@@ -32,6 +33,8 @@ import type {
 } from "./lib/types";
 
 type TaggedLog = RunLog & { repoRoot?: string };
+
+const TERMINAL_IDS = ["ghostty", "iterm2", "terminal"];
 
 type CreateFormState = {
   mode: CreateMode;
@@ -95,6 +98,7 @@ export default function App() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [view, setView] = useState<"detail" | "settings">("detail");
   const [showActionLog, setShowActionLog] = useState(false);
+  const [defaultTerminalId, setDefaultTerminalId] = useState("terminal");
 
   const [sidebarWidth, setSidebarWidth] = useState(320);
   const isDragging = useRef(false);
@@ -138,6 +142,7 @@ export default function App() {
       try {
         const data = await bootstrap();
         setBootstrapState(data);
+        getDefaultTerminal().then(setDefaultTerminalId).catch(() => {});
         if (data.lastActiveRepo) {
           setRepoInput(data.lastActiveRepo);
           await loadRepoInner(data.lastActiveRepo);
@@ -295,10 +300,10 @@ export default function App() {
     setCreateForm(createInitialForm(repo));
   }
 
-  async function handleStart(worktree: WorktreeRecord) {
+  async function handleRunHook(worktree: WorktreeRecord, event: string) {
     if (!repo) return;
     await runAction(() =>
-      startRepoWorktree({ repoRoot: repo.repoRoot, worktreePath: worktree.path }),
+      runRepoHookEvent({ repoRoot: repo.repoRoot, event: event as import("./lib/types").HookEvent, worktreePath: worktree.path }),
     );
   }
 
@@ -350,6 +355,11 @@ export default function App() {
     } finally {
       setIsBusy(false);
     }
+  }
+
+  async function handleSetDefaultTerminal(terminalId: string) {
+    setDefaultTerminalId(terminalId);
+    await setDefaultTerminal(terminalId);
   }
 
   async function handlePrune() {
@@ -502,6 +512,8 @@ export default function App() {
             onRunPostScan={() => void handleRunPostScan()}
             isBusy={isBusy}
             t={t}
+            defaultTerminal={defaultTerminalId}
+            onSetDefaultTerminal={(id) => void handleSetDefaultTerminal(id)}
           />
         ) : (
           <>
@@ -531,12 +543,14 @@ export default function App() {
                 launchers={launchers}
                 isBusy={isBusy}
                 t={t}
-                onStart={() => void handleStart(selectedWorktree)}
+                onRunHook={(event) => void handleRunHook(selectedWorktree, event)}
                 onLaunch={(launcher) => void handleLaunch(selectedWorktree, launcher)}
                 showActionLog={showActionLog}
                 onToggleActionLog={() => setShowActionLog((v) => !v)}
                 logs={logs.filter((l) => l.repoRoot === repo.repoRoot)}
                 onClearLogs={() => setLogs([])}
+                defaultTerminal={defaultTerminalId}
+                onSetDefaultTerminal={(id) => void handleSetDefaultTerminal(id)}
               />
             )}
           </>
@@ -763,24 +777,28 @@ function WorktreeDetail({
   launchers,
   isBusy,
   t,
-  onStart,
+  onRunHook,
   onLaunch,
   showActionLog,
   onToggleActionLog,
   logs,
   onClearLogs,
+  defaultTerminal,
+  onSetDefaultTerminal,
 }: {
   repo: RepoSnapshot;
   worktree: WorktreeRecord;
   launchers: LauncherProfile[];
   isBusy: boolean;
   t: Translations;
-  onStart: () => void;
+  onRunHook: (event: string) => void;
   onLaunch: (launcher: LauncherProfile) => void;
   showActionLog: boolean;
   onToggleActionLog: () => void;
   logs: TaggedLog[];
   onClearLogs: () => void;
+  defaultTerminal: string;
+  onSetDefaultTerminal: (id: string) => void;
 }) {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const copyToClipboard = (text: string, field: string) => {
@@ -862,6 +880,14 @@ function WorktreeDetail({
               </a>
             </div>
           )}
+          <div className="detail-meta-spacer" />
+          <button
+            className="ghost-button detail-run-hooks-btn"
+            onClick={() => onRunHook("post-start")}
+            disabled={isBusy}
+          >
+            {t.runPostStart}
+          </button>
         </div>
       </section>
 
@@ -883,10 +909,30 @@ function WorktreeDetail({
       <section className="card stack">
         <div className="section-heading">
           <span>{t.launchers}</span>
+          <label className="terminal-select-inline">
+            <span className="terminal-select-label">{t.defaultTerminalLabel}:</span>
+            <select
+              value={defaultTerminal}
+              onChange={(e) => onSetDefaultTerminal(e.target.value)}
+            >
+              {TERMINAL_IDS.map((tid) => {
+                const tool = repo.toolStatuses.find((ts) => ts.id === tid);
+                return (
+                  <option key={tid} value={tid} disabled={!tool?.available}>
+                    {tool?.label ?? tid}{!tool?.available ? ` (${t.notDetected})` : ""}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
         </div>
         <div className="action-grid">
           {launchers.map((launcher) => {
             const tool = findTool(repo, launcher.id);
+            const isCliLauncher = launcher.kind === "terminal-cli";
+            const terminalTool = isCliLauncher
+              ? repo.toolStatuses.find((ts) => ts.id === defaultTerminal)
+              : null;
             return (
               <button
                 key={launcher.id}
@@ -896,12 +942,12 @@ function WorktreeDetail({
                 title={tool?.available ? launcher.appOrCmd : t.notDetectedSuffix(launcher.name)}
               >
                 {launcher.name}
+                {isCliLauncher && terminalTool && (
+                  <span className="launcher-terminal-hint">({terminalTool.label})</span>
+                )}
               </button>
             );
           })}
-          <button className="ghost-button" onClick={onStart} disabled={isBusy}>
-            {t.runPostStart}
-          </button>
         </div>
       </section>
 
@@ -956,6 +1002,8 @@ function SettingsPage({
   onRunPostScan,
   isBusy,
   t,
+  defaultTerminal,
+  onSetDefaultTerminal,
 }: {
   toolStatuses: ToolStatus[];
   logs: TaggedLog[];
@@ -972,6 +1020,8 @@ function SettingsPage({
   onRunPostScan: () => void;
   isBusy: boolean;
   t: Translations;
+  defaultTerminal: string;
+  onSetDefaultTerminal: (id: string) => void;
 }) {
   const [showConfigEditor, setShowConfigEditor] = useState(false);
 
@@ -1013,6 +1063,30 @@ function SettingsPage({
           )}
         </section>
       )}
+
+      {/* Default Terminal */}
+      <section className="card stack">
+        <div className="section-heading">
+          <span>{t.defaultTerminalLabel}</span>
+        </div>
+        <p className="empty-copy" style={{ marginBottom: 8 }}>{t.defaultTerminalDescription}</p>
+        <select
+          className="ghost-button"
+          style={{ textAlign: "left", padding: "6px 10px" }}
+          value={defaultTerminal}
+          onChange={(e) => onSetDefaultTerminal(e.target.value)}
+          disabled={isBusy}
+        >
+          {TERMINAL_IDS.map((tid) => {
+            const tool = toolStatuses.find((ts) => ts.id === tid);
+            return (
+              <option key={tid} value={tid} disabled={!tool?.available}>
+                {tool?.label ?? tid}{!tool?.available ? ` (${t.notDetected})` : ""}
+              </option>
+            );
+          })}
+        </select>
+      </section>
 
       {/* Tooling — always expanded */}
       <section className="card stack">

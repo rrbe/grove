@@ -546,12 +546,50 @@ textarea {
   border-radius: 14px;
 }
 
+.launcher-terminal-hint {
+  display: block;
+  font-size: 0.65rem;
+  opacity: 0.55;
+  margin-top: 2px;
+}
+
+.terminal-select-inline {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+}
+.terminal-select-label {
+  opacity: 0.5;
+  white-space: nowrap;
+}
+.terminal-select-inline select {
+  font-size: 0.7rem;
+  padding: 1px 4px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #d0d0d0);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
 /* Detail panel */
 .detail-card {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 22px 24px;
+}
+
+.detail-meta-spacer {
+  flex: 1;
+}
+.detail-run-hooks-btn {
+  font-size: 0.75rem;
+  padding: 4px 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .detail-branch {
@@ -650,6 +688,7 @@ textarea {
 
 .detail-meta-grid {
   display: flex;
+  align-items: center;
   gap: 0;
   margin-top: 10px;
   padding-top: 14px;

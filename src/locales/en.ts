@@ -48,7 +48,7 @@ export const en: Translations = {
   lastLaunched: "Last launched",
   pullRequest: "Pull Request",
   launchers: "Launchers",
-  runPostStart: "Run post-start",
+  runPostStart: "Run Hooks",
   notDetected: "Not detected",
   notDetectedSuffix: (name) => `${name} not detected`,
   settings: "Settings",
@@ -99,4 +99,6 @@ export const en: Translations = {
   langEn: "English",
   recentRepos: "Recent",
   recentCommits: "Recent Commits",
+  defaultTerminalLabel: "Default Terminal",
+  defaultTerminalDescription: "CLI tools like Claude, Codex, and Gemini will open in this terminal",
 };

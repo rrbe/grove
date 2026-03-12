@@ -48,7 +48,7 @@ export const zhCN: Translations = {
   lastLaunched: "上次启动",
   pullRequest: "拉取请求",
   launchers: "启动器",
-  runPostStart: "运行 post-start",
+  runPostStart: "执行 Hooks",
   notDetected: "未检测到",
   notDetectedSuffix: (name) => `${name} 未检测到`,
   settings: "设置",
@@ -97,4 +97,6 @@ export const zhCN: Translations = {
   langEn: "English",
   recentRepos: "最近使用",
   recentCommits: "最近提交",
+  defaultTerminalLabel: "默认终端",
+  defaultTerminalDescription: "Claude、Codex、Gemini 等 CLI 工具将在此终端中打开",
 };

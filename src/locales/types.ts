@@ -95,4 +95,6 @@ export interface Translations {
   langEn: string;
   recentRepos: string;
   recentCommits: string;
+  defaultTerminalLabel: string;
+  defaultTerminalDescription: string;
 }

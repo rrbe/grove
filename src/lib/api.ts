@@ -55,3 +55,11 @@ export function previewRepoPrune(repoRoot: string) {
 export function pruneRepoMetadata(repoRoot: string) {
   return invoke<ActionResponse>("prune_repo_metadata", { repoRoot });
 }
+
+export function getDefaultTerminal() {
+  return invoke<string>("get_default_terminal");
+}
+
+export function setDefaultTerminal(terminalId: string) {
+  return invoke<void>("set_default_terminal", { terminalId });
+}

@@ -1,12 +1,12 @@
 [package]
-name = "worktree-switcher"
+name = "grove"
 version = "0.2.0"
 description = "Desktop worktree manager built with Tauri"
 authors = ["gaoxin"]
 edition = "2021"
 
 [lib]
-name = "worktree_switcher_lib"
+name = "grove_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -19,11 +19,11 @@ pub struct LoadedConfig {
 }
 
 pub fn project_config_path(repo_root: &Path) -> PathBuf {
-    repo_root.join(".worktree-switcher").join("config.toml")
+    repo_root.join(".grove").join("config.toml")
 }
 
 pub fn local_config_path(repo_root: &Path) -> PathBuf {
-    repo_root.join(".worktree-switcher").join("local.toml")
+    repo_root.join(".grove").join("local.toml")
 }
 
 pub fn load(repo_root: &Path) -> Result<LoadedConfig, String> {
@@ -87,7 +87,7 @@ pub fn save(
         toml::from_str::<ConfigFile>(local_text)
             .map_err(|error| format!("local config is invalid TOML: {error}"))?;
     }
-    let config_dir = repo_root.join(".worktree-switcher");
+    let config_dir = repo_root.join(".grove");
     fs::create_dir_all(&config_dir)
         .map_err(|error| format!("failed to create {}: {error}", config_dir.display()))?;
     fs::write(project_config_path(repo_root), project_text)

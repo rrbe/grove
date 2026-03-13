@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Mutex,
 };
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,12 +57,13 @@ impl SharedState {
     }
 }
 
-pub fn store_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("failed to resolve app data directory: {error}"))?;
-    Ok(dir.join("store.json"))
+pub fn grove_home() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    Ok(PathBuf::from(home).join(".grove"))
+}
+
+pub fn store_path(_app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(grove_home()?.join("store.json"))
 }
 
 pub fn persist(app: &AppHandle, store: &AppStore) -> Result<(), String> {

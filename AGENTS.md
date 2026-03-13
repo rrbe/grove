@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`src/` contains the React 19 + TypeScript frontend. `src/App.tsx` holds the main screen state, while `src/lib/api.ts` is the single wrapper layer around Tauri `invoke()` calls and `src/lib/types.ts` mirrors Rust-side models. `src-tauri/src/` contains the desktop backend: `lib.rs` registers commands, `actions.rs` handles worktree operations, `git.rs` shells out to `git`, `config.rs` manages `.worktree-switcher/*.toml`, and `store.rs` persists app state. Treat `dist/` and `src-tauri/target/` as generated output.
+`src/` contains the React 19 + TypeScript frontend. `src/App.tsx` holds the main screen state, while `src/lib/api.ts` is the single wrapper layer around Tauri `invoke()` calls and `src/lib/types.ts` mirrors Rust-side models. `src-tauri/src/` contains the desktop backend: `lib.rs` registers commands, `actions.rs` handles worktree operations, `git.rs` shells out to `git`, `config.rs` manages `.grove/*.toml`, and `store.rs` persists app state. Treat `dist/` and `src-tauri/target/` as generated output.
 
 ## Build, Test, and Development Commands
 

@@ -1,6 +1,6 @@
 # Grove
 
-A macOS-first desktop app for scanning, creating, cleaning, and launching Git worktrees.
+A macOS-first desktop app for managing Git worktrees — scan, create, launch, and clean up worktrees from a single UI.
 
 ## Stack
 
@@ -11,15 +11,16 @@ A macOS-first desktop app for scanning, creating, cleaning, and launching Git wo
 ## Features
 
 - Scan `git worktree` state with dirty / ahead / behind / prunable / locked indicators
-- Create worktrees from a new branch, existing local branch, or remote tracking branch
-- Live path preview with branch name sanitization
-- Remove worktrees and preview / execute `git worktree prune`
+- Create worktrees from new branch, existing local branch, or remote tracking branch with branch dropdown selectors
+- Auto-suggest random branch names, auto-fill target paths
+- Remove worktrees with streamed execution logs and preview / execute `git worktree prune`
 - Auto-detect default branch from `origin/HEAD` (falls back to `main`/`master`)
-- Project-level hooks from `.worktree-switcher/config.toml` plus local overrides from `.worktree-switcher/local.toml`
+- Per-repo configurable worktree root directory (stored in app settings, not in the repo)
+- Project-level hooks (pre-create, post-create, post-start, post-scan) via `.grove/config.toml`
 - Approval gate for project-defined shell commands and terminal launchers
-- Built-in launchers for Terminal, VS Code, Cursor, Claude CLI, Codex CLI, and Gemini CLI
-- Cold-start helpers for copying ignored files and generating deterministic ports
-- Recent commits per worktree, PR badge linking
+- Built-in launchers for Terminal, Ghostty, iTerm2, VS Code, Cursor, Claude CLI, Codex CLI, and Gemini CLI
+- Cold-start helpers: copy ignored files (`.env`, `.npmrc`) and generate deterministic ports
+- Recent commits per worktree, GitHub PR badge linking via `gh` CLI
 - i18n: Chinese (default) and English
 
 ## Run
@@ -43,14 +44,9 @@ cd src-tauri && cargo test
 
 ## Config
 
-Project config lives at `.worktree-switcher/config.toml`. Local, machine-specific overrides at `.worktree-switcher/local.toml`.
+App state is stored at `~/.grove/store.json` (recent repos, approvals, per-repo worktree root settings, default terminal, etc.).
 
-The app seeds a sample project config with:
-
-- Built-in launchers (Terminal, VS Code, Cursor, Claude/Codex/Gemini CLI)
-- Example hook entries for post-create, post-start, post-scan events
-- Cold-start copy rules for `.env`, `.env.local`, `.npmrc`
-- Deterministic port templates for `PORT` and `VITE_PORT`
+Per-repo project config can optionally be placed at `.grove/config.toml` in the repo root, with machine-specific local overrides at `.grove/local.toml` (add to `.gitignore`).
 
 ## Keyboard Shortcuts
 

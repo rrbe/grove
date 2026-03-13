@@ -1,4 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import groveMark from "./assets/grove-mark.svg";
@@ -13,13 +14,14 @@ import {
   approveRepoCommands,
   bootstrap,
   createRepoWorktree,
+  approveExecutionSessionCommands,
   launchRepoWorktree,
   openRepo,
   previewRepoPrune,
   pruneRepoMetadata,
-  removeRepoWorktree,
   runRepoHookEvent,
   saveRepoConfigs,
+  startRemoveRepoWorktreeSession,
   getDefaultTerminal,
   setDefaultTerminal,
 } from "./lib/api";
@@ -31,6 +33,9 @@ import type {
   CommitSummary,
   CreateMode,
   CreateWorktreeInput,
+  ExecutionEvent,
+  ExecutionSessionSnapshot,
+  ExecutionStatus,
   HookStep,
   LauncherProfile,
   RepoSnapshot,
@@ -61,6 +66,16 @@ type CreateFormState = {
   autoStartLaunchers: string[];
 };
 
+type DeleteExecutionPhase = "confirm" | ExecutionStatus;
+
+type DeleteExecutionState = {
+  worktree: WorktreeRecord;
+  force: boolean;
+  phase: DeleteExecutionPhase;
+  session: ExecutionSessionSnapshot | null;
+  isLoading: boolean;
+};
+
 const createInitialForm = (repo?: RepoSnapshot): CreateFormState => ({
   mode: "new-branch",
   branch: "",
@@ -88,6 +103,23 @@ function relativeTime(iso: string, t: Translations): string {
   return t.daysAgo(days);
 }
 
+function buildDeleteFailureSession(
+  repoRoot: string,
+  worktree: WorktreeRecord,
+  message: string,
+): ExecutionSessionSnapshot {
+  return {
+    sessionId: "",
+    title: `Delete ${worktree.branch ?? "worktree"}`,
+    repoRoot,
+    status: "failed",
+    logs: [{ level: "error", message }],
+    approvals: [],
+    repo: null,
+    error: message,
+  };
+}
+
 export default function App() {
   const { t, locale, setLocale } = useI18n();
 
@@ -109,7 +141,7 @@ export default function App() {
   const pendingReplay = useRef<(() => Promise<void>) | null>(null);
 
   const [selectedWorktreeId, setSelectedWorktreeId] = useState<string | null>(null);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteExecution, setDeleteExecution] = useState<DeleteExecutionState | null>(null);
   const [showHooksModal, setShowHooksModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [view, setView] = useState<"detail" | "settings">("detail");
@@ -193,8 +225,52 @@ export default function App() {
     if (selectedWorktreeId && repo.worktrees.some((w) => w.id === selectedWorktreeId)) return;
     const nonMain = repo.worktrees.find((w) => !w.isMain);
     setSelectedWorktreeId(nonMain?.id ?? repo.worktrees[0]?.id ?? null);
-    setDeleteConfirmId(null);
   }, [repo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    let active = true;
+    let unlisten: UnlistenFn | null = null;
+
+    void listen<ExecutionEvent>("execution-event", (event) => {
+      const payload = event.payload;
+      setDeleteExecution((current) => {
+        if (!current?.session || current.session.sessionId !== payload.sessionId) {
+          return current;
+        }
+        const nextSession: ExecutionSessionSnapshot = {
+          ...current.session,
+          status: payload.status ?? current.session.status,
+          approvals: payload.approvals ?? current.session.approvals,
+          repo: payload.repo ?? current.session.repo,
+          error: payload.error ?? current.session.error,
+          logs: payload.log ? [...current.session.logs, payload.log] : current.session.logs,
+        };
+        return {
+          ...current,
+          phase: nextSession.status,
+          session: nextSession,
+          isLoading: false,
+        };
+      });
+      if (payload.kind === "completed" && payload.repo) {
+        setRepo(payload.repo);
+        setRepoInput(payload.repo.repoRoot);
+      }
+    }).then((fn) => {
+      if (!active) {
+        fn();
+        return;
+      }
+      unlisten = fn;
+    });
+
+    return () => {
+      active = false;
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
 
   async function loadRepoInner(candidate: string) {
     const trimmed = candidate.trim();
@@ -335,12 +411,114 @@ export default function App() {
     );
   }
 
-  async function handleRemove(worktree: WorktreeRecord, force: boolean) {
-    if (!repo) return;
-    await runAction(() =>
-      removeRepoWorktree({ repoRoot: repo.repoRoot, worktreePath: worktree.path, force }),
+  function handleRemove(worktree: WorktreeRecord, force: boolean) {
+    setDeleteExecution({
+      worktree,
+      force,
+      phase: "confirm",
+      session: null,
+      isLoading: false,
+    });
+  }
+
+  function handleCloseDeleteExecution() {
+    if (deleteExecution?.session?.logs.length) {
+      appendLogs(deleteExecution.session.logs, deleteExecution.session.repoRoot);
+    }
+    setDeleteExecution(null);
+  }
+
+  async function confirmDeleteExecution() {
+    if (!repo || !deleteExecution) return;
+    setError(null);
+    setDeleteExecution((current) =>
+      current
+        ? {
+            ...current,
+            isLoading: true,
+          }
+        : current,
     );
-    setDeleteConfirmId(null);
+    try {
+      const session = await startRemoveRepoWorktreeSession({
+        repoRoot: repo.repoRoot,
+        worktreePath: deleteExecution.worktree.path,
+        force: deleteExecution.force,
+      });
+      setDeleteExecution((current) =>
+        current
+          ? {
+              ...current,
+              phase: session.status,
+              session,
+              isLoading: false,
+            }
+          : current,
+      );
+      if (session.status === "completed" && session.repo) {
+        setRepo(session.repo);
+        setRepoInput(session.repo.repoRoot);
+      }
+    } catch (reason) {
+      const message = String(reason);
+      setDeleteExecution((current) =>
+        current
+          ? {
+              ...current,
+              phase: "failed",
+              session: buildDeleteFailureSession(repo.repoRoot, current.worktree, message),
+              isLoading: false,
+            }
+          : current,
+      );
+    }
+  }
+
+  async function approveDeleteExecution() {
+    if (!deleteExecution?.session || !deleteExecution.session.sessionId) return;
+    setDeleteExecution((current) =>
+      current
+        ? {
+            ...current,
+            isLoading: true,
+          }
+        : current,
+    );
+    try {
+      const session = await approveExecutionSessionCommands({
+        sessionId: deleteExecution.session.sessionId,
+        fingerprints: deleteExecution.session.approvals.map((item) => item.fingerprint),
+      });
+      setDeleteExecution((current) =>
+        current
+          ? {
+              ...current,
+              phase: session.status,
+              session,
+              isLoading: false,
+            }
+          : current,
+      );
+    } catch (reason) {
+      const message = String(reason);
+      setDeleteExecution((current) =>
+        current
+          ? {
+              ...current,
+              phase: "failed",
+              session: current.session
+                ? {
+                    ...current.session,
+                    status: "failed",
+                    error: message,
+                    logs: [...current.session.logs, { level: "error", message }],
+                  }
+                : buildDeleteFailureSession(repo?.repoRoot ?? "", current.worktree, message),
+              isLoading: false,
+            }
+          : current,
+      );
+    }
   }
 
   async function handleRunPostScan() {
@@ -431,38 +609,22 @@ export default function App() {
 
         {/* Worktree List */}
         <div className="worktree-list">
-          {repo?.worktrees.map((wt) =>
-            deleteConfirmId === wt.id ? (
-              <div key={wt.id} className="delete-confirm">
-                <span>{t.deleteConfirm(wt.branch ?? "worktree")}</span>
-                <button className="ghost-button" onClick={() => setDeleteConfirmId(null)}>
-                  {t.cancel}
-                </button>
-                <button
-                  className="danger-button"
-                  onClick={() => void handleRemove(wt, wt.dirty || !!wt.lockedReason)}
-                >
-                  {wt.dirty || wt.lockedReason ? t.force : t.delete}
-                </button>
-              </div>
-            ) : (
-              <WorktreeListItem
-                key={wt.id}
-                worktree={wt}
-                active={wt.id === selectedWorktreeId}
-                t={t}
-                onSelect={() => {
-                  setSelectedWorktreeId(wt.id);
-                  setDeleteConfirmId(null);
-                  setView("detail");
-                }}
-                onDelete={() => {
-                  if (wt.isMain) return;
-                  setDeleteConfirmId(wt.id);
-                }}
-              />
-            ),
-          )}
+          {repo?.worktrees.map((wt) => (
+            <WorktreeListItem
+              key={wt.id}
+              worktree={wt}
+              active={wt.id === selectedWorktreeId}
+              t={t}
+              onSelect={() => {
+                setSelectedWorktreeId(wt.id);
+                setView("detail");
+              }}
+              onDelete={() => {
+                if (wt.isMain) return;
+                handleRemove(wt, wt.dirty || !!wt.lockedReason);
+              }}
+            />
+          ))}
           {repo && repo.worktrees.length === 0 && (
             <p className="empty-copy">{t.noWorktrees}</p>
           )}
@@ -572,6 +734,16 @@ export default function App() {
           </>
         )}
       </main>
+
+      {deleteExecution && (
+        <DeleteExecutionModal
+          execution={deleteExecution}
+          t={t}
+          onClose={handleCloseDeleteExecution}
+          onConfirm={() => void confirmDeleteExecution()}
+          onApprove={() => void approveDeleteExecution()}
+        />
+      )}
 
       {/* Approval Modal */}
       {pendingApprovals.length > 0 && (
@@ -1461,6 +1633,138 @@ function LauncherIcon({ launcherId, label }: { launcherId: string; label: string
     <span className="launcher-icon-shell" data-launcher-id={launcherId} aria-hidden="true">
       {src ? <img className="launcher-icon" src={src} alt="" /> : <span className="launcher-icon-fallback">{fallback}</span>}
     </span>
+  );
+}
+
+function DeleteExecutionModal({
+  execution,
+  t,
+  onClose,
+  onConfirm,
+  onApprove,
+}: {
+  execution: DeleteExecutionState;
+  t: Translations;
+  onClose: () => void;
+  onConfirm: () => void;
+  onApprove: () => void;
+}) {
+  const logAnchorRef = useRef<HTMLDivElement>(null);
+  const session = execution.session;
+  const branchLabel = execution.worktree.branch ?? "worktree";
+  const canClose =
+    execution.phase === "confirm" ||
+    execution.phase === "completed" ||
+    execution.phase === "failed";
+
+  useEffect(() => {
+    logAnchorRef.current?.scrollIntoView({ block: "end" });
+  }, [session?.logs.length]);
+
+  let statusLabel = "";
+  if (execution.phase === "running") statusLabel = t.executing;
+  if (execution.phase === "approval-required") statusLabel = t.pendingApproval;
+  if (execution.phase === "completed") statusLabel = t.executionCompleted;
+  if (execution.phase === "failed") statusLabel = t.executionFailed;
+
+  return (
+    <div
+      className="modal-backdrop"
+      onClick={(e) => e.target === e.currentTarget && canClose && onClose()}
+    >
+      <div
+        className="modal-card delete-execution-modal"
+        data-phase={execution.phase}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="section-heading delete-execution-header">
+          <span>{session?.title ?? t.deleteConfirm(branchLabel)}</span>
+          {execution.phase !== "confirm" && (
+            <button className="ghost-button" onClick={onClose} disabled={execution.isLoading || !canClose}>
+              {t.close}
+            </button>
+          )}
+        </div>
+
+        <div className="inline-panel delete-execution-summary">
+          <div>
+            <strong>{branchLabel}</strong>
+            <p className="subtle delete-execution-path-label">{t.deletePathLabel}</p>
+            <p className="detail-path delete-execution-path">{execution.worktree.path}</p>
+          </div>
+        </div>
+
+        {execution.phase === "confirm" ? (
+          <div className="modal-actions delete-execution-actions">
+            <button className="ghost-button" onClick={onClose} disabled={execution.isLoading}>
+              {t.cancel}
+            </button>
+            <button className="danger-button" onClick={onConfirm} disabled={execution.isLoading}>
+              {execution.force ? t.force : t.delete}
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="section-heading delete-execution-log-header">
+              <span>{statusLabel}</span>
+            </div>
+
+            {session?.error && execution.phase === "failed" && (
+              <div className="error-banner delete-execution-error">
+                {session.error}
+              </div>
+            )}
+
+            <div className="delete-execution-log-stream">
+              {session?.logs.length ? (
+                session.logs.map((log, index) => (
+                  <div
+                    key={`${log.message}-${index}`}
+                    className={`delete-execution-log-line delete-execution-log-line-${log.level} ${log.message.startsWith("$ ") ? "delete-execution-log-line-command" : ""}`}
+                  >
+                    <span>{log.message}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="empty-copy">{t.noLogsYet}</p>
+              )}
+              <div ref={logAnchorRef} />
+            </div>
+
+            {execution.phase === "approval-required" && session && session.approvals.length > 0 && (
+              <div className="delete-execution-approvals">
+                <div className="section-heading">
+                  <span>{t.approveProjectCommands}</span>
+                  <span className="subtle">{t.commandCount(session.approvals.length)}</span>
+                </div>
+                <p className="modal-copy">{t.approvalCopy}</p>
+                <div className="approval-list">
+                  {session.approvals.map((approval) => (
+                    <div key={approval.fingerprint} className="approval-item">
+                      <strong>{approval.label}</strong>
+                      <p>{approval.cwd}</p>
+                      <pre>{approval.command}</pre>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {execution.phase === "approval-required" && (
+              <div className="modal-actions delete-execution-actions">
+                <button
+                  className="primary-button"
+                  onClick={onApprove}
+                  disabled={execution.isLoading}
+                >
+                  {t.approveAndRetry}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -979,6 +979,15 @@ textarea {
   background: rgba(49, 143, 114, 0.12);
 }
 
+.log-command {
+  background: rgba(16, 33, 46, 0.08);
+}
+
+.log-command span {
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+  word-break: break-word;
+}
+
 .empty-copy {
   margin: 0;
   color: rgba(16, 33, 46, 0.58);
@@ -1011,6 +1020,96 @@ textarea {
   border-radius: 24px;
   padding: 24px;
   box-shadow: 0 32px 90px rgba(16, 33, 46, 0.26);
+}
+
+.delete-execution-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(860px, 100%);
+  padding: 26px 28px;
+}
+
+.delete-execution-modal[data-phase="confirm"] {
+  width: min(760px, 100%);
+  gap: 18px;
+}
+
+.delete-execution-header {
+  margin: 0;
+}
+
+.delete-execution-summary {
+  display: grid;
+  gap: 8px;
+  padding: 18px 22px;
+}
+
+.delete-execution-summary strong {
+  display: block;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.delete-execution-path-label {
+  margin: 8px 0 0;
+}
+
+.delete-execution-path {
+  margin: 8px 0 0;
+  line-height: 1.45;
+}
+
+.delete-execution-log-header {
+  margin-top: 2px;
+}
+
+.delete-execution-error {
+  margin-top: -2px;
+}
+
+.delete-execution-log-stream {
+  max-height: 42vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(16, 33, 46, 0.06);
+  border: 1px solid rgba(16, 33, 46, 0.08);
+}
+
+.delete-execution-log-line {
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: rgba(16, 33, 46, 0.76);
+  word-break: break-word;
+}
+
+.delete-execution-log-line-command {
+  color: #10212e;
+  font-weight: 600;
+}
+
+.delete-execution-log-line-error {
+  color: #8e2319;
+}
+
+.delete-execution-log-line-success {
+  color: #185b46;
+}
+
+.delete-execution-approvals {
+  display: grid;
+  gap: 12px;
+}
+
+.delete-execution-actions {
+  margin-top: 0;
+  padding-top: 4px;
 }
 
 .modal-copy {

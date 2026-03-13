@@ -21,6 +21,11 @@ export interface Translations {
   optional: string;
   hooks: string;
   deleteConfirm: (branch: string) => string;
+  deletePathLabel: string;
+  executing: string;
+  executionCompleted: string;
+  executionFailed: string;
+  pendingApproval: string;
   cancel: string;
   force: string;
   delete: string;

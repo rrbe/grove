@@ -294,6 +294,14 @@ pub struct RemoveWorktreeInput {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ApproveExecutionSessionInput {
+    pub session_id: String,
+    #[serde(default)]
+    pub fingerprints: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StartWorktreeInput {
     pub repo_root: String,
     pub worktree_path: String,
@@ -330,6 +338,50 @@ pub struct ActionResponse {
 pub enum ActionStatus {
     Completed,
     ApprovalRequired,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExecutionStatus {
+    Running,
+    ApprovalRequired,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionSessionSnapshot {
+    pub session_id: String,
+    pub title: String,
+    pub repo_root: String,
+    pub status: ExecutionStatus,
+    pub logs: Vec<RunLog>,
+    pub approvals: Vec<ApprovalRequest>,
+    pub repo: Option<RepoSnapshot>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExecutionEventKind {
+    LogAppended,
+    ApprovalRequired,
+    ApprovalResolved,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionEvent {
+    pub session_id: String,
+    pub kind: ExecutionEventKind,
+    pub status: Option<ExecutionStatus>,
+    pub log: Option<RunLog>,
+    pub approvals: Option<Vec<ApprovalRequest>>,
+    pub repo: Option<RepoSnapshot>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

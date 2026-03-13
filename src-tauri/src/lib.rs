@@ -5,13 +5,15 @@ mod models;
 mod store;
 
 use actions::{
-    approve_fingerprints, create_worktree, launch_worktree, mark_worktree_opened, preview_prune,
-    prune_repo, remove_worktree, run_hook_event, start_worktree,
+    approve_execution_session, approve_fingerprints, create_worktree, get_execution_session,
+    launch_worktree, mark_worktree_opened, preview_prune, prune_repo, remove_worktree,
+    run_hook_event, start_remove_worktree_session, start_worktree,
 };
 use config::save;
 use models::{
-    ApproveCommandsInput, BootstrapResponse, CreateWorktreeInput, LaunchWorktreeInput,
-    RemoveWorktreeInput, RepoSnapshot, RunHookEventInput, SaveConfigsInput, StartWorktreeInput,
+    ApproveCommandsInput, ApproveExecutionSessionInput, BootstrapResponse, CreateWorktreeInput,
+    ExecutionSessionSnapshot, LaunchWorktreeInput, RemoveWorktreeInput, RepoSnapshot,
+    RunHookEventInput, SaveConfigsInput, StartWorktreeInput,
 };
 use store::{push_recent, SharedState};
 use tauri::{AppHandle, Manager, State};
@@ -136,6 +138,30 @@ fn remove_repo_worktree(
 }
 
 #[tauri::command]
+fn start_remove_repo_worktree_session(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+    input: RemoveWorktreeInput,
+) -> Result<ExecutionSessionSnapshot, String> {
+    let dt = read_default_terminal(&state);
+    start_remove_worktree_session(&app, &state, input, dt.as_deref())
+}
+
+#[tauri::command]
+fn get_execution_session_snapshot(session_id: String) -> Result<ExecutionSessionSnapshot, String> {
+    get_execution_session(&session_id)
+}
+
+#[tauri::command]
+fn approve_execution_session_commands(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+    input: ApproveExecutionSessionInput,
+) -> Result<ExecutionSessionSnapshot, String> {
+    approve_execution_session(&app, &state, input)
+}
+
+#[tauri::command]
 fn start_repo_worktree(
     app: AppHandle,
     state: State<'_, SharedState>,
@@ -213,6 +239,9 @@ pub fn run() {
             approve_repo_commands,
             create_repo_worktree,
             remove_repo_worktree,
+            start_remove_repo_worktree_session,
+            get_execution_session_snapshot,
+            approve_execution_session_commands,
             start_repo_worktree,
             launch_repo_worktree,
             run_repo_hook_event,

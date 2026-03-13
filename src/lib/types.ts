@@ -10,6 +10,13 @@ export type HookEvent =
   | "post-scan";
 export type CreateMode = "new-branch" | "existing-branch" | "remote-branch";
 export type ActionStatus = "completed" | "approval-required";
+export type ExecutionStatus = "running" | "approval-required" | "completed" | "failed";
+export type ExecutionEventKind =
+  | "log-appended"
+  | "approval-required"
+  | "approval-resolved"
+  | "completed"
+  | "failed";
 export type LogLevel = "info" | "success" | "error";
 
 export interface BootstrapResponse {
@@ -156,6 +163,11 @@ export interface RemoveWorktreeInput {
   force: boolean;
 }
 
+export interface ApproveExecutionSessionInput {
+  sessionId: string;
+  fingerprints: string[];
+}
+
 export interface StartWorktreeInput {
   repoRoot: string;
   worktreePath: string;
@@ -191,4 +203,25 @@ export interface ActionResponse {
   logs: RunLog[];
   approvals: ApprovalRequest[];
   repo: RepoSnapshot | null;
+}
+
+export interface ExecutionSessionSnapshot {
+  sessionId: string;
+  title: string;
+  repoRoot: string;
+  status: ExecutionStatus;
+  logs: RunLog[];
+  approvals: ApprovalRequest[];
+  repo: RepoSnapshot | null;
+  error: string | null;
+}
+
+export interface ExecutionEvent {
+  sessionId: string;
+  kind: ExecutionEventKind;
+  status: ExecutionStatus | null;
+  log: RunLog | null;
+  approvals: ApprovalRequest[] | null;
+  repo: RepoSnapshot | null;
+  error: string | null;
 }

@@ -2,8 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   ActionResponse,
   ApproveCommandsInput,
+  ApproveExecutionSessionInput,
   BootstrapResponse,
   CreateWorktreeInput,
+  ExecutionSessionSnapshot,
   LaunchWorktreeInput,
   RepoSnapshot,
   RemoveWorktreeInput,
@@ -34,6 +36,18 @@ export function createRepoWorktree(input: CreateWorktreeInput) {
 
 export function removeRepoWorktree(input: RemoveWorktreeInput) {
   return invoke<ActionResponse>("remove_repo_worktree", { input });
+}
+
+export function startRemoveRepoWorktreeSession(input: RemoveWorktreeInput) {
+  return invoke<ExecutionSessionSnapshot>("start_remove_repo_worktree_session", { input });
+}
+
+export function getExecutionSessionSnapshot(sessionId: string) {
+  return invoke<ExecutionSessionSnapshot>("get_execution_session_snapshot", { sessionId });
+}
+
+export function approveExecutionSessionCommands(input: ApproveExecutionSessionInput) {
+  return invoke<ExecutionSessionSnapshot>("approve_execution_session_commands", { input });
 }
 
 export function startRepoWorktree(input: StartWorktreeInput) {

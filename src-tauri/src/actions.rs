@@ -2,9 +2,11 @@ use crate::{
     config::{self, LoadedConfig},
     git,
     models::{
-        ActionResponse, ActionStatus, ApprovalRequest, CreateMode, CreateWorktreeInput, HookEvent,
-        HookStepType, LaunchWorktreeInput, LauncherKind, LauncherProfile, LogLevel,
-        RemoveWorktreeInput, RunHookEventInput, RunLog, StartWorktreeInput, WorktreeRecord,
+        ActionResponse, ActionStatus, ApprovalRequest, ApproveExecutionSessionInput, CreateMode,
+        CreateWorktreeInput, ExecutionEvent, ExecutionEventKind, ExecutionSessionSnapshot,
+        ExecutionStatus, HookEvent, HookStepType, LaunchWorktreeInput, LauncherKind,
+        LauncherProfile, LogLevel, RemoveWorktreeInput, RunHookEventInput, RunLog,
+        StartWorktreeInput, WorktreeRecord,
     },
     store::{approve, is_approved, persist, push_recent, touch_worktree, SharedState},
 };
@@ -13,10 +15,17 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs,
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc,
+        LazyLock, Mutex,
+    },
+    thread,
 };
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Clone)]
 struct TemplateContext {
@@ -24,6 +33,7 @@ struct TemplateContext {
     ports: BTreeMap<String, (u16, Option<String>)>,
 }
 
+#[derive(Clone)]
 enum ExecutionStep {
     GitCreate {
         repo_root: PathBuf,
@@ -69,6 +79,25 @@ enum ExecutionStep {
         context: TemplateContext,
         terminal_id: Option<String>,
     },
+}
+
+const EXECUTION_EVENT_NAME: &str = "execution-event";
+
+static EXECUTION_SESSIONS: LazyLock<Mutex<BTreeMap<String, ExecutionSessionState>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
+static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Clone)]
+struct ExecutionSessionState {
+    snapshot: ExecutionSessionSnapshot,
+    pending_steps: Option<Vec<ExecutionStep>>,
+}
+
+#[derive(Clone)]
+struct PlannedExecution {
+    repo_root: PathBuf,
+    title: String,
+    steps: Vec<ExecutionStep>,
 }
 
 pub fn create_worktree(
@@ -179,33 +208,127 @@ pub fn remove_worktree(
     input: RemoveWorktreeInput,
     default_terminal: Option<&str>,
 ) -> Result<ActionResponse, String> {
-    let repo_root = git::resolve_repo_root(&input.repo_root)?;
-    let loaded = config::load(&repo_root)?;
-    let worktrees = git::scan_worktrees(
-        &repo_root,
-        &loaded.merged.cold_start,
-        &state.store.lock().unwrap(),
-    )?;
-    let worktree = find_worktree(&worktrees, &input.worktree_path)?;
-    if worktree.is_main {
-        return Err("cannot remove the main worktree".into());
+    let planned = plan_remove_worktree_execution(state, input, default_terminal)?;
+    execute(app, state, &planned.repo_root, planned.steps)
+}
+
+pub fn start_remove_worktree_session(
+    app: &AppHandle,
+    state: &SharedState,
+    input: RemoveWorktreeInput,
+    default_terminal: Option<&str>,
+) -> Result<ExecutionSessionSnapshot, String> {
+    let planned = plan_remove_worktree_execution(state, input, default_terminal)?;
+    let approvals = collect_missing_approvals(state, &planned.repo_root, &planned.steps);
+    let session_id = next_session_id();
+    let mut snapshot = ExecutionSessionSnapshot {
+        session_id: session_id.clone(),
+        title: planned.title,
+        repo_root: planned.repo_root.to_string_lossy().to_string(),
+        status: if approvals.is_empty() {
+            ExecutionStatus::Running
+        } else {
+            ExecutionStatus::ApprovalRequired
+        },
+        logs: Vec::new(),
+        approvals: dedupe_approvals(approvals),
+        repo: None,
+        error: None,
+    };
+    if !snapshot.approvals.is_empty() {
+        snapshot.logs.push(info(
+            "This action requires approval before running project-defined commands.".into(),
+        ));
     }
-    let context = build_context_from_worktree(&repo_root, &loaded, worktree, false);
-    let mut steps = plan_hooks(&repo_root, &loaded, HookEvent::PreRemove, &context, default_terminal)?;
-    steps.push(ExecutionStep::GitRemove {
-        repo_root: repo_root.clone(),
-        worktree_path: PathBuf::from(&worktree.path),
-        force: input.force,
-        unlock_first: input.force && worktree.locked_reason.is_some(),
+
+    insert_session(ExecutionSessionState {
+        snapshot: snapshot.clone(),
+        pending_steps: if snapshot.approvals.is_empty() {
+            None
+        } else {
+            Some(planned.steps.clone())
+        },
     });
-    steps.extend(plan_hooks(
-        &repo_root,
-        &loaded,
-        HookEvent::PostRemove,
-        &context,
-        default_terminal,
-    )?);
-    execute(app, state, &repo_root, steps)
+
+    if snapshot.approvals.is_empty() {
+        spawn_session_execution(app.clone(), session_id, planned.repo_root, planned.steps);
+    } else {
+        emit_execution_event(
+            app,
+            ExecutionEvent {
+                session_id,
+                kind: ExecutionEventKind::ApprovalRequired,
+                status: Some(ExecutionStatus::ApprovalRequired),
+                log: None,
+                approvals: Some(snapshot.approvals.clone()),
+                repo: None,
+                error: None,
+            },
+        )?;
+    }
+
+    Ok(snapshot)
+}
+
+pub fn get_execution_session(session_id: &str) -> Result<ExecutionSessionSnapshot, String> {
+    session_snapshot(session_id).ok_or_else(|| format!("execution session not found: {session_id}"))
+}
+
+pub fn approve_execution_session(
+    app: &AppHandle,
+    state: &SharedState,
+    input: ApproveExecutionSessionInput,
+) -> Result<ExecutionSessionSnapshot, String> {
+    let (repo_root, steps, snapshot) = {
+        let mut sessions = EXECUTION_SESSIONS.lock().unwrap();
+        let session = sessions
+            .get_mut(&input.session_id)
+            .ok_or_else(|| format!("execution session not found: {}", input.session_id))?;
+        if session.snapshot.status != ExecutionStatus::ApprovalRequired {
+            return Err("execution session is not waiting for approval".into());
+        }
+        let repo_root = session.snapshot.repo_root.clone();
+        let approvals = if input.fingerprints.is_empty() {
+            session
+                .snapshot
+                .approvals
+                .iter()
+                .map(|item| item.fingerprint.clone())
+                .collect::<Vec<_>>()
+        } else {
+            input.fingerprints.clone()
+        };
+        let steps = session
+            .pending_steps
+            .take()
+            .ok_or_else(|| "execution session has no pending work".to_string())?;
+        approve_fingerprints(app, state, &repo_root, &approvals)?;
+        session.snapshot.status = ExecutionStatus::Running;
+        session.snapshot.approvals.clear();
+        session.snapshot.error = None;
+        (repo_root, steps, session.snapshot.clone())
+    };
+
+    emit_execution_event(
+        app,
+        ExecutionEvent {
+            session_id: input.session_id.clone(),
+            kind: ExecutionEventKind::ApprovalResolved,
+            status: Some(ExecutionStatus::Running),
+            log: None,
+            approvals: Some(Vec::new()),
+            repo: None,
+            error: None,
+        },
+    )?;
+
+    spawn_session_execution(
+        app.clone(),
+        input.session_id,
+        PathBuf::from(repo_root),
+        steps,
+    );
+    Ok(snapshot)
 }
 
 pub fn start_worktree(
@@ -324,6 +447,185 @@ fn run_event_internal(
     };
     let steps = plan_hooks(&repo_root, &loaded, event, &worktree_context, default_terminal)?;
     execute(app, state, &repo_root, steps)
+}
+
+fn plan_remove_worktree_execution(
+    state: &SharedState,
+    input: RemoveWorktreeInput,
+    default_terminal: Option<&str>,
+) -> Result<PlannedExecution, String> {
+    let repo_root = git::resolve_repo_root(&input.repo_root)?;
+    let loaded = config::load(&repo_root)?;
+    let worktrees = git::scan_worktrees(
+        &repo_root,
+        &loaded.merged.cold_start,
+        &state.store.lock().unwrap(),
+    )?;
+    let worktree = find_worktree(&worktrees, &input.worktree_path)?;
+    if worktree.is_main {
+        return Err("cannot remove the main worktree".into());
+    }
+    let context = build_context_from_worktree(&repo_root, &loaded, worktree, false);
+    let mut steps = plan_hooks(
+        &repo_root,
+        &loaded,
+        HookEvent::PreRemove,
+        &context,
+        default_terminal,
+    )?;
+    steps.push(ExecutionStep::GitRemove {
+        repo_root: repo_root.clone(),
+        worktree_path: PathBuf::from(&worktree.path),
+        force: input.force,
+        unlock_first: input.force && worktree.locked_reason.is_some(),
+    });
+    steps.extend(plan_hooks(
+        &repo_root,
+        &loaded,
+        HookEvent::PostRemove,
+        &context,
+        default_terminal,
+    )?);
+    Ok(PlannedExecution {
+        repo_root,
+        title: format!("Delete {}", worktree.branch.as_deref().unwrap_or("worktree")),
+        steps,
+    })
+}
+
+fn collect_missing_approvals(
+    state: &SharedState,
+    repo_root: &Path,
+    steps: &[ExecutionStep],
+) -> Vec<ApprovalRequest> {
+    let store = state.store.lock().unwrap();
+    steps
+        .iter()
+        .filter_map(|step| step.approval())
+        .filter(|approval| !is_approved(&store, &repo_root.to_string_lossy(), &approval.fingerprint))
+        .cloned()
+        .collect::<Vec<_>>()
+}
+
+fn next_session_id() -> String {
+    format!("exec-{}", NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed))
+}
+
+fn insert_session(session: ExecutionSessionState) {
+    EXECUTION_SESSIONS
+        .lock()
+        .unwrap()
+        .insert(session.snapshot.session_id.clone(), session);
+}
+
+fn session_snapshot(session_id: &str) -> Option<ExecutionSessionSnapshot> {
+    EXECUTION_SESSIONS
+        .lock()
+        .unwrap()
+        .get(session_id)
+        .map(|session| session.snapshot.clone())
+}
+
+fn emit_execution_event(app: &AppHandle, event: ExecutionEvent) -> Result<(), String> {
+    app.emit(EXECUTION_EVENT_NAME, event)
+        .map_err(|error| format!("failed to emit execution event: {error}"))
+}
+
+fn spawn_session_execution(
+    app: AppHandle,
+    session_id: String,
+    repo_root: PathBuf,
+    steps: Vec<ExecutionStep>,
+) {
+    thread::spawn(move || {
+        if let Err(error) = run_session_execution(&app, &session_id, &repo_root, steps) {
+            let _ = fail_session(&app, &session_id, error);
+        }
+    });
+}
+
+fn run_session_execution(
+    app: &AppHandle,
+    session_id: &str,
+    repo_root: &Path,
+    steps: Vec<ExecutionStep>,
+) -> Result<(), String> {
+    let mut sink = SessionLogWriter {
+        app: app.clone(),
+        session_id: session_id.to_string(),
+    };
+    for step in steps {
+        step.run(&mut sink)?;
+    }
+
+    let now = Utc::now().to_rfc3339();
+    {
+        let state = app.state::<SharedState>();
+        let mut store = state.store.lock().unwrap();
+        push_recent(&mut store, &repo_root.to_string_lossy());
+        persist(app, &store)?;
+    }
+    let repo = {
+        let state = app.state::<SharedState>();
+        crate::load_repo_snapshot(app, &state, repo_root.to_string_lossy().to_string())?
+    };
+
+    let final_log = RunLog {
+        level: LogLevel::Success,
+        message: format!("Action completed at {now}"),
+    };
+    sink.push(final_log.clone());
+
+    {
+        let mut sessions = EXECUTION_SESSIONS.lock().unwrap();
+        let session = sessions
+            .get_mut(session_id)
+            .ok_or_else(|| format!("execution session not found: {session_id}"))?;
+        session.snapshot.status = ExecutionStatus::Completed;
+        session.snapshot.repo = Some(repo.clone());
+        session.snapshot.error = None;
+    }
+
+    emit_execution_event(
+        app,
+        ExecutionEvent {
+            session_id: session_id.to_string(),
+            kind: ExecutionEventKind::Completed,
+            status: Some(ExecutionStatus::Completed),
+            log: None,
+            approvals: Some(Vec::new()),
+            repo: Some(repo),
+            error: None,
+        },
+    )
+}
+
+fn fail_session(app: &AppHandle, session_id: &str, error: String) -> Result<(), String> {
+    let error_log = RunLog {
+        level: LogLevel::Error,
+        message: error.clone(),
+    };
+    {
+        let mut sessions = EXECUTION_SESSIONS.lock().unwrap();
+        let session = sessions
+            .get_mut(session_id)
+            .ok_or_else(|| format!("execution session not found: {session_id}"))?;
+        session.snapshot.logs.push(error_log.clone());
+        session.snapshot.status = ExecutionStatus::Failed;
+        session.snapshot.error = Some(error.clone());
+    }
+    emit_execution_event(
+        app,
+        ExecutionEvent {
+            session_id: session_id.to_string(),
+            kind: ExecutionEventKind::Failed,
+            status: Some(ExecutionStatus::Failed),
+            log: Some(error_log),
+            approvals: None,
+            repo: None,
+            error: Some(error),
+        },
+    )
 }
 
 fn find_worktree<'a>(
@@ -484,23 +786,55 @@ fn plan_launch_action(
     }])
 }
 
+trait LogWriter {
+    fn push(&mut self, log: RunLog);
+}
+
+struct VecLogWriter<'a> {
+    logs: &'a mut Vec<RunLog>,
+}
+
+impl LogWriter for VecLogWriter<'_> {
+    fn push(&mut self, log: RunLog) {
+        self.logs.push(log);
+    }
+}
+
+struct SessionLogWriter {
+    app: AppHandle,
+    session_id: String,
+}
+
+impl LogWriter for SessionLogWriter {
+    fn push(&mut self, log: RunLog) {
+        {
+            let mut sessions = EXECUTION_SESSIONS.lock().unwrap();
+            if let Some(session) = sessions.get_mut(&self.session_id) {
+                session.snapshot.logs.push(log.clone());
+            }
+        }
+        let _ = emit_execution_event(
+            &self.app,
+            ExecutionEvent {
+                session_id: self.session_id.clone(),
+                kind: ExecutionEventKind::LogAppended,
+                status: None,
+                log: Some(log),
+                approvals: None,
+                repo: None,
+                error: None,
+            },
+        );
+    }
+}
+
 fn execute(
     app: &AppHandle,
     state: &SharedState,
     repo_root: &Path,
     steps: Vec<ExecutionStep>,
 ) -> Result<ActionResponse, String> {
-    let missing_approvals = {
-        let store = state.store.lock().unwrap();
-        steps
-            .iter()
-            .filter_map(|step| step.approval())
-            .filter(|approval| {
-                !is_approved(&store, &repo_root.to_string_lossy(), &approval.fingerprint)
-            })
-            .cloned()
-            .collect::<Vec<_>>()
-    };
+    let missing_approvals = collect_missing_approvals(state, repo_root, &steps);
 
     if !missing_approvals.is_empty() {
         return Ok(ActionResponse {
@@ -516,8 +850,9 @@ fn execute(
     }
 
     let mut logs = Vec::new();
+    let mut sink = VecLogWriter { logs: &mut logs };
     for step in steps {
-        step.run(&mut logs)?;
+        step.run(&mut sink)?;
     }
     let now = Utc::now().to_rfc3339();
     {
@@ -551,7 +886,7 @@ impl ExecutionStep {
         }
     }
 
-    fn run(self, logs: &mut Vec<RunLog>) -> Result<(), String> {
+    fn run(self, sink: &mut impl LogWriter) -> Result<(), String> {
         match self {
             ExecutionStep::GitCreate {
                 repo_root,
@@ -591,13 +926,9 @@ impl ExecutionStep {
                         args.insert(2, "-b".into());
                         args.insert(3, branch.clone());
                         args.push(remote_ref.clone());
-                        let output = git::run_git_owned(&repo_root, &args)?;
-                        logs.push(info(format!(
-                            "Created worktree {} from remote {}",
-                            worktree_path.display(),
-                            remote_ref
-                        )));
-                        let _ = git::run_git_owned(
+                        run_git_command_streaming(sink, &repo_root, &args, "git")?;
+                        run_git_command_streaming(
+                            sink,
                             &worktree_path,
                             &[
                                 "branch".into(),
@@ -605,21 +936,20 @@ impl ExecutionStep {
                                 remote_ref,
                                 branch,
                             ],
+                            "git",
                         )?;
-                        if !output.trim().is_empty() {
-                            logs.push(info(output.trim().to_string()));
-                        }
+                        sink.push(info(format!(
+                            "Created worktree {} from remote",
+                            worktree_path.display()
+                        )));
                         return Ok(());
                     }
                 }
-                let output = git::run_git_owned(&repo_root, &args)?;
-                logs.push(info(format!(
+                run_git_command_streaming(sink, &repo_root, &args, "git")?;
+                sink.push(info(format!(
                     "Created worktree {}",
                     worktree_path.display()
                 )));
-                if !output.trim().is_empty() {
-                    logs.push(info(output.trim().to_string()));
-                }
                 Ok(())
             }
             ExecutionStep::GitRemove {
@@ -629,15 +959,17 @@ impl ExecutionStep {
                 unlock_first,
             } => {
                 if unlock_first {
-                    let _ = git::run_git_owned(
+                    run_git_command_streaming(
+                        sink,
                         &repo_root,
                         &[
                             "worktree".into(),
                             "unlock".into(),
                             worktree_path.to_string_lossy().to_string(),
                         ],
+                        "git",
                     )?;
-                    logs.push(info(format!("Unlocked {}", worktree_path.display())));
+                    sink.push(info(format!("Unlocked {}", worktree_path.display())));
                 }
                 let mut args = vec![
                     "worktree".into(),
@@ -647,26 +979,20 @@ impl ExecutionStep {
                 if force {
                     args.push("--force".into());
                 }
-                let output = git::run_git_owned(&repo_root, &args)?;
-                logs.push(info(format!(
+                run_git_command_streaming(sink, &repo_root, &args, "git")?;
+                sink.push(info(format!(
                     "Removed worktree {}",
                     worktree_path.display()
                 )));
-                if !output.trim().is_empty() {
-                    logs.push(info(output.trim().to_string()));
-                }
                 Ok(())
             }
             ExecutionStep::GitPrune { repo_root } => {
-                let output = git::run_git_owned(
+                run_git_command_streaming(
+                    sink,
                     &repo_root,
                     &["worktree".into(), "prune".into(), "--verbose".into()],
+                    "git",
                 )?;
-                if output.trim().is_empty() {
-                    logs.push(info("No stale worktree metadata to prune.".into()));
-                } else {
-                    logs.push(info(output.trim().to_string()));
-                }
                 Ok(())
             }
             ExecutionStep::CopyWarmupFiles {
@@ -695,7 +1021,7 @@ impl ExecutionStep {
                     })?;
                     copied += 1;
                 }
-                logs.push(info(format!(
+                sink.push(info(format!(
                     "Warmup copied {} file(s) into {}",
                     copied,
                     worktree_path.display()
@@ -718,7 +1044,7 @@ impl ExecutionStep {
                 }
                 fs::write(env_dir.join("generated.env"), content)
                     .map_err(|error| format!("failed to write generated env: {error}"))?;
-                logs.push(info(format!(
+                sink.push(info(format!(
                     "Generated warmup env for {}",
                     worktree_path.display()
                 )));
@@ -732,22 +1058,16 @@ impl ExecutionStep {
                 context,
                 ..
             } => {
-                logs.push(info(format!("{label}: {}", command.trim())));
                 if blocking {
-                    let output = Command::new("/bin/zsh")
-                        .arg("-lc")
-                        .arg(&command)
-                        .current_dir(&cwd)
-                        .envs(build_envs(&context))
-                        .output()
-                        .map_err(|error| {
-                            format!("failed to run hook in {}: {error}", cwd.display())
-                        })?;
-                    push_output_logs(logs, &label, &output.stdout, &output.stderr);
-                    if !output.status.success() {
-                        return Err(format!("{label} failed with status {}", output.status));
-                    }
+                    run_shell_command_streaming(
+                        sink,
+                        &label,
+                        &cwd,
+                        &command,
+                        build_envs(&context),
+                    )?;
                 } else {
+                    sink.push(command_preview_log(&command));
                     Command::new("/bin/zsh")
                         .arg("-lc")
                         .arg(&command)
@@ -760,6 +1080,7 @@ impl ExecutionStep {
                         .map_err(|error| {
                             format!("failed to spawn hook in {}: {error}", cwd.display())
                         })?;
+                    sink.push(info(format!("{label}: spawned")));
                 }
                 Ok(())
             }
@@ -773,7 +1094,7 @@ impl ExecutionStep {
                 terminal_id,
                 ..
             } => {
-                logs.push(info(format!("{label}: {command_preview}")));
+                sink.push(command_preview_log(&command_preview));
                 match launcher.kind {
                     LauncherKind::App => {
                         let app_name = launcher.app_or_cmd.as_str();
@@ -804,6 +1125,7 @@ impl ExecutionStep {
                         open_terminal_at(term, &cwd, &command, &context)?;
                     }
                 }
+                sink.push(info(format!("{label}: launched")));
                 Ok(())
             }
         }
@@ -814,6 +1136,123 @@ fn render_terminal_command(cmd: &str, args: &[String]) -> String {
     let mut parts = vec![shell_quote(cmd)];
     parts.extend(args.iter().map(|arg| shell_quote(arg)));
     parts.join(" ")
+}
+
+fn command_preview_log(command: &str) -> RunLog {
+    info(format!("$ {}", command.trim()))
+}
+
+fn run_git_command_streaming(
+    sink: &mut impl LogWriter,
+    repo_root: &Path,
+    args: &[String],
+    label: &str,
+) -> Result<(), String> {
+    let command_preview = format!(
+        "git -C {} {}",
+        shell_quote(&repo_root.to_string_lossy()),
+        args.iter()
+            .map(|arg| shell_quote(arg))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    let mut command = Command::new("git");
+    command.arg("-C").arg(repo_root).args(args);
+    run_command_streaming(
+        sink,
+        label,
+        &command_preview,
+        &format!("failed to run git in {}", repo_root.display()),
+        command,
+    )
+}
+
+fn run_shell_command_streaming(
+    sink: &mut impl LogWriter,
+    label: &str,
+    cwd: &Path,
+    command: &str,
+    envs: BTreeMap<String, String>,
+) -> Result<(), String> {
+    let mut child = Command::new("/bin/zsh");
+    child
+        .arg("-lc")
+        .arg(command)
+        .current_dir(cwd)
+        .envs(envs);
+    run_command_streaming(
+        sink,
+        label,
+        command.trim(),
+        &format!("failed to run hook in {}", cwd.display()),
+        child,
+    )
+}
+
+fn run_command_streaming(
+    sink: &mut impl LogWriter,
+    label: &str,
+    command_preview: &str,
+    spawn_context: &str,
+    mut command: Command,
+) -> Result<(), String> {
+    sink.push(command_preview_log(command_preview));
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("{spawn_context}: {error}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "failed to capture stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "failed to capture stderr".to_string())?;
+
+    let (tx, rx) = mpsc::channel::<(bool, String)>();
+    let stdout_tx = tx.clone();
+    thread::spawn(move || stream_reader(stdout, false, stdout_tx));
+    let stderr_tx = tx.clone();
+    thread::spawn(move || stream_reader(stderr, true, stderr_tx));
+    drop(tx);
+
+    for (is_error, line) in rx {
+        if is_error {
+            sink.push(RunLog {
+                level: LogLevel::Error,
+                message: format!("{label}: {line}"),
+            });
+        } else {
+            sink.push(info(format!("{label}: {line}")));
+        }
+    }
+
+    let status = child
+        .wait()
+        .map_err(|error| format!("failed waiting for command: {error}"))?;
+    if !status.success() {
+        return Err(format!("{label} failed with status {status}"));
+    }
+    Ok(())
+}
+
+fn stream_reader<R: std::io::Read + Send + 'static>(
+    reader: R,
+    is_error: bool,
+    tx: mpsc::Sender<(bool, String)>,
+) {
+    let reader = BufReader::new(reader);
+    for line in reader.lines() {
+        let Ok(line) = line else { break };
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if tx.send((is_error, trimmed.to_string())).is_err() {
+            break;
+        }
+    }
 }
 
 fn open_terminal_at(
@@ -977,28 +1416,6 @@ fn open_terminal_app(app_name: &str, cwd: &str) -> Result<(), String> {
         ));
     }
     Ok(())
-}
-
-fn push_output_logs(logs: &mut Vec<RunLog>, label: &str, stdout: &[u8], stderr: &[u8]) {
-    let stdout = String::from_utf8_lossy(stdout);
-    for line in stdout
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-    {
-        logs.push(info(format!("{label}: {line}")));
-    }
-    let stderr = String::from_utf8_lossy(stderr);
-    for line in stderr
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-    {
-        logs.push(RunLog {
-            level: LogLevel::Error,
-            message: format!("{label}: {line}"),
-        });
-    }
 }
 
 fn build_envs(context: &TemplateContext) -> BTreeMap<String, String> {

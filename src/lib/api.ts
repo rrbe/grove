@@ -70,10 +70,26 @@ export function pruneRepoMetadata(repoRoot: string) {
   return invoke<ActionResponse>("prune_repo_metadata", { repoRoot });
 }
 
+export function listBranches(repoRoot: string) {
+  return invoke<string[]>("list_branches", { repoRoot });
+}
+
+export function listRemoteBranches(repoRoot: string) {
+  return invoke<string[]>("list_remote_branches", { repoRoot });
+}
+
+export function fetchRemote(repoRoot: string) {
+  return invoke<string>("fetch_remote", { repoRoot });
+}
+
 export function getDefaultTerminal() {
   return invoke<string>("get_default_terminal");
 }
 
 export function setDefaultTerminal(terminalId: string) {
   return invoke<void>("set_default_terminal", { terminalId });
+}
+
+export function setWorktreeRoot(repoRoot: string, worktreeRoot: string) {
+  return invoke<RepoSnapshot>("set_repo_worktree_root", { repoRoot, worktreeRoot });
 }

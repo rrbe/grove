@@ -100,7 +100,7 @@ pub fn save(
 pub fn builtin_config() -> ResolvedConfig {
     ResolvedConfig {
         settings: RepoSettings {
-            worktree_root: ".worktrees".into(),
+            worktree_root: ".claude".into(),
             default_base_branch: "main".into(),
         },
         cold_start: ColdStartConfig {
@@ -218,7 +218,7 @@ fn builtin_hooks() -> Vec<HookStep> {
 pub fn sample_project_text() -> String {
     toml::to_string_pretty(&ConfigFile {
         settings: SettingsPatch {
-            worktree_root: Some(".worktrees".into()),
+            worktree_root: Some(".claude".into()),
             default_base_branch: Some("main".into()),
         },
         cold_start: ColdStartPatch {

@@ -216,6 +216,33 @@ pub fn recent_commits(worktree_path: &Path, count: usize) -> Vec<CommitSummary> 
     }
 }
 
+pub fn list_local_branches(repo_root: &Path) -> Result<Vec<String>, String> {
+    let output = run_git_text(repo_root, ["branch", "--format=%(refname:short)"])?;
+    Ok(output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToString::to_string)
+        .collect())
+}
+
+pub fn list_remote_branches(repo_root: &Path) -> Result<Vec<String>, String> {
+    let output = run_git_text(repo_root, ["branch", "-r", "--format=%(refname:short)"])?;
+    Ok(output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter(|line| !line.ends_with("/HEAD"))
+        .map(ToString::to_string)
+        .collect())
+}
+
+pub fn fetch_remote(repo_root: &Path) -> Result<String, String> {
+    let remote = detect_default_remote(repo_root).unwrap_or_else(|| "origin".into());
+    let args = vec!["fetch".to_string(), remote.clone(), "--prune".to_string()];
+    run_git_owned(repo_root, &args).map(|_| format!("Fetched from {remote}"))
+}
+
 pub fn list_prune_candidates(repo_root: &Path) -> Result<Vec<String>, String> {
     let output = run_git_text(repo_root, ["worktree", "prune", "--dry-run", "--verbose"])?;
     Ok(output

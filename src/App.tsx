@@ -15,7 +15,10 @@ import {
   bootstrap,
   createRepoWorktree,
   approveExecutionSessionCommands,
+  fetchRemote,
   launchRepoWorktree,
+  listBranches,
+  listRemoteBranches,
   openRepo,
   previewRepoPrune,
   pruneRepoMetadata,
@@ -24,7 +27,9 @@ import {
   startRemoveRepoWorktreeSession,
   getDefaultTerminal,
   setDefaultTerminal,
+  setWorktreeRoot,
 } from "./lib/api";
+import { generateBranchName } from "./lib/branch-name-gen";
 import { useI18n, type Locale, type Translations } from "./lib/i18n";
 import type {
   ActionResponse,
@@ -305,7 +310,7 @@ export default function App() {
     }
   }
 
-  async function runAction(action: () => Promise<ActionResponse>) {
+  async function runAction(action: () => Promise<ActionResponse>, selectBranch?: string) {
     setError(null);
     setIsBusy(true);
     try {
@@ -313,7 +318,7 @@ export default function App() {
       appendLogs(response.logs);
       if (response.status === "approval-required") {
         setPendingApprovals(response.approvals);
-        pendingReplay.current = () => runAction(action);
+        pendingReplay.current = () => runAction(action, selectBranch);
         return;
       }
       setPendingApprovals([]);
@@ -321,6 +326,10 @@ export default function App() {
       if (response.repo) {
         setRepo(response.repo);
         setRepoInput(response.repo.repoRoot);
+        if (selectBranch) {
+          const match = response.repo.worktrees.find((w) => w.branch === selectBranch);
+          if (match) setSelectedWorktreeId(match.id);
+        }
       }
     } catch (reason) {
       setError(String(reason));
@@ -379,16 +388,17 @@ export default function App() {
 
   async function handleCreateWorktree() {
     if (!repo || !createForm.branch.trim()) return;
+    const branch = createForm.branch.trim();
     const input: CreateWorktreeInput = {
       repoRoot: repo.repoRoot,
       mode: createForm.mode,
-      branch: createForm.branch.trim(),
+      branch,
       baseRef: createForm.baseRef.trim() || null,
       remoteRef: createForm.remoteRef.trim() || null,
       path: createForm.path.trim() || null,
       autoStartLaunchers: createForm.autoStartLaunchers,
     };
-    await runAction(() => createRepoWorktree(input));
+    await runAction(() => createRepoWorktree(input), branch);
     setCreateForm(createInitialForm(repo));
   }
 
@@ -692,6 +702,7 @@ export default function App() {
             t={t}
             defaultTerminal={defaultTerminalId}
             onSetDefaultTerminal={(id) => void handleSetDefaultTerminal(id)}
+            onRepoUpdate={setRepo}
           />
         ) : (
           <>
@@ -781,6 +792,7 @@ export default function App() {
             setShowCreateModal(false);
           }}
           onClose={() => setShowCreateModal(false)}
+          onGoToSettings={() => { setShowCreateModal(false); setView("settings"); }}
           isBusy={isBusy}
           t={t}
         />
@@ -1197,6 +1209,7 @@ function SettingsPage({
   t,
   defaultTerminal,
   onSetDefaultTerminal,
+  onRepoUpdate,
 }: {
   toolStatuses: ToolStatus[];
   logs: TaggedLog[];
@@ -1215,6 +1228,7 @@ function SettingsPage({
   t: Translations;
   defaultTerminal: string;
   onSetDefaultTerminal: (id: string) => void;
+  onRepoUpdate: (repo: RepoSnapshot) => void;
 }) {
   const [showConfigEditor, setShowConfigEditor] = useState(false);
 
@@ -1280,6 +1294,28 @@ function SettingsPage({
           })}
         </select>
       </section>
+
+      {/* Worktree Directory */}
+      {repo && (
+        <section className="card stack">
+          <div className="section-heading">
+            <span>{t.worktreeRootLabel}</span>
+          </div>
+          <input
+            className="ghost-button"
+            style={{ textAlign: "left", padding: "6px 10px" }}
+            value={repo.mergedConfig.settings.worktreeRoot}
+            onChange={(e) => {
+              const newRoot = e.target.value;
+              onRepoUpdate({ ...repo, mergedConfig: { ...repo.mergedConfig, settings: { ...repo.mergedConfig.settings, worktreeRoot: newRoot } } });
+            }}
+            onBlur={() => {
+              setWorktreeRoot(repo.repoRoot, repo.mergedConfig.settings.worktreeRoot).then(onRepoUpdate).catch(() => {});
+            }}
+            disabled={isBusy}
+          />
+        </section>
+      )}
 
       {/* Tooling — always expanded */}
       <section className="card stack">
@@ -1450,6 +1486,7 @@ function CreateWorktreeModal({
   onFormChange,
   onCreate,
   onClose,
+  onGoToSettings,
   isBusy,
   t,
 }: {
@@ -1458,9 +1495,14 @@ function CreateWorktreeModal({
   onFormChange: (fn: (prev: CreateFormState) => CreateFormState) => void;
   onCreate: () => void;
   onClose: () => void;
+  onGoToSettings: () => void;
   isBusy: boolean;
   t: Translations;
 }) {
+  const [localBranches, setLocalBranches] = useState<string[]>([]);
+  const [remoteBranches, setRemoteBranches] = useState<string[]>([]);
+  const [isFetching, setIsFetching] = useState(false);
+
   const pathPreview = form.branch.trim()
     ? `${repo.repoRoot}/${repo.mergedConfig.settings.worktreeRoot}/${sanitizeBranch(form.branch.trim())}`
     : null;
@@ -1473,6 +1515,32 @@ function CreateWorktreeModal({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
+  // Load branches when mode changes
+  useEffect(() => {
+    if (form.mode === "new-branch" || form.mode === "existing-branch") {
+      listBranches(repo.repoRoot).then(setLocalBranches).catch(() => {});
+    } else if (form.mode === "remote-branch") {
+      listRemoteBranches(repo.repoRoot).then(setRemoteBranches).catch(() => {});
+    }
+  }, [form.mode, repo.repoRoot]);
+
+  const fetchingRef = useRef(false);
+  async function handleFetchRemote() {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+    setIsFetching(true);
+    try {
+      await fetchRemote(repo.repoRoot);
+      const branches = await listRemoteBranches(repo.repoRoot);
+      setRemoteBranches(branches);
+    } catch {
+      // ignore
+    } finally {
+      fetchingRef.current = false;
+      setIsFetching(false);
+    }
+  }
+
   return (
     <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="create-modal-panel" onClick={(e) => e.stopPropagation()}>
@@ -1484,25 +1552,13 @@ function CreateWorktreeModal({
         </div>
 
         <div className="stack" style={{ gap: 14, marginTop: 16 }}>
-          <label className="field-label">
-            {t.branchPlaceholder}
-            <input
-              autoFocus
-              value={form.branch}
-              onChange={(e) => onFormChange((c) => ({ ...c, branch: e.target.value }))}
-              placeholder={t.branchPlaceholder}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && form.branch.trim()) onCreate();
-              }}
-            />
-          </label>
-
+          {/* Mode selector at the top */}
           <label className="field-label">
             {t.mode}
             <select
               value={form.mode}
               onChange={(e) =>
-                onFormChange((c) => ({ ...c, mode: e.target.value as CreateMode }))
+                onFormChange((c) => ({ ...c, mode: e.target.value as CreateMode, branch: "" }))
               }
             >
               <option value="new-branch">{t.modeNewBranch}</option>
@@ -1511,43 +1567,117 @@ function CreateWorktreeModal({
             </select>
           </label>
 
+          {/* New branch: base branch on top, dashed line, then new branch name */}
           {form.mode === "new-branch" && (
-            <label className="field-label">
-              {t.baseRef}
-              <input
-                value={form.baseRef}
-                onChange={(e) => onFormChange((c) => ({ ...c, baseRef: e.target.value }))}
-                placeholder="main"
-              />
-            </label>
+            <>
+              <label className="field-label">
+                {t.baseRef}
+                <select
+                  value={form.baseRef}
+                  onChange={(e) => onFormChange((c) => ({ ...c, baseRef: e.target.value }))}
+                >
+                  {localBranches.map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="field-label">
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span>{t.newBranchName}</span>
+                  <button
+                    className="ghost-button"
+                    onClick={() => onFormChange((c) => ({ ...c, branch: generateBranchName() }))}
+                    style={{ fontSize: "0.72rem", padding: "2px 8px" }}
+                  >
+                    ✦ {t.suggestBranchName}
+                  </button>
+                </div>
+                <input
+                  autoFocus
+                  value={form.branch}
+                  onChange={(e) => onFormChange((c) => ({ ...c, branch: e.target.value }))}
+                  placeholder={t.branchPlaceholder}
+                />
+              </div>
+            </>
           )}
 
+          {/* Existing branch: select from local branches */}
+          {form.mode === "existing-branch" && (() => {
+            const usedBranches = new Set(
+              repo.worktrees.map((w) => w.branch).filter(Boolean) as string[]
+            );
+            return (
+              <label className="field-label">
+                {t.branchPlaceholder}
+                <select
+                  autoFocus
+                  value={form.branch}
+                  onChange={(e) => onFormChange((c) => ({ ...c, branch: e.target.value }))}
+                >
+                  <option value="">{t.selectBranch}</option>
+                  {localBranches.map((b) => {
+                    const inUse = usedBranches.has(b);
+                    return (
+                      <option key={b} value={b} disabled={inUse}>
+                        {b}{inUse ? ` (${t.inUse})` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+            );
+          })()}
+
+          {/* Remote branch: select from remote branches + fetch button */}
           {form.mode === "remote-branch" && (
             <label className="field-label">
-              {t.remoteRef}
-              <input
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>{t.remoteRef}</span>
+                <button
+                  className="ghost-button"
+                  onClick={handleFetchRemote}
+                  disabled={isFetching}
+                  style={{ fontSize: "0.72rem", padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4 }}
+                >
+                  {isFetching && <span className="mini-spinner" />}
+                  {t.fetchRemote}
+                </button>
+              </div>
+              <select
+                autoFocus
                 value={form.remoteRef}
-                onChange={(e) => onFormChange((c) => ({ ...c, remoteRef: e.target.value }))}
-                placeholder={t.remoteRefPlaceholder}
-              />
+                onChange={(e) => {
+                  const ref = e.target.value;
+                  // Auto-derive local branch name from remote ref (e.g., "origin/feat" -> "feat")
+                  const localName = ref.includes("/") ? ref.substring(ref.indexOf("/") + 1) : ref;
+                  onFormChange((c) => ({ ...c, remoteRef: ref, branch: localName }));
+                }}
+              >
+                <option value="">{t.selectBranch}</option>
+                {remoteBranches.map((b) => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
             </label>
           )}
 
-          {pathPreview && !form.path.trim() && (
-            <div className="field-label">
-              {t.pathPreview}
-              <div className="path-preview">{pathPreview}</div>
+          <div className="field-label">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span>{t.pathPreview}</span>
+              <button
+                className="ghost-button"
+                onClick={onGoToSettings}
+                style={{ fontSize: "0.72rem", padding: "2px 8px" }}
+              >
+                {t.setDefaultDirectory}
+              </button>
             </div>
-          )}
-
-          <label className="field-label">
-            {t.customPath}
             <input
-              value={form.path}
+              value={form.path || pathPreview || ""}
               onChange={(e) => onFormChange((c) => ({ ...c, path: e.target.value }))}
-              placeholder={t.optional}
             />
-          </label>
+          </div>
         </div>
 
         <div className="modal-actions">
@@ -1679,11 +1809,6 @@ function DeleteExecutionModal({
       >
         <div className="section-heading delete-execution-header">
           <span>{session?.title ?? t.deleteConfirm(branchLabel)}</span>
-          {execution.phase !== "confirm" && (
-            <button className="ghost-button" onClick={onClose} disabled={execution.isLoading || !canClose}>
-              {t.close}
-            </button>
-          )}
         </div>
 
         <div className="inline-panel delete-execution-summary">
@@ -1758,6 +1883,14 @@ function DeleteExecutionModal({
                   disabled={execution.isLoading}
                 >
                   {t.approveAndRetry}
+                </button>
+              </div>
+            )}
+
+            {canClose && (
+              <div className="modal-actions delete-execution-actions">
+                <button className="ghost-button" onClick={onClose} disabled={execution.isLoading}>
+                  {t.close}
                 </button>
               </div>
             )}

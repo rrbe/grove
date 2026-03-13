@@ -1217,12 +1217,14 @@ fn run_command_streaming(
     thread::spawn(move || stream_reader(stderr, true, stderr_tx));
     drop(tx);
 
-    for (is_error, line) in rx {
-        if is_error {
-            sink.push(RunLog {
-                level: LogLevel::Error,
-                message: format!("{label}: {line}"),
-            });
+    let mut stderr_lines = Vec::new();
+    for (is_stderr, line) in rx {
+        if is_stderr {
+            // Buffer stderr – git writes informational messages (e.g. "Preparing
+            // worktree") to stderr even on success.  We log them as info for now
+            // and only escalate to error if the process exits non-zero.
+            stderr_lines.push(line.clone());
+            sink.push(info(format!("{label}: {line}")));
         } else {
             sink.push(info(format!("{label}: {line}")));
         }
@@ -1232,6 +1234,13 @@ fn run_command_streaming(
         .wait()
         .map_err(|error| format!("failed waiting for command: {error}"))?;
     if !status.success() {
+        // Re-emit stderr as errors so callers see the real failure reason.
+        for line in &stderr_lines {
+            sink.push(RunLog {
+                level: LogLevel::Error,
+                message: format!("{label}: {line}"),
+            });
+        }
         return Err(format!("{label} failed with status {status}"));
     }
     Ok(())

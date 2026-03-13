@@ -33,6 +33,10 @@ cd src-tauri && cargo clippy # lint Rust code
 
 **Config merging**: `builtin_config()` → auto-detect default branch from git → apply project TOML → apply local TOML. Each layer overrides the previous.
 
+## Notes
+
+- Backend network requests (e.g. HTTP, git fetch) must use async I/O (`tokio` async commands) instead of blocking the main thread, to keep the UI responsive.
+
 ## UI Layout
 
 Master-detail with resizable sidebar. Sidebar: repo picker (with repo info line), worktree list, bottom action buttons (create worktree modal, hooks, settings gear). Main panel: worktree detail or settings page. Create worktree uses a right-side slide-out panel.

@@ -6,6 +6,7 @@ export interface Translations {
   loading: string;
   chooseRepo: string;
   branchPlaceholder: string;
+  newBranchName: string;
   create: string;
   newWorktree: string;
   createWorktree: string;
@@ -17,8 +18,11 @@ export interface Translations {
   baseRef: string;
   remoteRef: string;
   remoteRefPlaceholder: string;
-  customPath: string;
-  optional: string;
+  fetchRemote: string;
+  fetching: string;
+  selectBranch: string;
+  worktreeRootLabel: string;
+  setDefaultDirectory: string;
   hooks: string;
   deleteConfirm: (branch: string) => string;
   deletePathLabel: string;
@@ -102,4 +106,6 @@ export interface Translations {
   recentCommits: string;
   defaultTerminalLabel: string;
   defaultTerminalDescription: string;
+  inUse: string;
+  suggestBranchName: string;
 }

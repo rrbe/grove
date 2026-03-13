@@ -29,12 +29,13 @@ fn bootstrap(state: State<'_, SharedState>) -> BootstrapResponse {
 }
 
 #[tauri::command]
-fn open_repo(
-    app: AppHandle,
-    state: State<'_, SharedState>,
-    repo_root: String,
-) -> Result<RepoSnapshot, String> {
-    load_repo_snapshot(&app, &state, repo_root)
+async fn open_repo(app: AppHandle, repo_root: String) -> Result<RepoSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SharedState>();
+        load_repo_snapshot(&app, &state, repo_root)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 pub fn load_repo_snapshot(
@@ -43,9 +44,13 @@ pub fn load_repo_snapshot(
     repo_root: String,
 ) -> Result<RepoSnapshot, String> {
     let repo_root = git::resolve_repo_root(&repo_root)?;
-    let loaded = config::load(&repo_root)?;
+    let mut loaded = config::load(&repo_root)?;
     let mut store = state.store.lock().unwrap();
     let repo_root_str = repo_root.to_string_lossy().to_string();
+    // Apply per-repo worktree root from app store (highest priority).
+    if let Some(root) = store.repo_worktree_roots.get(&repo_root_str) {
+        loaded.merged.settings.worktree_root = root.clone();
+    }
     push_recent(&mut store, &repo_root_str);
     store.last_active_repo = Some(repo_root_str.clone());
     store::persist(app, &store)?;
@@ -88,140 +93,182 @@ pub fn load_repo_snapshot(
 }
 
 #[tauri::command]
-fn save_repo_configs(
-    app: AppHandle,
-    state: State<'_, SharedState>,
-    input: SaveConfigsInput,
-) -> Result<RepoSnapshot, String> {
-    let repo_root = git::resolve_repo_root(&input.repo_root)?;
-    save(
-        &repo_root,
-        &input.project_config_text,
-        &input.local_config_text,
-    )?;
-    load_repo_snapshot(&app, &state, repo_root.to_string_lossy().to_string())
+async fn save_repo_configs(app: AppHandle, input: SaveConfigsInput) -> Result<RepoSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SharedState>();
+        let repo_root = git::resolve_repo_root(&input.repo_root)?;
+        save(
+            &repo_root,
+            &input.project_config_text,
+            &input.local_config_text,
+        )?;
+        load_repo_snapshot(&app, &state, repo_root.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn approve_repo_commands(
-    app: AppHandle,
-    state: State<'_, SharedState>,
-    input: ApproveCommandsInput,
-) -> Result<(), String> {
-    let repo_root = git::resolve_repo_root(&input.repo_root)?;
-    approve_fingerprints(
-        &app,
-        &state,
-        &repo_root.to_string_lossy(),
-        &input.fingerprints,
-    )
-}
-
-#[tauri::command]
-fn create_repo_worktree(
-    app: AppHandle,
-    state: State<'_, SharedState>,
-    input: CreateWorktreeInput,
-) -> Result<models::ActionResponse, String> {
-    let dt = read_default_terminal(&state);
-    create_worktree(&app, &state, input, dt.as_deref())
-}
-
-#[tauri::command]
-fn remove_repo_worktree(
-    app: AppHandle,
-    state: State<'_, SharedState>,
-    input: RemoveWorktreeInput,
-) -> Result<models::ActionResponse, String> {
-    let dt = read_default_terminal(&state);
-    remove_worktree(&app, &state, input, dt.as_deref())
-}
-
-#[tauri::command]
-fn start_remove_repo_worktree_session(
-    app: AppHandle,
-    state: State<'_, SharedState>,
-    input: RemoveWorktreeInput,
-) -> Result<ExecutionSessionSnapshot, String> {
-    let dt = read_default_terminal(&state);
-    start_remove_worktree_session(&app, &state, input, dt.as_deref())
-}
-
-#[tauri::command]
-fn get_execution_session_snapshot(session_id: String) -> Result<ExecutionSessionSnapshot, String> {
-    get_execution_session(&session_id)
-}
-
-#[tauri::command]
-fn approve_execution_session_commands(
-    app: AppHandle,
-    state: State<'_, SharedState>,
-    input: ApproveExecutionSessionInput,
-) -> Result<ExecutionSessionSnapshot, String> {
-    approve_execution_session(&app, &state, input)
-}
-
-#[tauri::command]
-fn start_repo_worktree(
-    app: AppHandle,
-    state: State<'_, SharedState>,
-    input: StartWorktreeInput,
-) -> Result<models::ActionResponse, String> {
-    let dt = read_default_terminal(&state);
-    let response = start_worktree(&app, &state, input.clone(), dt.as_deref())?;
-    if response.status == models::ActionStatus::Completed {
-        let _ = mark_worktree_opened(&app, &state, &input.worktree_path);
-    }
-    Ok(response)
-}
-
-#[tauri::command]
-fn launch_repo_worktree(
-    app: AppHandle,
-    state: State<'_, SharedState>,
-    input: LaunchWorktreeInput,
-) -> Result<models::ActionResponse, String> {
-    let dt = read_default_terminal(&state);
-    if let Ok(repo_root) = git::resolve_repo_root(&input.repo_root) {
-        let response = launch_worktree(
+async fn approve_repo_commands(app: AppHandle, input: ApproveCommandsInput) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SharedState>();
+        let repo_root = git::resolve_repo_root(&input.repo_root)?;
+        approve_fingerprints(
             &app,
             &state,
-            LaunchWorktreeInput {
-                repo_root: repo_root.to_string_lossy().to_string(),
-                ..input.clone()
-            },
-            dt.as_deref(),
-        )?;
+            &repo_root.to_string_lossy(),
+            &input.fingerprints,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn create_repo_worktree(
+    app: AppHandle,
+    input: CreateWorktreeInput,
+) -> Result<models::ActionResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SharedState>();
+        let dt = read_default_terminal(&state);
+        create_worktree(&app, &state, input, dt.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn remove_repo_worktree(
+    app: AppHandle,
+    input: RemoveWorktreeInput,
+) -> Result<models::ActionResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SharedState>();
+        let dt = read_default_terminal(&state);
+        remove_worktree(&app, &state, input, dt.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn start_remove_repo_worktree_session(
+    app: AppHandle,
+    input: RemoveWorktreeInput,
+) -> Result<ExecutionSessionSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SharedState>();
+        let dt = read_default_terminal(&state);
+        start_remove_worktree_session(&app, &state, input, dt.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn get_execution_session_snapshot(session_id: String) -> Result<ExecutionSessionSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        get_execution_session(&session_id)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn approve_execution_session_commands(
+    app: AppHandle,
+    input: ApproveExecutionSessionInput,
+) -> Result<ExecutionSessionSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SharedState>();
+        approve_execution_session(&app, &state, input)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn start_repo_worktree(
+    app: AppHandle,
+    input: StartWorktreeInput,
+) -> Result<models::ActionResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SharedState>();
+        let dt = read_default_terminal(&state);
+        let response = start_worktree(&app, &state, input.clone(), dt.as_deref())?;
         if response.status == models::ActionStatus::Completed {
             let _ = mark_worktree_opened(&app, &state, &input.worktree_path);
         }
-        return Ok(response);
-    }
-    launch_worktree(&app, &state, input, dt.as_deref())
+        Ok(response)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn run_repo_hook_event(
+async fn launch_repo_worktree(
     app: AppHandle,
-    state: State<'_, SharedState>,
+    input: LaunchWorktreeInput,
+) -> Result<models::ActionResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SharedState>();
+        let dt = read_default_terminal(&state);
+        if let Ok(repo_root) = git::resolve_repo_root(&input.repo_root) {
+            let response = launch_worktree(
+                &app,
+                &state,
+                LaunchWorktreeInput {
+                    repo_root: repo_root.to_string_lossy().to_string(),
+                    ..input.clone()
+                },
+                dt.as_deref(),
+            )?;
+            if response.status == models::ActionStatus::Completed {
+                let _ = mark_worktree_opened(&app, &state, &input.worktree_path);
+            }
+            return Ok(response);
+        }
+        launch_worktree(&app, &state, input, dt.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn run_repo_hook_event(
+    app: AppHandle,
     input: RunHookEventInput,
 ) -> Result<models::ActionResponse, String> {
-    let dt = read_default_terminal(&state);
-    run_hook_event(&app, &state, input, dt.as_deref())
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SharedState>();
+        let dt = read_default_terminal(&state);
+        run_hook_event(&app, &state, input, dt.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn preview_repo_prune(repo_root: String) -> Result<Vec<String>, String> {
-    preview_prune(&repo_root)
+async fn preview_repo_prune(repo_root: String) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        preview_prune(&repo_root)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn prune_repo_metadata(
+async fn prune_repo_metadata(
     app: AppHandle,
-    state: State<'_, SharedState>,
     repo_root: String,
 ) -> Result<models::ActionResponse, String> {
-    prune_repo(&app, &state, repo_root)
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SharedState>();
+        prune_repo(&app, &state, repo_root)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 pub fn run() {
@@ -247,11 +294,45 @@ pub fn run() {
             run_repo_hook_event,
             preview_repo_prune,
             prune_repo_metadata,
+            list_branches,
+            list_remote_branches,
+            fetch_remote,
             get_default_terminal,
-            set_default_terminal
+            set_default_terminal,
+            set_repo_worktree_root
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[tauri::command]
+async fn list_branches(repo_root: String) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let repo_root = git::resolve_repo_root(&repo_root)?;
+        git::list_local_branches(&repo_root)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn list_remote_branches(repo_root: String) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let repo_root = git::resolve_repo_root(&repo_root)?;
+        git::list_remote_branches(&repo_root)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn fetch_remote(repo_root: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let repo_root = git::resolve_repo_root(&repo_root)?;
+        git::fetch_remote(&repo_root)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -280,6 +361,29 @@ fn set_default_terminal(
     let mut store = state.store.lock().unwrap();
     store.default_terminal = Some(terminal_id);
     store::persist(&app, &store)
+}
+
+#[tauri::command]
+async fn set_repo_worktree_root(
+    app: AppHandle,
+    repo_root: String,
+    worktree_root: String,
+) -> Result<RepoSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SharedState>();
+        let repo_root = git::resolve_repo_root(&repo_root)?;
+        let repo_root_str = repo_root.to_string_lossy().to_string();
+        {
+            let mut store = state.store.lock().unwrap();
+            store
+                .repo_worktree_roots
+                .insert(repo_root_str.clone(), worktree_root);
+            store::persist(&app, &store)?;
+        }
+        load_repo_snapshot(&app, &state, repo_root_str)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn read_default_terminal(state: &SharedState) -> Option<String> {

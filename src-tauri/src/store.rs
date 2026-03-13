@@ -31,6 +31,9 @@ pub struct AppStore {
     pub pr_cache: BTreeMap<String, PrCacheEntry>,
     #[serde(default)]
     pub default_terminal: Option<String>,
+    /// Per-repo worktree root overrides, keyed by canonical repo root path.
+    #[serde(default)]
+    pub repo_worktree_roots: BTreeMap<String, String>,
 }
 
 pub struct SharedState {

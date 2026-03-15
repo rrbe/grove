@@ -7,11 +7,11 @@ mod store;
 use actions::{
     create_worktree, dispose_execution_session, get_execution_session, launch_worktree,
     mark_worktree_opened, preview_prune, prune_repo, remove_worktree, run_hook_event,
-    start_remove_worktree_session, start_worktree,
+    start_remove_worktree_session,
 };
 use models::{
     BootstrapResponse, CreateWorktreeInput, ExecutionSessionSnapshot, LaunchWorktreeInput,
-    RemoveWorktreeInput, RepoSnapshot, RunHookEventInput, SaveConfigInput, StartWorktreeInput,
+    RemoveWorktreeInput, RepoSnapshot, RunHookEventInput, SaveConfigInput, SaveHooksInput,
 };
 use store::{push_recent, SharedState};
 use tauri::{AppHandle, Manager, State};
@@ -111,6 +111,32 @@ async fn save_repo_config(
 }
 
 #[tauri::command]
+async fn save_repo_hooks(
+    app: AppHandle,
+    input: SaveHooksInput,
+) -> Result<RepoSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SharedState>();
+        let repo_root = git::resolve_repo_root(&input.repo_root)?;
+        let mut parsed = config::parse_config_text(&input.config_text)?.unwrap_or_default();
+        parsed.hooks = input.hooks;
+        let repo_root_str = repo_root.to_string_lossy().to_string();
+        {
+            let mut store = state.store.lock().unwrap();
+            if config::is_effectively_empty(&parsed) {
+                store.repo_configs.remove(&repo_root_str);
+            } else {
+                store.repo_configs.insert(repo_root_str.clone(), parsed);
+            }
+            store::persist(&app, &store)?;
+        }
+        load_repo_snapshot(&app, &state, repo_root_str)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn create_repo_worktree(
     app: AppHandle,
     input: CreateWorktreeInput,
@@ -166,22 +192,6 @@ async fn dispose_execution_session_snapshot(session_id: String) -> Result<(), St
     tauri::async_runtime::spawn_blocking(move || dispose_execution_session(&session_id))
         .await
         .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn start_repo_worktree(
-    app: AppHandle,
-    input: StartWorktreeInput,
-) -> Result<models::ActionResponse, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<SharedState>();
-        let dt = read_default_terminal(&state);
-        let response = start_worktree(&app, &state, input.clone(), dt.as_deref())?;
-        let _ = mark_worktree_opened(&app, &state, &input.worktree_path);
-        Ok(response)
-    })
-    .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -257,12 +267,12 @@ pub fn run() {
             bootstrap,
             open_repo,
             save_repo_config,
+            save_repo_hooks,
             create_repo_worktree,
             remove_repo_worktree,
             start_remove_repo_worktree_session,
             get_execution_session_snapshot,
             dispose_execution_session_snapshot,
-            start_repo_worktree,
             launch_repo_worktree,
             run_repo_hook_event,
             preview_repo_prune,

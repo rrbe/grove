@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
@@ -83,7 +85,7 @@ pub struct ResolvedConfig {
     pub settings: RepoSettings,
     pub cold_start: ColdStartConfig,
     pub launchers: Vec<LauncherProfile>,
-    pub hooks: Vec<HookStep>,
+    pub hooks: BTreeMap<HookEvent, Vec<HookStep>>,
 }
 
 impl Default for ResolvedConfig {
@@ -92,7 +94,7 @@ impl Default for ResolvedConfig {
             settings: RepoSettings::default(),
             cold_start: ColdStartConfig::default(),
             launchers: Vec::new(),
-            hooks: Vec::new(),
+            hooks: BTreeMap::new(),
         }
     }
 }
@@ -155,12 +157,10 @@ pub struct LauncherProfile {
 pub enum HookEvent {
     PreCreate,
     PostCreate,
-    PostStart,
     PreLaunch,
     PostLaunch,
     PreRemove,
     PostRemove,
-    PostScan,
 }
 
 impl HookEvent {
@@ -168,12 +168,10 @@ impl HookEvent {
         match self {
             HookEvent::PreCreate => "pre-create",
             HookEvent::PostCreate => "post-create",
-            HookEvent::PostStart => "post-start",
             HookEvent::PreLaunch => "pre-launch",
             HookEvent::PostLaunch => "post-launch",
             HookEvent::PreRemove => "pre-remove",
             HookEvent::PostRemove => "post-remove",
-            HookEvent::PostScan => "post-scan",
         }
     }
 }
@@ -183,30 +181,21 @@ impl HookEvent {
 pub enum HookStepType {
     Script,
     Launch,
+    Install,
+    CopyFiles,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HookStep {
-    pub id: String,
-    pub event: HookEvent,
     #[serde(rename = "type")]
     pub step_type: HookStepType,
-    #[serde(default = "default_enabled")]
-    pub enabled: bool,
-    #[serde(default = "default_blocking")]
-    pub blocking: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launcher_id: Option<String>,
-    pub prompt_template: Option<String>,
-}
-
-const fn default_enabled() -> bool {
-    true
-}
-
-const fn default_blocking() -> bool {
-    true
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -219,7 +208,7 @@ pub struct ConfigFile {
     #[serde(default)]
     pub launchers: Vec<LauncherProfile>,
     #[serde(default)]
-    pub hooks: Vec<HookStep>,
+    pub hooks: BTreeMap<HookEvent, Vec<HookStep>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -241,6 +230,15 @@ pub struct ColdStartPatch {
 pub struct SaveConfigInput {
     pub repo_root: String,
     pub config_text: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveHooksInput {
+    pub repo_root: String,
+    pub config_text: String,
+    #[serde(default)]
+    pub hooks: BTreeMap<HookEvent, Vec<HookStep>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -271,13 +269,6 @@ pub struct RemoveWorktreeInput {
     pub worktree_path: String,
     #[serde(default)]
     pub force: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StartWorktreeInput {
-    pub repo_root: String,
-    pub worktree_path: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

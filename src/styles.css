@@ -1221,29 +1221,238 @@ textarea {
 }
 
 /* Hooks modal */
+.hooks-modal-card {
+  width: min(620px, calc(100vw - 48px));
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  padding: 20px 22px;
+}
+
+.hooks-add-bar {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-top: 14px;
+}
+
+.hooks-add-bar select {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+}
+
+.hooks-add-bar .primary-button {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
 .hooks-list {
   display: flex;
   flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.hook-group {
+  border-radius: 14px;
+  border: 1px solid rgba(16, 33, 46, 0.08);
+  background: rgba(16, 33, 46, 0.02);
+  overflow: hidden;
+}
+
+.hook-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 100ms ease;
+}
+
+.hook-group-header:hover {
+  background: rgba(16, 33, 46, 0.04);
+}
+
+.hook-group-chevron {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: rgba(16, 33, 46, 0.35);
+  transition: transform 160ms ease;
+}
+
+.hook-group-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.hook-group-event {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #10212e;
+}
+
+.hook-group-count {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: rgba(16, 33, 46, 0.45);
+  font-weight: 600;
+}
+
+.hook-group-remove {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  border-radius: 6px;
+  background: rgba(197, 61, 46, 0.08);
+  color: #8e2319;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.hook-group-header:hover .hook-group-remove {
+  opacity: 1;
+}
+
+.hook-group-remove:hover {
+  background: rgba(197, 61, 46, 0.16);
+  transform: none;
+}
+
+.hook-group-body {
+  padding: 0 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hook-event-help {
+  margin: 0;
+  font-size: 0.78rem;
+  color: rgba(16, 33, 46, 0.5);
+  line-height: 1.4;
+}
+
+.hook-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(16, 33, 46, 0.06);
+}
+
+.hook-step-number {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: rgba(46, 107, 99, 0.1);
+  color: #2e6b63;
+  font-size: 0.68rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  margin-top: 1px;
+}
+
+.hook-step-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hook-step-top {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
-.hook-item {
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: rgba(16, 33, 46, 0.04);
-  display: grid;
-  gap: 4px;
-}
-
-.hook-item-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.hook-item-detail {
+.hook-step-top select {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 8px;
   font-size: 0.82rem;
-  color: rgba(16, 33, 46, 0.58);
+}
+
+.hook-step-remove {
+  flex-shrink: 0;
+  padding: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(16, 33, 46, 0.3);
+  font-size: 1rem;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+
+.hook-step-remove:hover {
+  background: rgba(197, 61, 46, 0.1);
+  color: #8e2319;
+  transform: none;
+}
+
+.hook-step-config .field-label {
+  font-size: 0.78rem;
+}
+
+.hook-step-config textarea {
+  min-height: 56px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+
+.hook-step-config select {
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+
+.hook-step-config .install-hint {
+  font-size: 0.78rem;
+  color: rgba(16, 33, 46, 0.45);
+  margin: 0;
+}
+
+.hook-add-step {
+  align-self: flex-start;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  border-radius: 8px;
+  background: rgba(16, 33, 46, 0.04);
+  color: rgba(16, 33, 46, 0.6);
+  margin-top: 2px;
+}
+
+.hook-add-step:hover {
+  background: rgba(16, 33, 46, 0.08);
+  transform: none;
+}
+
+.hooks-empty {
+  text-align: center;
+  padding: 24px 16px;
+  color: rgba(16, 33, 46, 0.45);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 720px) {
+  .hooks-modal-card {
+    width: calc(100vw - 24px);
+  }
 }
 
 /* Section divider */

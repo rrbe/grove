@@ -2,12 +2,10 @@ export type LauncherKind = "app" | "terminal-cli";
 export type HookEvent =
   | "pre-create"
   | "post-create"
-  | "post-start"
   | "pre-launch"
   | "post-launch"
   | "pre-remove"
-  | "post-remove"
-  | "post-scan";
+  | "post-remove";
 export type CreateMode = "new-branch" | "existing-branch" | "remote-branch";
 export type ExecutionStatus = "running" | "completed" | "failed";
 export type ExecutionEventKind = "log-appended" | "completed" | "failed";
@@ -55,21 +53,17 @@ export interface LauncherProfile {
 }
 
 export interface HookStep {
-  id: string;
-  event: HookEvent;
-  type: "script" | "launch";
-  enabled: boolean;
-  blocking: boolean;
-  run: string | null;
-  launcherId: string | null;
-  promptTemplate: string | null;
+  type: "script" | "launch" | "install" | "copy-files";
+  run?: string | null;
+  launcherId?: string | null;
+  paths?: string[];
 }
 
 export interface ResolvedConfig {
   settings: RepoSettings;
   coldStart: ColdStartConfig;
   launchers: LauncherProfile[];
-  hooks: HookStep[];
+  hooks: Partial<Record<HookEvent, HookStep[]>>;
 }
 
 export interface PortAssignment {
@@ -126,6 +120,12 @@ export interface SaveConfigInput {
   configText: string;
 }
 
+export interface SaveHooksInput {
+  repoRoot: string;
+  configText: string;
+  hooks: Partial<Record<HookEvent, HookStep[]>>;
+}
+
 export interface CreateWorktreeInput {
   repoRoot: string;
   mode: CreateMode;
@@ -140,11 +140,6 @@ export interface RemoveWorktreeInput {
   repoRoot: string;
   worktreePath: string;
   force: boolean;
-}
-
-export interface StartWorktreeInput {
-  repoRoot: string;
-  worktreePath: string;
 }
 
 export interface LaunchWorktreeInput {

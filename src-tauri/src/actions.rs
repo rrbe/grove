@@ -3,9 +3,9 @@ use crate::{
     git,
     models::{
         ActionResponse, CreateMode, CreateWorktreeInput, ExecutionEvent, ExecutionEventKind,
-        ExecutionSessionSnapshot, ExecutionStatus, HookEvent, HookStepType, LaunchWorktreeInput,
-        LauncherKind, LauncherProfile, LogLevel, RemoveWorktreeInput, RunHookEventInput, RunLog,
-        StartWorktreeInput, WorktreeRecord,
+        ExecutionSessionSnapshot, ExecutionStatus, HookEvent, HookStepType,
+        LaunchWorktreeInput, LauncherKind, LauncherProfile, LogLevel,
+        RemoveWorktreeInput, RunHookEventInput, RunLog, WorktreeRecord,
     },
     store::{persist, push_recent, touch_worktree, SharedState},
 };
@@ -15,7 +15,7 @@ use std::{
     collections::BTreeMap,
     fs,
     io::{BufRead, BufReader},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::{Command, Stdio},
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -55,11 +55,20 @@ enum ExecutionStep {
         worktree_path: PathBuf,
         files: Vec<String>,
     },
+    InstallDependencies {
+        label: String,
+        worktree_path: PathBuf,
+    },
+    CopyProjectFiles {
+        label: String,
+        repo_root: PathBuf,
+        worktree_path: PathBuf,
+        paths: Vec<String>,
+    },
     Script {
         label: String,
         cwd: PathBuf,
         command: String,
-        blocking: bool,
         context: TemplateContext,
     },
     Launch {
@@ -166,13 +175,6 @@ pub fn create_worktree(
     )?);
 
     if !input.auto_start_launchers.is_empty() {
-        steps.extend(plan_hooks(
-            &repo_root,
-            &loaded,
-            HookEvent::PostStart,
-            &context,
-            default_terminal,
-        )?);
         for launcher_id in &input.auto_start_launchers {
             steps.extend(plan_launch_action(
                 &repo_root,
@@ -232,22 +234,6 @@ pub fn get_execution_session(session_id: &str) -> Result<ExecutionSessionSnapsho
 pub fn dispose_execution_session(session_id: &str) -> Result<(), String> {
     remove_session(session_id);
     Ok(())
-}
-
-pub fn start_worktree(
-    app: &AppHandle,
-    state: &SharedState,
-    input: StartWorktreeInput,
-    default_terminal: Option<&str>,
-) -> Result<ActionResponse, String> {
-    run_event_internal(
-        app,
-        state,
-        input.repo_root,
-        HookEvent::PostStart,
-        Some(input.worktree_path),
-        default_terminal,
-    )
 }
 
 pub fn run_hook_event(
@@ -341,7 +327,7 @@ fn run_event_internal(
             &state.store.lock().unwrap(),
         )?;
         let worktree = find_worktree(&worktrees, &path)?;
-        build_context_from_worktree(&repo_root, &loaded, worktree, event == HookEvent::PostScan)
+        build_context_from_worktree(&repo_root, &loaded, worktree, false)
     } else {
         build_context(
             &repo_root,
@@ -591,29 +577,32 @@ fn plan_hooks(
     default_terminal: Option<&str>,
 ) -> Result<Vec<ExecutionStep>, String> {
     let mut steps = Vec::new();
-    let hook_cwd = if matches!(event, HookEvent::PreCreate | HookEvent::PostScan) {
+    let hook_cwd = if matches!(event, HookEvent::PreCreate) {
         repo_root.to_path_buf()
     } else {
         PathBuf::from(&context.values["worktree_path"])
     };
-    for hook in loaded
+    let event_label = event.label().to_string();
+    for (i, hook) in loaded
         .merged
         .hooks
-        .iter()
-        .filter(|hook| hook.enabled && hook.event == event)
+        .get(&event)
+        .into_iter()
+        .flatten()
+        .enumerate()
     {
+        let label = hook_label(&event_label, i);
         match hook.step_type {
             HookStepType::Script => {
                 let raw = hook
                     .run
                     .as_deref()
-                    .ok_or_else(|| format!("hook {} is missing run", hook.id))?;
+                    .ok_or_else(|| "script hook is missing run field".to_string())?;
                 let command = render_template(raw, context);
                 steps.push(ExecutionStep::Script {
-                    label: format!("Hook {} ({})", hook.id, hook.event.label()),
+                    label,
                     cwd: hook_cwd.clone(),
                     command,
-                    blocking: hook.blocking,
                     context: context.clone(),
                 });
             }
@@ -621,20 +610,45 @@ fn plan_hooks(
                 let launcher_id = hook
                     .launcher_id
                     .as_deref()
-                    .ok_or_else(|| format!("hook {} is missing launcherId", hook.id))?;
+                    .ok_or_else(|| "launch hook is missing launcherId".to_string())?;
                 steps.extend(plan_launch_action(
                     repo_root,
                     loaded,
                     context,
                     launcher_id,
-                    hook.prompt_template.as_deref(),
+                    None,
                     true,
                     default_terminal,
                 )?);
             }
+            HookStepType::Install => {
+                steps.push(ExecutionStep::InstallDependencies {
+                    label,
+                    worktree_path: PathBuf::from(&context.values["worktree_path"]),
+                });
+            }
+            HookStepType::CopyFiles => {
+                if hook.paths.is_empty() {
+                    return Err(format!(
+                        "Hook {} step {}: copy-files is missing paths",
+                        event_label,
+                        i + 1
+                    ));
+                }
+                steps.push(ExecutionStep::CopyProjectFiles {
+                    label,
+                    repo_root: repo_root.to_path_buf(),
+                    worktree_path: PathBuf::from(&context.values["worktree_path"]),
+                    paths: hook.paths.clone(),
+                });
+            }
         }
     }
     Ok(steps)
+}
+
+fn hook_label(event_label: &str, step_index: usize) -> String {
+    format!("Hook {} step {}", event_label, step_index + 1)
 }
 
 fn plan_launch_action(
@@ -904,38 +918,30 @@ impl ExecutionStep {
                 )));
                 Ok(())
             }
+            ExecutionStep::InstallDependencies {
+                label,
+                worktree_path,
+            } => run_install_dependencies(sink, &label, &worktree_path),
+            ExecutionStep::CopyProjectFiles {
+                label,
+                repo_root,
+                worktree_path,
+                paths,
+            } => run_copy_project_files(sink, &label, &repo_root, &worktree_path, &paths),
             ExecutionStep::Script {
                 label,
                 cwd,
                 command,
-                blocking,
                 context,
                 ..
             } => {
-                if blocking {
-                    run_shell_command_streaming(
-                        sink,
-                        &label,
-                        &cwd,
-                        &command,
-                        build_envs(&context),
-                    )?;
-                } else {
-                    sink.push(command_preview_log(&command));
-                    Command::new("/bin/zsh")
-                        .arg("-lc")
-                        .arg(&command)
-                        .current_dir(&cwd)
-                        .envs(build_envs(&context))
-                        .stdin(Stdio::null())
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn()
-                        .map_err(|error| {
-                            format!("failed to spawn hook in {}: {error}", cwd.display())
-                        })?;
-                    sink.push(info(format!("{label}: spawned")));
-                }
+                run_shell_command_streaming(
+                    sink,
+                    &label,
+                    &cwd,
+                    &command,
+                    build_envs(&context),
+                )?;
                 Ok(())
             }
             ExecutionStep::Launch {
@@ -983,6 +989,167 @@ impl ExecutionStep {
             }
         }
     }
+}
+
+fn run_install_dependencies(
+    sink: &mut impl LogWriter,
+    label: &str,
+    worktree_path: &Path,
+) -> Result<(), String> {
+    if !worktree_path.exists() {
+        return Err(format!(
+            "worktree path does not exist yet: {}",
+            worktree_path.display()
+        ));
+    }
+    if !worktree_path.join("package.json").exists() {
+        sink.push(info(format!(
+            "{label}: skipped (no package.json in {})",
+            worktree_path.display()
+        )));
+        return Ok(());
+    }
+    let command = resolve_package_manager(worktree_path)?;
+    let args = vec!["install".to_string()];
+    let mut process = Command::new(command);
+    process.current_dir(worktree_path).args(&args);
+    run_command_streaming(
+        sink,
+        label,
+        &render_terminal_command(command, &args),
+        &format!("failed to run install in {}", worktree_path.display()),
+        process,
+    )
+}
+
+fn resolve_package_manager(worktree_path: &Path) -> Result<&'static str, String> {
+    if worktree_path.join("pnpm-lock.yaml").exists() {
+        return Ok("pnpm");
+    }
+    if worktree_path.join("package-lock.json").exists() {
+        return Ok("npm");
+    }
+    if worktree_path.join("yarn.lock").exists() {
+        return Ok("yarn");
+    }
+    if worktree_path.join("bun.lockb").exists() || worktree_path.join("bun.lock").exists() {
+        return Ok("bun");
+    }
+    Err("could not detect a package manager from the worktree lockfiles".into())
+}
+
+fn run_copy_project_files(
+    sink: &mut impl LogWriter,
+    label: &str,
+    repo_root: &Path,
+    worktree_path: &Path,
+    paths: &[String],
+) -> Result<(), String> {
+    if !worktree_path.exists() {
+        return Err(format!(
+            "worktree path does not exist yet: {}",
+            worktree_path.display()
+        ));
+    }
+
+    let mut copied = 0usize;
+    let mut skipped = 0usize;
+    for raw_path in paths {
+        let relative = validate_project_relative_path(raw_path)?;
+        let source = repo_root.join(&relative);
+        if !source.exists() {
+            skipped += 1;
+            sink.push(info(format!(
+                "{label}: skipped missing {}",
+                source.display()
+            )));
+            continue;
+        }
+        let target = worktree_path.join(&relative);
+        if target.exists() {
+            skipped += 1;
+            sink.push(info(format!(
+                "{label}: skipped existing {}",
+                target.display()
+            )));
+            continue;
+        }
+
+        copy_path(&source, &target, false)?;
+        copied += 1;
+    }
+
+    sink.push(info(format!(
+        "{label}: copied {copied} path(s), skipped {skipped}"
+    )));
+    Ok(())
+}
+
+fn validate_project_relative_path(raw_path: &str) -> Result<PathBuf, String> {
+    let path = Path::new(raw_path);
+    if path.as_os_str().is_empty() {
+        return Err("hook path cannot be empty".into());
+    }
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => normalized.push(part),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(format!("hook path must stay inside the repo: {raw_path}"));
+            }
+        }
+    }
+    if normalized.as_os_str().is_empty() {
+        return Err(format!("hook path must point to a repo-relative file: {raw_path}"));
+    }
+    Ok(normalized)
+}
+
+fn copy_path(source: &Path, target: &Path, overwrite: bool) -> Result<(), String> {
+    if source.is_dir() {
+        if target.exists() && target.is_file() {
+            return Err(format!(
+                "cannot replace file {} with directory {}",
+                target.display(),
+                source.display()
+            ));
+        }
+        fs::create_dir_all(target)
+            .map_err(|error| format!("failed to create {}: {error}", target.display()))?;
+        for entry in fs::read_dir(source)
+            .map_err(|error| format!("failed to read {}: {error}", source.display()))?
+        {
+            let entry = entry.map_err(|error| {
+                format!("failed to read directory entry in {}: {error}", source.display())
+            })?;
+            copy_path(&entry.path(), &target.join(entry.file_name()), overwrite)?;
+        }
+        return Ok(());
+    }
+
+    if target.exists() && target.is_dir() {
+        return Err(format!(
+            "cannot replace directory {} with file {}",
+            target.display(),
+            source.display()
+        ));
+    }
+    if target.exists() && !overwrite {
+        return Ok(());
+    }
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+    }
+    fs::copy(source, target).map_err(|error| {
+        format!(
+            "failed to copy {} to {}: {error}",
+            source.display(),
+            target.display()
+        )
+    })?;
+    Ok(())
 }
 
 fn render_terminal_command(cmd: &str, args: &[String]) -> String {
@@ -1403,6 +1570,7 @@ pub fn mark_worktree_opened(
 mod tests {
     use super::*;
     use crate::models::ExecutionStatus;
+    use tempfile::tempdir;
 
     #[test]
     fn render_template_replaces_ports() {
@@ -1472,5 +1640,64 @@ mod tests {
 
         assert!(session_snapshot(&session_id).is_none());
         EXECUTION_SESSIONS.lock().unwrap().clear();
+    }
+
+    #[test]
+    fn validate_project_relative_path_rejects_parent_segments() {
+        assert!(validate_project_relative_path("../.env").is_err());
+        assert!(validate_project_relative_path("/tmp/.env").is_err());
+        assert_eq!(
+            validate_project_relative_path("./config/.env").unwrap(),
+            PathBuf::from("config/.env")
+        );
+    }
+
+    #[test]
+    fn resolve_package_manager_detects_pnpm_from_lockfile() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("pnpm-lock.yaml"), "lockfileVersion: '9.0'").unwrap();
+
+        assert_eq!(resolve_package_manager(dir.path()).unwrap(), "pnpm");
+    }
+
+    #[test]
+    fn install_hook_fails_when_no_lockfile_detected() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("package.json"), "{}").unwrap();
+
+        let mut logs = Vec::new();
+        let mut sink = VecLogWriter { logs: &mut logs };
+        let result = run_install_dependencies(
+            &mut sink,
+            "Hook post-create step 1",
+            dir.path(),
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn copy_project_files_preserves_existing_file() {
+        let repo_root = tempdir().unwrap();
+        let worktree_path = tempdir().unwrap();
+        fs::write(repo_root.path().join(".env.local"), "source").unwrap();
+        fs::write(worktree_path.path().join(".env.local"), "existing").unwrap();
+
+        let mut logs = Vec::new();
+        let mut sink = VecLogWriter { logs: &mut logs };
+        run_copy_project_files(
+            &mut sink,
+            "Hook post-create step 1",
+            repo_root.path(),
+            worktree_path.path(),
+            &[".env.local".into()],
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(worktree_path.path().join(".env.local")).unwrap(),
+            "existing"
+        );
+        assert!(logs.iter().any(|log| log.message.contains("skipped existing")));
     }
 }

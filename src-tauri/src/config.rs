@@ -35,7 +35,7 @@ pub fn parse_config_text(config_text: &str) -> Result<Option<ConfigFile>, String
     }
     let parsed = toml::from_str::<ConfigFile>(config_text)
         .map_err(|error| format!("config is invalid TOML: {error}"))?;
-    if is_empty_config(&parsed) {
+    if is_effectively_empty(&parsed) {
         return Ok(None);
     }
     Ok(Some(parsed))
@@ -52,7 +52,7 @@ pub fn builtin_config() -> ResolvedConfig {
             default_base_branch: "main".into(),
         },
         cold_start: ColdStartConfig {
-            copy_files: vec![".env".into(), ".env.local".into(), ".npmrc".into()],
+            copy_files: Vec::new(),
             ports: vec![
                 PortTemplate {
                     name: "web".into(),
@@ -69,7 +69,7 @@ pub fn builtin_config() -> ResolvedConfig {
             ],
         },
         launchers: builtin_launchers(),
-        hooks: builtin_hooks(),
+        hooks: BTreeMap::new(),
     }
 }
 
@@ -150,19 +150,6 @@ fn builtin_launchers() -> Vec<LauncherProfile> {
     ]
 }
 
-fn builtin_hooks() -> Vec<HookStep> {
-    vec![HookStep {
-        id: "warmup-note".into(),
-        event: HookEvent::PostCreate,
-        step_type: HookStepType::Script,
-        enabled: false,
-        blocking: true,
-        run: Some("echo \"Worktree ready at $WORKTREE_PATH\"".into()),
-        launcher_id: None,
-        prompt_template: None,
-    }]
-}
-
 pub fn sample_config_text() -> String {
     toml::to_string_pretty(&ConfigFile {
         settings: SettingsPatch {
@@ -170,7 +157,7 @@ pub fn sample_config_text() -> String {
             default_base_branch: Some("main".into()),
         },
         cold_start: ColdStartPatch {
-            copy_files: Some(vec![".env".into(), ".env.local".into(), ".npmrc".into()]),
+            copy_files: None,
             ports: Some(vec![
                 PortTemplate {
                     name: "web".into(),
@@ -187,28 +174,29 @@ pub fn sample_config_text() -> String {
             ]),
         },
         launchers: builtin_launchers(),
-        hooks: vec![
-            HookStep {
-                id: "copy-env-note".into(),
-                event: HookEvent::PostCreate,
-                step_type: HookStepType::Script,
-                enabled: false,
-                blocking: true,
-                run: Some("echo \"Copied warmup files for $BRANCH\"".into()),
-                launcher_id: None,
-                prompt_template: None,
-            },
-            HookStep {
-                id: "open-vscode".into(),
-                event: HookEvent::PostStart,
-                step_type: HookStepType::Launch,
-                enabled: false,
-                blocking: true,
-                run: None,
-                launcher_id: Some("vscode".into()),
-                prompt_template: None,
-            },
-        ],
+        hooks: BTreeMap::from([(
+            HookEvent::PostCreate,
+            vec![
+                HookStep {
+                    step_type: HookStepType::CopyFiles,
+                    run: None,
+                    launcher_id: None,
+                    paths: vec![".env".into(), ".env.local".into(), ".npmrc".into()],
+                },
+                HookStep {
+                    step_type: HookStepType::Install,
+                    run: None,
+                    launcher_id: None,
+                    paths: Vec::new(),
+                },
+                HookStep {
+                    step_type: HookStepType::Script,
+                    run: Some("echo \"Worktree ready at $WORKTREE_PATH\"".into()),
+                    launcher_id: None,
+                    paths: Vec::new(),
+                },
+            ],
+        )]),
     })
     .unwrap_or_default()
 }
@@ -236,18 +224,13 @@ pub fn merge_config(mut base: ResolvedConfig, patch: ConfigFile) -> ResolvedConf
     }
     base.launchers = launchers.into_values().collect();
 
-    let mut hooks = BTreeMap::new();
-    for hook in base.hooks {
-        hooks.insert((hook.event.clone(), hook.id.clone()), hook);
+    for (event, steps) in patch.hooks {
+        base.hooks.insert(event, steps);
     }
-    for hook in patch.hooks {
-        hooks.insert((hook.event.clone(), hook.id.clone()), hook);
-    }
-    base.hooks = hooks.into_values().collect();
     base
 }
 
-fn is_empty_config(config: &ConfigFile) -> bool {
+pub fn is_effectively_empty(config: &ConfigFile) -> bool {
     config.settings.worktree_root.is_none()
         && config.settings.default_base_branch.is_none()
         && config.cold_start.copy_files.is_none()
@@ -271,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_replaces_launcher_and_hook_by_id() {
+    fn merge_replaces_launcher_and_hooks_by_event() {
         let base = builtin_config();
         let merged = merge_config(
             base,
@@ -285,16 +268,15 @@ mod tests {
                     open_in_terminal: false,
                     prompt_template: None,
                 }],
-                hooks: vec![HookStep {
-                    id: "warmup-note".into(),
-                    event: HookEvent::PostCreate,
-                    step_type: HookStepType::Script,
-                    enabled: true,
-                    blocking: true,
-                    run: Some("echo updated".into()),
-                    launcher_id: None,
-                    prompt_template: None,
-                }],
+                hooks: BTreeMap::from([(
+                    HookEvent::PostCreate,
+                    vec![HookStep {
+                        step_type: HookStepType::Script,
+                        run: Some("echo updated".into()),
+                        launcher_id: None,
+                        paths: Vec::new(),
+                    }],
+                )]),
                 ..ConfigFile::default()
             },
         );
@@ -305,17 +287,42 @@ mod tests {
             .find(|launcher| launcher.id == "vscode")
             .expect("vscode launcher");
         assert_eq!(vscode.name, "VS Code Stable");
-        let hook = merged
+        let post_create = merged
             .hooks
-            .iter()
-            .find(|hook| hook.id == "warmup-note")
-            .expect("hook");
-        assert_eq!(hook.run.as_deref(), Some("echo updated"));
+            .get(&HookEvent::PostCreate)
+            .expect("post-create hooks");
+        assert_eq!(post_create.len(), 1);
+        assert_eq!(post_create[0].run.as_deref(), Some("echo updated"));
     }
 
     #[test]
     fn parse_empty_config_as_none() {
         assert!(parse_config_text("").unwrap().is_none());
         assert!(parse_config_text("[settings]\n").unwrap().is_none());
+    }
+
+    #[test]
+    fn parse_structured_hook_actions() {
+        let parsed = parse_config_text(
+            r#"
+[[hooks.post-create]]
+type = "copy-files"
+paths = [".env.local", ".npmrc"]
+
+[[hooks.post-create]]
+type = "install"
+"#,
+        )
+        .unwrap()
+        .expect("config");
+
+        let post_create = parsed
+            .hooks
+            .get(&HookEvent::PostCreate)
+            .expect("post-create hooks");
+        assert_eq!(post_create.len(), 2);
+        assert_eq!(post_create[0].step_type, HookStepType::CopyFiles);
+        assert_eq!(post_create[0].paths, vec![".env.local", ".npmrc"]);
+        assert_eq!(post_create[1].step_type, HookStepType::Install);
     }
 }

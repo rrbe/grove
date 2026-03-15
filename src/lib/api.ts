@@ -9,7 +9,7 @@ import type {
   RemoveWorktreeInput,
   RunHookEventInput,
   SaveConfigInput,
-  StartWorktreeInput,
+  SaveHooksInput,
 } from "./types";
 
 export function bootstrap() {
@@ -22,6 +22,10 @@ export function openRepo(repoRoot: string) {
 
 export function saveRepoConfig(input: SaveConfigInput) {
   return invoke<RepoSnapshot>("save_repo_config", { input });
+}
+
+export function saveRepoHooks(input: SaveHooksInput) {
+  return invoke<RepoSnapshot>("save_repo_hooks", { input });
 }
 
 export function createRepoWorktree(input: CreateWorktreeInput) {
@@ -42,10 +46,6 @@ export function getExecutionSessionSnapshot(sessionId: string) {
 
 export function disposeExecutionSession(sessionId: string) {
   return invoke<void>("dispose_execution_session_snapshot", { sessionId });
-}
-
-export function startRepoWorktree(input: StartWorktreeInput) {
-  return invoke<ActionResponse>("start_repo_worktree", { input });
 }
 
 export function launchRepoWorktree(input: LaunchWorktreeInput) {

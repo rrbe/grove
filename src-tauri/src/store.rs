@@ -1,4 +1,4 @@
-use crate::models::ApprovalRecord;
+use crate::models::ConfigFile;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -22,8 +22,6 @@ pub struct AppStore {
     #[serde(default)]
     pub recent_repos: Vec<String>,
     #[serde(default)]
-    pub approvals: Vec<ApprovalRecord>,
-    #[serde(default)]
     pub last_opened: BTreeMap<String, String>,
     #[serde(default)]
     pub last_active_repo: Option<String>,
@@ -31,8 +29,9 @@ pub struct AppStore {
     pub pr_cache: BTreeMap<String, PrCacheEntry>,
     #[serde(default)]
     pub default_terminal: Option<String>,
-    /// Per-repo worktree root overrides, keyed by canonical repo root path.
     #[serde(default)]
+    pub repo_configs: BTreeMap<String, ConfigFile>,
+    #[serde(default, skip_serializing)]
     pub repo_worktree_roots: BTreeMap<String, String>,
 }
 
@@ -43,7 +42,7 @@ pub struct SharedState {
 impl SharedState {
     pub fn load(app: &AppHandle) -> Result<Self, String> {
         let path = store_path(app)?;
-        let store = if path.exists() {
+        let mut store = if path.exists() {
             let raw = fs::read_to_string(&path).map_err(|error| {
                 format!("failed to read app store at {}: {error}", path.display())
             })?;
@@ -51,6 +50,16 @@ impl SharedState {
         } else {
             AppStore::default()
         };
+        if !store.repo_worktree_roots.is_empty() {
+            for (repo_root, worktree_root) in std::mem::take(&mut store.repo_worktree_roots) {
+                store
+                    .repo_configs
+                    .entry(repo_root)
+                    .or_default()
+                    .settings
+                    .worktree_root = Some(worktree_root);
+            }
+        }
         Ok(Self {
             store: Mutex::new(store),
         })
@@ -88,26 +97,6 @@ pub fn push_recent(store: &mut AppStore, repo_root: &str) {
     store.recent_repos.retain(|item| item != repo_root);
     store.recent_repos.insert(0, repo_root.to_string());
     store.recent_repos.truncate(8);
-}
-
-pub fn is_approved(store: &AppStore, repo_root: &str, fingerprint: &str) -> bool {
-    store
-        .approvals
-        .iter()
-        .any(|record| record.repo_root == repo_root && record.fingerprint == fingerprint)
-}
-
-pub fn approve(store: &mut AppStore, repo_root: &str, fingerprints: &[String], approved_at: &str) {
-    for fingerprint in fingerprints {
-        if is_approved(store, repo_root, fingerprint) {
-            continue;
-        }
-        store.approvals.push(ApprovalRecord {
-            repo_root: repo_root.to_string(),
-            fingerprint: fingerprint.clone(),
-            approved_at: approved_at.to_string(),
-        });
-    }
 }
 
 pub fn touch_worktree(store: &mut AppStore, worktree_path: &str, opened_at: &str) {

@@ -13,23 +13,12 @@ pub struct BootstrapResponse {
 pub struct RepoSnapshot {
     pub repo_root: String,
     pub main_worktree_path: String,
-    pub config_paths: ConfigPaths,
-    pub project_config_text: String,
-    pub local_config_text: String,
+    pub config_text: String,
     pub config_errors: Vec<String>,
     pub merged_config: ResolvedConfig,
     pub worktrees: Vec<WorktreeRecord>,
     pub recent_repos: Vec<String>,
     pub tool_statuses: Vec<ToolStatus>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConfigPaths {
-    pub project_path: String,
-    pub local_path: String,
-    pub project_exists: bool,
-    pub local_exists: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -249,17 +238,9 @@ pub struct ColdStartPatch {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SaveConfigsInput {
+pub struct SaveConfigInput {
     pub repo_root: String,
-    pub project_config_text: String,
-    pub local_config_text: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApproveCommandsInput {
-    pub repo_root: String,
-    pub fingerprints: Vec<String>,
+    pub config_text: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -294,14 +275,6 @@ pub struct RemoveWorktreeInput {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ApproveExecutionSessionInput {
-    pub session_id: String,
-    #[serde(default)]
-    pub fingerprints: Vec<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct StartWorktreeInput {
     pub repo_root: String,
     pub worktree_path: String,
@@ -327,24 +300,14 @@ pub struct RunHookEventInput {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionResponse {
-    pub status: ActionStatus,
     pub logs: Vec<RunLog>,
-    pub approvals: Vec<ApprovalRequest>,
     pub repo: Option<RepoSnapshot>,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum ActionStatus {
-    Completed,
-    ApprovalRequired,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ExecutionStatus {
     Running,
-    ApprovalRequired,
     Completed,
     Failed,
 }
@@ -357,7 +320,6 @@ pub struct ExecutionSessionSnapshot {
     pub repo_root: String,
     pub status: ExecutionStatus,
     pub logs: Vec<RunLog>,
-    pub approvals: Vec<ApprovalRequest>,
     pub repo: Option<RepoSnapshot>,
     pub error: Option<String>,
 }
@@ -366,8 +328,6 @@ pub struct ExecutionSessionSnapshot {
 #[serde(rename_all = "kebab-case")]
 pub enum ExecutionEventKind {
     LogAppended,
-    ApprovalRequired,
-    ApprovalResolved,
     Completed,
     Failed,
 }
@@ -379,7 +339,6 @@ pub struct ExecutionEvent {
     pub kind: ExecutionEventKind,
     pub status: Option<ExecutionStatus>,
     pub log: Option<RunLog>,
-    pub approvals: Option<Vec<ApprovalRequest>>,
     pub repo: Option<RepoSnapshot>,
     pub error: Option<String>,
 }
@@ -397,21 +356,4 @@ pub enum LogLevel {
     Info,
     Success,
     Error,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApprovalRequest {
-    pub fingerprint: String,
-    pub label: String,
-    pub command: String,
-    pub cwd: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApprovalRecord {
-    pub repo_root: String,
-    pub fingerprint: String,
-    pub approved_at: String,
 }

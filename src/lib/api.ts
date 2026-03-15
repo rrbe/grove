@@ -1,8 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ActionResponse,
-  ApproveCommandsInput,
-  ApproveExecutionSessionInput,
   BootstrapResponse,
   CreateWorktreeInput,
   ExecutionSessionSnapshot,
@@ -10,7 +8,7 @@ import type {
   RepoSnapshot,
   RemoveWorktreeInput,
   RunHookEventInput,
-  SaveConfigsInput,
+  SaveConfigInput,
   StartWorktreeInput,
 } from "./types";
 
@@ -22,12 +20,8 @@ export function openRepo(repoRoot: string) {
   return invoke<RepoSnapshot>("open_repo", { repoRoot });
 }
 
-export function saveRepoConfigs(input: SaveConfigsInput) {
-  return invoke<RepoSnapshot>("save_repo_configs", { input });
-}
-
-export function approveRepoCommands(input: ApproveCommandsInput) {
-  return invoke<void>("approve_repo_commands", { input });
+export function saveRepoConfig(input: SaveConfigInput) {
+  return invoke<RepoSnapshot>("save_repo_config", { input });
 }
 
 export function createRepoWorktree(input: CreateWorktreeInput) {
@@ -44,10 +38,6 @@ export function startRemoveRepoWorktreeSession(input: RemoveWorktreeInput) {
 
 export function getExecutionSessionSnapshot(sessionId: string) {
   return invoke<ExecutionSessionSnapshot>("get_execution_session_snapshot", { sessionId });
-}
-
-export function approveExecutionSessionCommands(input: ApproveExecutionSessionInput) {
-  return invoke<ExecutionSessionSnapshot>("approve_execution_session_commands", { input });
 }
 
 export function disposeExecutionSession(sessionId: string) {

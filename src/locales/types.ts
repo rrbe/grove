@@ -72,6 +72,7 @@ export interface Translations {
   clear: string;
   noLogsYet: string;
   configFiles: string;
+  localConfigDescription: string;
   project: string;
   local: string;
   projectConfigToml: string;

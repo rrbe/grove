@@ -11,10 +11,8 @@ import ghosttyIcon from "./assets/launcher-icons/ghostty.svg";
 import terminalIcon from "./assets/launcher-icons/terminal.svg";
 import vscodeIcon from "./assets/launcher-icons/vscode.svg";
 import {
-  approveRepoCommands,
   bootstrap,
   createRepoWorktree,
-  approveExecutionSessionCommands,
   disposeExecutionSession,
   fetchRemote,
   getExecutionSessionSnapshot,
@@ -25,7 +23,7 @@ import {
   previewRepoPrune,
   pruneRepoMetadata,
   runRepoHookEvent,
-  saveRepoConfigs,
+  saveRepoConfig,
   startRemoveRepoWorktreeSession,
   getDefaultTerminal,
   setDefaultTerminal,
@@ -35,7 +33,6 @@ import { generateBranchName } from "./lib/branch-name-gen";
 import { useI18n, type Locale, type Translations } from "./lib/i18n";
 import type {
   ActionResponse,
-  ApprovalRequest,
   BootstrapResponse,
   CommitSummary,
   CreateMode,
@@ -121,7 +118,6 @@ function buildDeleteFailureSession(
     repoRoot,
     status: "failed",
     logs: [{ level: "error", message }],
-    approvals: [],
     repo: null,
     error: message,
   };
@@ -137,15 +133,12 @@ export default function App() {
   });
   const [repoInput, setRepoInput] = useState("");
   const [repo, setRepo] = useState<RepoSnapshot | null>(null);
-  const [projectConfigText, setProjectConfigText] = useState("");
-  const [localConfigText, setLocalConfigText] = useState("");
+  const [configText, setConfigText] = useState("");
   const [createForm, setCreateForm] = useState<CreateFormState>(createInitialForm());
   const [logs, setLogs] = useState<TaggedLog[]>([]);
   const [prunePreview, setPrunePreview] = useState<string[]>([]);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
-  const pendingReplay = useRef<(() => Promise<void>) | null>(null);
 
   const [selectedWorktreeId, setSelectedWorktreeId] = useState<string | null>(null);
   const [deleteExecution, setDeleteExecution] = useState<DeleteExecutionState | null>(null);
@@ -213,8 +206,7 @@ export default function App() {
   // Sync config text when repo changes
   useEffect(() => {
     if (!repo) return;
-    setProjectConfigText(repo.projectConfigText);
-    setLocalConfigText(repo.localConfigText);
+    setConfigText(repo.configText);
     setCreateForm((current) => {
       if (current.branch || current.path || current.remoteRef) return current;
       return createInitialForm(repo);
@@ -247,7 +239,6 @@ export default function App() {
         const nextSession: ExecutionSessionSnapshot = {
           ...current.session,
           status: payload.status ?? current.session.status,
-          approvals: payload.approvals ?? current.session.approvals,
           repo: payload.repo ?? current.session.repo,
           error: payload.error ?? current.session.error,
           logs: payload.log ? [...current.session.logs, payload.log] : current.session.logs,
@@ -318,13 +309,6 @@ export default function App() {
     try {
       const response = await action();
       appendLogs(response.logs);
-      if (response.status === "approval-required") {
-        setPendingApprovals(response.approvals);
-        pendingReplay.current = () => runAction(action, selectBranch);
-        return;
-      }
-      setPendingApprovals([]);
-      pendingReplay.current = null;
       if (response.repo) {
         setRepo(response.repo);
         setRepoInput(response.repo.repoRoot);
@@ -336,26 +320,6 @@ export default function App() {
     } catch (reason) {
       setError(String(reason));
       appendLogs([{ level: "error", message: String(reason) }]);
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function approveAndRetry() {
-    if (!repo || pendingApprovals.length === 0) return;
-    setIsBusy(true);
-    setError(null);
-    try {
-      await approveRepoCommands({
-        repoRoot: repo.repoRoot,
-        fingerprints: pendingApprovals.map((item) => item.fingerprint),
-      });
-      const replay = pendingReplay.current;
-      setPendingApprovals([]);
-      pendingReplay.current = null;
-      if (replay) await replay();
-    } catch (reason) {
-      setError(String(reason));
     } finally {
       setIsBusy(false);
     }
@@ -396,15 +360,14 @@ export default function App() {
     setLogs((current) => [...tagged, ...current].slice(0, 120));
   }
 
-  async function handleSaveConfigs() {
+  async function handleSaveConfig() {
     if (!repo) return;
     setIsBusy(true);
     setError(null);
     try {
-      const snapshot = await saveRepoConfigs({
+      const snapshot = await saveRepoConfig({
         repoRoot: repo.repoRoot,
-        projectConfigText,
-        localConfigText,
+        configText,
       });
       setRepo(snapshot);
       appendLogs([{ level: "success", message: t.logSavedConfig }]);
@@ -501,47 +464,6 @@ export default function App() {
               ...current,
               phase: "failed",
               session: buildDeleteFailureSession(repo.repoRoot, current.worktree, message),
-              isLoading: false,
-            }
-          : current,
-      );
-    }
-  }
-
-  async function approveDeleteExecution() {
-    if (!deleteExecution?.session || !deleteExecution.session.sessionId) return;
-    setDeleteExecution((current) =>
-      current
-        ? {
-            ...current,
-            isLoading: true,
-          }
-        : current,
-    );
-    try {
-      const session = await approveExecutionSessionCommands({
-        sessionId: deleteExecution.session.sessionId,
-        fingerprints: [],
-      });
-      applyDeleteSessionSnapshot(session);
-      if (session.sessionId) {
-        void refreshDeleteExecutionSession(session.sessionId);
-      }
-    } catch (reason) {
-      const message = String(reason);
-      setDeleteExecution((current) =>
-        current
-          ? {
-              ...current,
-              phase: "failed",
-              session: current.session
-                ? {
-                    ...current.session,
-                    status: "failed",
-                    error: message,
-                    logs: [...current.session.logs, { level: "error", message }],
-                  }
-                : buildDeleteFailureSession(repo?.repoRoot ?? "", current.worktree, message),
               isLoading: false,
             }
           : current,
@@ -707,11 +629,9 @@ export default function App() {
             logs={logs}
             onClearLogs={() => setLogs([])}
             repo={repo}
-            projectConfigText={projectConfigText}
-            localConfigText={localConfigText}
-            onProjectConfigChange={setProjectConfigText}
-            onLocalConfigChange={setLocalConfigText}
-            onSaveConfigs={() => void handleSaveConfigs()}
+            configText={configText}
+            onConfigChange={setConfigText}
+            onSaveConfig={() => void handleSaveConfig()}
             prunePreview={prunePreview}
             onPreviewPrune={() => void handlePreviewPrune()}
             onPrune={() => void handlePrune()}
@@ -770,21 +690,6 @@ export default function App() {
           t={t}
           onClose={handleCloseDeleteExecution}
           onConfirm={() => void confirmDeleteExecution()}
-          onApprove={() => void approveDeleteExecution()}
-        />
-      )}
-
-      {/* Approval Modal */}
-      {pendingApprovals.length > 0 && (
-        <ApprovalModal
-          approvals={pendingApprovals}
-          onApprove={() => void approveAndRetry()}
-          onCancel={() => {
-            setPendingApprovals([]);
-            pendingReplay.current = null;
-          }}
-          isBusy={isBusy}
-          t={t}
         />
       )}
 
@@ -1214,11 +1119,9 @@ function SettingsPage({
   logs,
   onClearLogs,
   repo,
-  projectConfigText,
-  localConfigText,
-  onProjectConfigChange,
-  onLocalConfigChange,
-  onSaveConfigs,
+  configText,
+  onConfigChange,
+  onSaveConfig,
   prunePreview,
   onPreviewPrune,
   onPrune,
@@ -1233,11 +1136,9 @@ function SettingsPage({
   logs: TaggedLog[];
   onClearLogs: () => void;
   repo: RepoSnapshot | null;
-  projectConfigText: string;
-  localConfigText: string;
-  onProjectConfigChange: (v: string) => void;
-  onLocalConfigChange: (v: string) => void;
-  onSaveConfigs: () => void;
+  configText: string;
+  onConfigChange: (v: string) => void;
+  onSaveConfig: () => void;
   prunePreview: string[];
   onPreviewPrune: () => void;
   onPrune: () => void;
@@ -1376,45 +1277,26 @@ function SettingsPage({
         </div>
       </section>
 
-      {/* Config Files — collapsible, disabled */}
-      <section className="card" style={{ opacity: 0.6 }}>
+      {/* Local Repo Config */}
+      <section className="card">
         <div className="collapsible-header" onClick={() => setShowConfigEditor((v) => !v)}>
           <span className="section-heading" style={{ flex: 1 }}>
-            {t.configFiles} <span className="subtle">({t.comingSoon})</span>
+            {t.configFiles}
           </span>
           <span className="subtle">{showConfigEditor ? "▾" : "▸"}</span>
         </div>
         {showConfigEditor && repo && (
           <div className="stack" style={{ marginTop: 8 }}>
-            <div className="path-grid">
-              <div>
-                <strong>{t.project}</strong>
-                <p>{repo.configPaths.projectPath}</p>
-              </div>
-              <div>
-                <strong>{t.local}</strong>
-                <p>{repo.configPaths.localPath}</p>
-              </div>
-            </div>
+            <p className="empty-copy">{t.localConfigDescription}</p>
             <label className="field-label">
               {t.projectConfigToml}
               <textarea
-                value={projectConfigText}
-                onChange={(e) => onProjectConfigChange(e.target.value)}
+                value={configText}
+                onChange={(e) => onConfigChange(e.target.value)}
                 rows={14}
-                disabled
               />
             </label>
-            <label className="field-label">
-              {t.localOverrideToml}
-              <textarea
-                value={localConfigText}
-                onChange={(e) => onLocalConfigChange(e.target.value)}
-                rows={8}
-                disabled
-              />
-            </label>
-            <button className="primary-button" onClick={onSaveConfigs} disabled>
+            <button className="primary-button" onClick={onSaveConfig} disabled={isBusy}>
               {t.saveConfig}
             </button>
           </div>
@@ -1789,13 +1671,11 @@ function DeleteExecutionModal({
   t,
   onClose,
   onConfirm,
-  onApprove,
 }: {
   execution: DeleteExecutionState;
   t: Translations;
   onClose: () => void;
   onConfirm: () => void;
-  onApprove: () => void;
 }) {
   const logAnchorRef = useRef<HTMLDivElement>(null);
   const session = execution.session;
@@ -1811,7 +1691,6 @@ function DeleteExecutionModal({
 
   let statusLabel = "";
   if (execution.phase === "running") statusLabel = t.executing;
-  if (execution.phase === "approval-required") statusLabel = t.pendingApproval;
   if (execution.phase === "completed") statusLabel = t.executionCompleted;
   if (execution.phase === "failed") statusLabel = t.executionFailed;
 
@@ -1874,37 +1753,6 @@ function DeleteExecutionModal({
               <div ref={logAnchorRef} />
             </div>
 
-            {execution.phase === "approval-required" && session && session.approvals.length > 0 && (
-              <div className="delete-execution-approvals">
-                <div className="section-heading">
-                  <span>{t.approveProjectCommands}</span>
-                  <span className="subtle">{t.commandCount(session.approvals.length)}</span>
-                </div>
-                <p className="modal-copy">{t.approvalCopy}</p>
-                <div className="approval-list">
-                  {session.approvals.map((approval) => (
-                    <div key={approval.fingerprint} className="approval-item">
-                      <strong>{approval.label}</strong>
-                      <p>{approval.cwd}</p>
-                      <pre>{approval.command}</pre>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {execution.phase === "approval-required" && (
-              <div className="modal-actions delete-execution-actions">
-                <button
-                  className="primary-button"
-                  onClick={onApprove}
-                  disabled={execution.isLoading}
-                >
-                  {t.approveAndRetry}
-                </button>
-              </div>
-            )}
-
             {canClose && (
               <div className="modal-actions delete-execution-actions">
                 <button className="ghost-button" onClick={onClose} disabled={execution.isLoading}>
@@ -1914,49 +1762,6 @@ function DeleteExecutionModal({
             )}
           </>
         )}
-      </div>
-    </div>
-  );
-}
-
-function ApprovalModal({
-  approvals,
-  onApprove,
-  onCancel,
-  isBusy,
-  t,
-}: {
-  approvals: ApprovalRequest[];
-  onApprove: () => void;
-  onCancel: () => void;
-  isBusy: boolean;
-  t: Translations;
-}) {
-  return (
-    <div className="modal-backdrop">
-      <div className="modal-card">
-        <div className="section-heading">
-          <span>{t.approveProjectCommands}</span>
-          <span className="subtle">{t.commandCount(approvals.length)}</span>
-        </div>
-        <p className="modal-copy">{t.approvalCopy}</p>
-        <div className="approval-list">
-          {approvals.map((approval) => (
-            <div key={approval.fingerprint} className="approval-item">
-              <strong>{approval.label}</strong>
-              <p>{approval.cwd}</p>
-              <pre>{approval.command}</pre>
-            </div>
-          ))}
-        </div>
-        <div className="modal-actions">
-          <button className="ghost-button" onClick={onCancel} disabled={isBusy}>
-            {t.cancel}
-          </button>
-          <button className="primary-button" onClick={onApprove} disabled={isBusy}>
-            {t.approveAndRetry}
-          </button>
-        </div>
       </div>
     </div>
   );

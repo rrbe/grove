@@ -5,15 +5,13 @@ mod models;
 mod store;
 
 use actions::{
-    approve_execution_session, approve_fingerprints, create_worktree, dispose_execution_session,
-    get_execution_session, launch_worktree, mark_worktree_opened, preview_prune, prune_repo,
-    remove_worktree, run_hook_event, start_remove_worktree_session, start_worktree,
+    create_worktree, dispose_execution_session, get_execution_session, launch_worktree,
+    mark_worktree_opened, preview_prune, prune_repo, remove_worktree, run_hook_event,
+    start_remove_worktree_session, start_worktree,
 };
-use config::save;
 use models::{
-    ApproveCommandsInput, ApproveExecutionSessionInput, BootstrapResponse, CreateWorktreeInput,
-    ExecutionSessionSnapshot, LaunchWorktreeInput, RemoveWorktreeInput, RepoSnapshot,
-    RunHookEventInput, SaveConfigsInput, StartWorktreeInput,
+    BootstrapResponse, CreateWorktreeInput, ExecutionSessionSnapshot, LaunchWorktreeInput,
+    RemoveWorktreeInput, RepoSnapshot, RunHookEventInput, SaveConfigInput, StartWorktreeInput,
 };
 use store::{push_recent, SharedState};
 use tauri::{AppHandle, Manager, State};
@@ -44,16 +42,13 @@ pub fn load_repo_snapshot(
     repo_root: String,
 ) -> Result<RepoSnapshot, String> {
     let repo_root = git::resolve_repo_root(&repo_root)?;
-    let mut loaded = config::load(&repo_root)?;
     let mut store = state.store.lock().unwrap();
     let repo_root_str = repo_root.to_string_lossy().to_string();
-    // Apply per-repo worktree root from app store (highest priority).
-    if let Some(root) = store.repo_worktree_roots.get(&repo_root_str) {
-        loaded.merged.settings.worktree_root = root.clone();
-    }
+    let stored_config = store.repo_configs.get(&repo_root_str).cloned();
     push_recent(&mut store, &repo_root_str);
     store.last_active_repo = Some(repo_root_str.clone());
     store::persist(app, &store)?;
+    let loaded = config::load(&repo_root, stored_config.as_ref());
     let worktrees = git::scan_worktrees(&repo_root, &loaded.merged.cold_start, &store)?;
 
     // Update PR cache with freshly fetched data
@@ -81,9 +76,7 @@ pub fn load_repo_snapshot(
     Ok(RepoSnapshot {
         repo_root: repo_root.to_string_lossy().to_string(),
         main_worktree_path,
-        config_paths: loaded.paths,
-        project_config_text: loaded.project_text,
-        local_config_text: loaded.local_text,
+        config_text: loaded.text,
         config_errors: loaded.errors,
         merged_config: loaded.merged,
         worktrees,
@@ -93,35 +86,25 @@ pub fn load_repo_snapshot(
 }
 
 #[tauri::command]
-async fn save_repo_configs(
+async fn save_repo_config(
     app: AppHandle,
-    input: SaveConfigsInput,
+    input: SaveConfigInput,
 ) -> Result<RepoSnapshot, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<SharedState>();
         let repo_root = git::resolve_repo_root(&input.repo_root)?;
-        save(
-            &repo_root,
-            &input.project_config_text,
-            &input.local_config_text,
-        )?;
-        load_repo_snapshot(&app, &state, repo_root.to_string_lossy().to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-async fn approve_repo_commands(app: AppHandle, input: ApproveCommandsInput) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<SharedState>();
-        let repo_root = git::resolve_repo_root(&input.repo_root)?;
-        approve_fingerprints(
-            &app,
-            &state,
-            &repo_root.to_string_lossy(),
-            &input.fingerprints,
-        )
+        let parsed = config::parse_config_text(&input.config_text)?;
+        let repo_root_str = repo_root.to_string_lossy().to_string();
+        {
+            let mut store = state.store.lock().unwrap();
+            if let Some(config) = parsed {
+                store.repo_configs.insert(repo_root_str.clone(), config);
+            } else {
+                store.repo_configs.remove(&repo_root_str);
+            }
+            store::persist(&app, &store)?;
+        }
+        load_repo_snapshot(&app, &state, repo_root_str)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -179,19 +162,6 @@ async fn get_execution_session_snapshot(
 }
 
 #[tauri::command]
-async fn approve_execution_session_commands(
-    app: AppHandle,
-    input: ApproveExecutionSessionInput,
-) -> Result<ExecutionSessionSnapshot, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<SharedState>();
-        approve_execution_session(&app, &state, input)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
 async fn dispose_execution_session_snapshot(session_id: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || dispose_execution_session(&session_id))
         .await
@@ -207,9 +177,7 @@ async fn start_repo_worktree(
         let state = app.state::<SharedState>();
         let dt = read_default_terminal(&state);
         let response = start_worktree(&app, &state, input.clone(), dt.as_deref())?;
-        if response.status == models::ActionStatus::Completed {
-            let _ = mark_worktree_opened(&app, &state, &input.worktree_path);
-        }
+        let _ = mark_worktree_opened(&app, &state, &input.worktree_path);
         Ok(response)
     })
     .await
@@ -234,9 +202,7 @@ async fn launch_repo_worktree(
                 },
                 dt.as_deref(),
             )?;
-            if response.status == models::ActionStatus::Completed {
-                let _ = mark_worktree_opened(&app, &state, &input.worktree_path);
-            }
+            let _ = mark_worktree_opened(&app, &state, &input.worktree_path);
             return Ok(response);
         }
         launch_worktree(&app, &state, input, dt.as_deref())
@@ -290,13 +256,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             bootstrap,
             open_repo,
-            save_repo_configs,
-            approve_repo_commands,
+            save_repo_config,
             create_repo_worktree,
             remove_repo_worktree,
             start_remove_repo_worktree_session,
             get_execution_session_snapshot,
-            approve_execution_session_commands,
             dispose_execution_session_snapshot,
             start_repo_worktree,
             launch_repo_worktree,
@@ -384,9 +348,13 @@ async fn set_repo_worktree_root(
         let repo_root_str = repo_root.to_string_lossy().to_string();
         {
             let mut store = state.store.lock().unwrap();
-            store
-                .repo_worktree_roots
-                .insert(repo_root_str.clone(), worktree_root);
+            let worktree_root = worktree_root.trim().to_string();
+            let config = store.repo_configs.entry(repo_root_str.clone()).or_default();
+            if worktree_root.is_empty() {
+                config.settings.worktree_root = None;
+            } else {
+                config.settings.worktree_root = Some(worktree_root);
+            }
             store::persist(&app, &store)?;
         }
         load_repo_snapshot(&app, &state, repo_root_str)

@@ -1,100 +1,48 @@
 use crate::git;
 use crate::models::{
-    ColdStartConfig, ColdStartPatch, ConfigFile, ConfigPaths, HookEvent, HookStep, HookStepType,
-    LauncherKind, LauncherProfile, PortTemplate, RepoSettings, ResolvedConfig, SettingsPatch,
+    ColdStartConfig, ColdStartPatch, ConfigFile, HookEvent, HookStep, HookStepType, LauncherKind,
+    LauncherProfile, PortTemplate, RepoSettings, ResolvedConfig, SettingsPatch,
 };
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::collections::BTreeMap;
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct LoadedConfig {
-    pub paths: ConfigPaths,
-    pub project_text: String,
-    pub local_text: String,
+    pub text: String,
     pub merged: ResolvedConfig,
     pub errors: Vec<String>,
 }
 
-pub fn project_config_path(repo_root: &Path) -> PathBuf {
-    repo_root.join(".grove").join("config.toml")
-}
-
-pub fn local_config_path(repo_root: &Path) -> PathBuf {
-    repo_root.join(".grove").join("local.toml")
-}
-
-pub fn load(repo_root: &Path) -> Result<LoadedConfig, String> {
-    let project_path = project_config_path(repo_root);
-    let local_path = local_config_path(repo_root);
-    let project_exists = project_path.exists();
-    let local_exists = local_path.exists();
-    let mut errors = Vec::new();
-    let project_text = if project_exists {
-        fs::read_to_string(&project_path)
-            .map_err(|error| format!("failed to read {}: {error}", project_path.display()))?
-    } else {
-        sample_project_text()
-    };
-    let local_text = if local_exists {
-        fs::read_to_string(&local_path)
-            .map_err(|error| format!("failed to read {}: {error}", local_path.display()))?
-    } else {
-        String::new()
-    };
+pub fn load(repo_root: &Path, stored_config: Option<&ConfigFile>) -> LoadedConfig {
     let mut merged = builtin_config();
-    // Auto-detect default branch from git before applying user config
     merged.settings.default_base_branch = git::detect_default_branch(repo_root);
-    if project_exists && !project_text.trim().is_empty() {
-        match toml::from_str::<ConfigFile>(&project_text) {
-            Ok(file) => merged = merge_config(merged, file),
-            Err(error) => errors.push(format!("project config parse error: {error}")),
-        }
-    }
-    if !local_text.trim().is_empty() {
-        match toml::from_str::<ConfigFile>(&local_text) {
-            Ok(file) => merged = merge_config(merged, file),
-            Err(error) => errors.push(format!("local config parse error: {error}")),
-        }
+    if let Some(config) = stored_config {
+        merged = merge_config(merged, config.clone());
     }
 
-    Ok(LoadedConfig {
-        paths: ConfigPaths {
-            project_path: project_path.to_string_lossy().to_string(),
-            local_path: local_path.to_string_lossy().to_string(),
-            project_exists,
-            local_exists,
-        },
-        project_text,
-        local_text,
+    LoadedConfig {
+        text: stored_config
+            .and_then(|config| render_config_text(config).ok())
+            .unwrap_or_else(sample_config_text),
         merged,
-        errors,
-    })
+        errors: Vec::new(),
+    }
 }
 
-pub fn save(
-    repo_root: &Path,
-    project_text: &str,
-    local_text: &str,
-) -> Result<LoadedConfig, String> {
-    if !project_text.trim().is_empty() {
-        toml::from_str::<ConfigFile>(project_text)
-            .map_err(|error| format!("project config is invalid TOML: {error}"))?;
+pub fn parse_config_text(config_text: &str) -> Result<Option<ConfigFile>, String> {
+    if config_text.trim().is_empty() {
+        return Ok(None);
     }
-    if !local_text.trim().is_empty() {
-        toml::from_str::<ConfigFile>(local_text)
-            .map_err(|error| format!("local config is invalid TOML: {error}"))?;
+    let parsed = toml::from_str::<ConfigFile>(config_text)
+        .map_err(|error| format!("config is invalid TOML: {error}"))?;
+    if is_empty_config(&parsed) {
+        return Ok(None);
     }
-    let config_dir = repo_root.join(".grove");
-    fs::create_dir_all(&config_dir)
-        .map_err(|error| format!("failed to create {}: {error}", config_dir.display()))?;
-    fs::write(project_config_path(repo_root), project_text)
-        .map_err(|error| format!("failed to write project config: {error}"))?;
-    fs::write(local_config_path(repo_root), local_text)
-        .map_err(|error| format!("failed to write local config: {error}"))?;
-    load(repo_root)
+    Ok(Some(parsed))
+}
+
+pub fn render_config_text(config: &ConfigFile) -> Result<String, String> {
+    toml::to_string_pretty(config).map_err(|error| format!("failed to render config: {error}"))
 }
 
 pub fn builtin_config() -> ResolvedConfig {
@@ -215,7 +163,7 @@ fn builtin_hooks() -> Vec<HookStep> {
     }]
 }
 
-pub fn sample_project_text() -> String {
+pub fn sample_config_text() -> String {
     toml::to_string_pretty(&ConfigFile {
         settings: SettingsPatch {
             worktree_root: Some(".claude".into()),
@@ -299,6 +247,15 @@ pub fn merge_config(mut base: ResolvedConfig, patch: ConfigFile) -> ResolvedConf
     base
 }
 
+fn is_empty_config(config: &ConfigFile) -> bool {
+    config.settings.worktree_root.is_none()
+        && config.settings.default_base_branch.is_none()
+        && config.cold_start.copy_files.is_none()
+        && config.cold_start.ports.is_none()
+        && config.launchers.is_empty()
+        && config.hooks.is_empty()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -354,5 +311,11 @@ mod tests {
             .find(|hook| hook.id == "warmup-note")
             .expect("hook");
         assert_eq!(hook.run.as_deref(), Some("echo updated"));
+    }
+
+    #[test]
+    fn parse_empty_config_as_none() {
+        assert!(parse_config_text("").unwrap().is_none());
+        assert!(parse_config_text("[settings]\n").unwrap().is_none());
     }
 }

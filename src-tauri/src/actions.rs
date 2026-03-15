@@ -2,18 +2,17 @@ use crate::{
     config::{self, LoadedConfig},
     git,
     models::{
-        ActionResponse, ActionStatus, ApprovalRequest, ApproveExecutionSessionInput, CreateMode,
-        CreateWorktreeInput, ExecutionEvent, ExecutionEventKind, ExecutionSessionSnapshot,
-        ExecutionStatus, HookEvent, HookStepType, LaunchWorktreeInput, LauncherKind,
-        LauncherProfile, LogLevel, RemoveWorktreeInput, RunHookEventInput, RunLog,
+        ActionResponse, CreateMode, CreateWorktreeInput, ExecutionEvent, ExecutionEventKind,
+        ExecutionSessionSnapshot, ExecutionStatus, HookEvent, HookStepType, LaunchWorktreeInput,
+        LauncherKind, LauncherProfile, LogLevel, RemoveWorktreeInput, RunHookEventInput, RunLog,
         StartWorktreeInput, WorktreeRecord,
     },
-    store::{approve, is_approved, persist, push_recent, touch_worktree, SharedState},
+    store::{persist, push_recent, touch_worktree, SharedState},
 };
 use chrono::Utc;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fs,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
@@ -61,7 +60,6 @@ enum ExecutionStep {
         cwd: PathBuf,
         command: String,
         blocking: bool,
-        approval: Option<ApprovalRequest>,
         context: TemplateContext,
     },
     Launch {
@@ -70,7 +68,6 @@ enum ExecutionStep {
         launcher: LauncherProfile,
         command_preview: String,
         rendered_args: Vec<String>,
-        approval: Option<ApprovalRequest>,
         context: TemplateContext,
         terminal_id: Option<String>,
     },
@@ -85,7 +82,6 @@ static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 #[derive(Clone)]
 struct ExecutionSessionState {
     snapshot: ExecutionSessionSnapshot,
-    pending_steps: Option<Vec<ExecutionStep>>,
 }
 
 #[derive(Clone)]
@@ -95,11 +91,6 @@ struct PlannedExecution {
     steps: Vec<ExecutionStep>,
 }
 
-struct PreparedSessionApproval {
-    repo_root: String,
-    approvals: Vec<String>,
-}
-
 pub fn create_worktree(
     app: &AppHandle,
     state: &SharedState,
@@ -107,7 +98,7 @@ pub fn create_worktree(
     default_terminal: Option<&str>,
 ) -> Result<ActionResponse, String> {
     let repo_root = git::resolve_repo_root(&input.repo_root)?;
-    let loaded = config::load(&repo_root)?;
+    let loaded = load_repo_config(state, &repo_root);
     let default_remote = git::detect_default_remote(&repo_root).unwrap_or_else(|| "origin".into());
     let branch = input.branch.trim().to_string();
     if branch.is_empty() {
@@ -215,53 +206,21 @@ pub fn start_remove_worktree_session(
     default_terminal: Option<&str>,
 ) -> Result<ExecutionSessionSnapshot, String> {
     let planned = plan_remove_worktree_execution(state, input, default_terminal)?;
-    let approvals = collect_missing_approvals(state, &planned.repo_root, &planned.steps);
     let session_id = next_session_id();
-    let mut snapshot = ExecutionSessionSnapshot {
+    let snapshot = ExecutionSessionSnapshot {
         session_id: session_id.clone(),
         title: planned.title,
         repo_root: planned.repo_root.to_string_lossy().to_string(),
-        status: if approvals.is_empty() {
-            ExecutionStatus::Running
-        } else {
-            ExecutionStatus::ApprovalRequired
-        },
+        status: ExecutionStatus::Running,
         logs: Vec::new(),
-        approvals: dedupe_approvals(approvals),
         repo: None,
         error: None,
     };
-    if !snapshot.approvals.is_empty() {
-        snapshot.logs.push(info(
-            "This action requires approval before running project-defined commands.".into(),
-        ));
-    }
 
     insert_session(ExecutionSessionState {
         snapshot: snapshot.clone(),
-        pending_steps: if snapshot.approvals.is_empty() {
-            None
-        } else {
-            Some(planned.steps.clone())
-        },
     });
-
-    if snapshot.approvals.is_empty() {
-        spawn_session_execution(app.clone(), session_id, planned.repo_root, planned.steps);
-    } else {
-        emit_execution_event(
-            app,
-            ExecutionEvent {
-                session_id,
-                kind: ExecutionEventKind::ApprovalRequired,
-                status: Some(ExecutionStatus::ApprovalRequired),
-                log: None,
-                approvals: Some(snapshot.approvals.clone()),
-                repo: None,
-                error: None,
-            },
-        )?;
-    }
+    spawn_session_execution(app.clone(), session_id, planned.repo_root, planned.steps);
 
     Ok(snapshot)
 }
@@ -273,47 +232,6 @@ pub fn get_execution_session(session_id: &str) -> Result<ExecutionSessionSnapsho
 pub fn dispose_execution_session(session_id: &str) -> Result<(), String> {
     remove_session(session_id);
     Ok(())
-}
-
-pub fn approve_execution_session(
-    app: &AppHandle,
-    state: &SharedState,
-    input: ApproveExecutionSessionInput,
-) -> Result<ExecutionSessionSnapshot, String> {
-    let prepared = {
-        let sessions = EXECUTION_SESSIONS.lock().unwrap();
-        let session = sessions
-            .get(&input.session_id)
-            .ok_or_else(|| format!("execution session not found: {}", input.session_id))?;
-        if session.snapshot.status != ExecutionStatus::ApprovalRequired {
-            return Err("execution session is not waiting for approval".into());
-        }
-        prepare_session_approval(session, &input.fingerprints)?
-    };
-    approve_fingerprints(app, state, &prepared.repo_root, &prepared.approvals)?;
-    let (repo_root, steps, snapshot) =
-        activate_execution_session(&input.session_id, &prepared.approvals)?;
-
-    emit_execution_event(
-        app,
-        ExecutionEvent {
-            session_id: input.session_id.clone(),
-            kind: ExecutionEventKind::ApprovalResolved,
-            status: Some(ExecutionStatus::Running),
-            log: None,
-            approvals: Some(Vec::new()),
-            repo: None,
-            error: None,
-        },
-    )?;
-
-    spawn_session_execution(
-        app.clone(),
-        input.session_id,
-        PathBuf::from(repo_root),
-        steps,
-    );
-    Ok(snapshot)
 }
 
 pub fn start_worktree(
@@ -355,7 +273,7 @@ pub fn launch_worktree(
     default_terminal: Option<&str>,
 ) -> Result<ActionResponse, String> {
     let repo_root = git::resolve_repo_root(&input.repo_root)?;
-    let loaded = config::load(&repo_root)?;
+    let loaded = load_repo_config(state, &repo_root);
     let worktrees = git::scan_worktrees(
         &repo_root,
         &loaded.merged.cold_start,
@@ -415,7 +333,7 @@ fn run_event_internal(
     default_terminal: Option<&str>,
 ) -> Result<ActionResponse, String> {
     let repo_root = git::resolve_repo_root(&repo_root)?;
-    let loaded = config::load(&repo_root)?;
+    let loaded = load_repo_config(state, &repo_root);
     let worktree_context = if let Some(path) = worktree_path {
         let worktrees = git::scan_worktrees(
             &repo_root,
@@ -452,7 +370,7 @@ fn plan_remove_worktree_execution(
     default_terminal: Option<&str>,
 ) -> Result<PlannedExecution, String> {
     let repo_root = git::resolve_repo_root(&input.repo_root)?;
-    let loaded = config::load(&repo_root)?;
+    let loaded = load_repo_config(state, &repo_root);
     let worktrees = git::scan_worktrees(
         &repo_root,
         &loaded.merged.cold_start,
@@ -491,22 +409,6 @@ fn plan_remove_worktree_execution(
         ),
         steps,
     })
-}
-
-fn collect_missing_approvals(
-    state: &SharedState,
-    repo_root: &Path,
-    steps: &[ExecutionStep],
-) -> Vec<ApprovalRequest> {
-    let store = state.store.lock().unwrap();
-    steps
-        .iter()
-        .filter_map(|step| step.approval())
-        .filter(|approval| {
-            !is_approved(&store, &repo_root.to_string_lossy(), &approval.fingerprint)
-        })
-        .cloned()
-        .collect::<Vec<_>>()
 }
 
 fn next_session_id() -> String {
@@ -599,7 +501,6 @@ fn run_session_execution(
             kind: ExecutionEventKind::Completed,
             status: Some(ExecutionStatus::Completed),
             log: None,
-            approvals: Some(Vec::new()),
             repo: Some(repo),
             error: None,
         },
@@ -627,51 +528,10 @@ fn fail_session(app: &AppHandle, session_id: &str, error: String) -> Result<(), 
             kind: ExecutionEventKind::Failed,
             status: Some(ExecutionStatus::Failed),
             log: Some(error_log),
-            approvals: None,
             repo: None,
             error: Some(error),
         },
     )
-}
-
-fn prepare_session_approval(
-    session: &ExecutionSessionState,
-    fingerprints: &[String],
-) -> Result<PreparedSessionApproval, String> {
-    let approvals = resolve_execution_session_approvals(&session.snapshot.approvals, fingerprints)?;
-    if session.pending_steps.is_none() {
-        return Err("execution session has no pending work".into());
-    }
-    Ok(PreparedSessionApproval {
-        repo_root: session.snapshot.repo_root.clone(),
-        approvals,
-    })
-}
-
-fn activate_execution_session(
-    session_id: &str,
-    expected_approvals: &[String],
-) -> Result<(String, Vec<ExecutionStep>, ExecutionSessionSnapshot), String> {
-    let mut sessions = EXECUTION_SESSIONS.lock().unwrap();
-    let session = sessions
-        .get_mut(session_id)
-        .ok_or_else(|| format!("execution session not found: {session_id}"))?;
-    if session.snapshot.status != ExecutionStatus::ApprovalRequired {
-        return Err("execution session is not waiting for approval".into());
-    }
-    let current_approvals = normalize_execution_session_fingerprints(&session.snapshot.approvals);
-    if current_approvals != expected_approvals {
-        return Err("execution session approvals changed before approval completed".into());
-    }
-    let steps = session
-        .pending_steps
-        .take()
-        .ok_or_else(|| "execution session has no pending work".to_string())?;
-    let repo_root = session.snapshot.repo_root.clone();
-    session.snapshot.status = ExecutionStatus::Running;
-    session.snapshot.approvals.clear();
-    session.snapshot.error = None;
-    Ok((repo_root, steps, session.snapshot.clone()))
 }
 
 fn find_worktree<'a>(
@@ -715,6 +575,14 @@ fn sanitize_branch(branch: &str) -> String {
         .collect()
 }
 
+fn load_repo_config(state: &SharedState, repo_root: &Path) -> LoadedConfig {
+    let repo_root_key = repo_root.to_string_lossy().to_string();
+    let store = state.store.lock().unwrap();
+    let stored_config = store.repo_configs.get(&repo_root_key).cloned();
+    drop(store);
+    config::load(repo_root, stored_config.as_ref())
+}
+
 fn plan_hooks(
     repo_root: &Path,
     loaded: &LoadedConfig,
@@ -741,18 +609,11 @@ fn plan_hooks(
                     .as_deref()
                     .ok_or_else(|| format!("hook {} is missing run", hook.id))?;
                 let command = render_template(raw, context);
-                let approval = Some(build_approval(
-                    repo_root,
-                    &format!("hook:{}:{}", hook.event.label(), hook.id),
-                    &hook_cwd.to_string_lossy(),
-                    &command,
-                ));
                 steps.push(ExecutionStep::Script {
                     label: format!("Hook {} ({})", hook.id, hook.event.label()),
                     cwd: hook_cwd.clone(),
                     command,
                     blocking: hook.blocking,
-                    approval,
                     context: context.clone(),
                 });
             }
@@ -814,7 +675,6 @@ fn plan_launch_action(
             .trim()
             .to_string(),
     };
-    let approval = None;
 
     Ok(vec![ExecutionStep::Launch {
         label: if include_label {
@@ -826,7 +686,6 @@ fn plan_launch_action(
         launcher,
         command_preview,
         rendered_args,
-        approval,
         context: context.clone(),
         terminal_id: default_terminal.map(String::from),
     }])
@@ -866,7 +725,6 @@ impl LogWriter for SessionLogWriter {
                 kind: ExecutionEventKind::LogAppended,
                 status: None,
                 log: Some(log),
-                approvals: None,
                 repo: None,
                 error: None,
             },
@@ -880,21 +738,6 @@ fn execute(
     repo_root: &Path,
     steps: Vec<ExecutionStep>,
 ) -> Result<ActionResponse, String> {
-    let missing_approvals = collect_missing_approvals(state, repo_root, &steps);
-
-    if !missing_approvals.is_empty() {
-        return Ok(ActionResponse {
-            status: ActionStatus::ApprovalRequired,
-            logs: vec![RunLog {
-                level: LogLevel::Info,
-                message: "This action requires approval before running project-defined commands."
-                    .into(),
-            }],
-            approvals: dedupe_approvals(missing_approvals),
-            repo: None,
-        });
-    }
-
     let mut logs = Vec::new();
     let mut sink = VecLogWriter { logs: &mut logs };
     for step in steps {
@@ -915,23 +758,10 @@ fn execute(
         level: LogLevel::Success,
         message: format!("Action completed at {now}"),
     });
-    Ok(ActionResponse {
-        status: ActionStatus::Completed,
-        logs,
-        approvals: Vec::new(),
-        repo,
-    })
+    Ok(ActionResponse { logs, repo })
 }
 
 impl ExecutionStep {
-    fn approval(&self) -> Option<&ApprovalRequest> {
-        match self {
-            ExecutionStep::Script { approval, .. } => approval.as_ref(),
-            ExecutionStep::Launch { approval, .. } => approval.as_ref(),
-            _ => None,
-        }
-    }
-
     fn run(self, sink: &mut impl LogWriter) -> Result<(), String> {
         match self {
             ExecutionStep::GitCreate {
@@ -1488,68 +1318,6 @@ fn render_template(template: &str, context: &TemplateContext) -> String {
     rendered
 }
 
-fn build_approval(repo_root: &Path, label: &str, cwd: &str, command: &str) -> ApprovalRequest {
-    let normalized = format!("{}\n{}\n{}", label.trim(), cwd.trim(), command.trim());
-    let mut hasher = Sha256::new();
-    hasher.update(repo_root.to_string_lossy().as_bytes());
-    hasher.update(normalized.as_bytes());
-    let fingerprint = hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    ApprovalRequest {
-        fingerprint,
-        label: label.into(),
-        command: command.into(),
-        cwd: cwd.into(),
-    }
-}
-
-fn dedupe_approvals(items: Vec<ApprovalRequest>) -> Vec<ApprovalRequest> {
-    let mut deduped = BTreeMap::new();
-    for item in items {
-        deduped.insert(item.fingerprint.clone(), item);
-    }
-    deduped.into_values().collect()
-}
-
-fn normalize_execution_session_fingerprints(items: &[ApprovalRequest]) -> Vec<String> {
-    items
-        .iter()
-        .map(|item| item.fingerprint.clone())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-fn normalize_fingerprint_inputs(items: &[String]) -> Vec<String> {
-    items
-        .iter()
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-fn resolve_execution_session_approvals(
-    pending_approvals: &[ApprovalRequest],
-    fingerprints: &[String],
-) -> Result<Vec<String>, String> {
-    let required = normalize_execution_session_fingerprints(pending_approvals);
-    let provided = if fingerprints.is_empty() {
-        required.clone()
-    } else {
-        normalize_fingerprint_inputs(fingerprints)
-    };
-    if provided != required {
-        return Err(
-            "approved commands did not match the pending execution session approvals".into(),
-        );
-    }
-    Ok(required)
-}
-
 fn build_context(
     repo_root: &Path,
     worktree_path: &Path,
@@ -1621,22 +1389,6 @@ fn info(message: String) -> RunLog {
     }
 }
 
-pub fn approve_fingerprints(
-    app: &AppHandle,
-    state: &SharedState,
-    repo_root: &str,
-    fingerprints: &[String],
-) -> Result<(), String> {
-    let mut store = state.store.lock().unwrap();
-    approve(
-        &mut store,
-        repo_root,
-        fingerprints,
-        &Utc::now().to_rfc3339(),
-    );
-    persist(app, &store)
-}
-
 pub fn mark_worktree_opened(
     app: &AppHandle,
     state: &SharedState,
@@ -1670,39 +1422,6 @@ mod tests {
             render_template("open {url:web} on {branch}", &context),
             "open http://localhost:3123 on feat"
         );
-    }
-
-    #[test]
-    fn resolve_execution_session_approvals_requires_exact_match() {
-        let approvals = vec![
-            ApprovalRequest {
-                fingerprint: "aaa".into(),
-                label: "first".into(),
-                command: "echo first".into(),
-                cwd: "/repo".into(),
-            },
-            ApprovalRequest {
-                fingerprint: "bbb".into(),
-                label: "second".into(),
-                command: "echo second".into(),
-                cwd: "/repo".into(),
-            },
-        ];
-
-        assert_eq!(
-            resolve_execution_session_approvals(&approvals, &[]).unwrap(),
-            vec!["aaa".to_string(), "bbb".to_string()]
-        );
-        assert!(resolve_execution_session_approvals(&approvals, &[String::from("aaa")]).is_err());
-        assert!(resolve_execution_session_approvals(
-            &approvals,
-            &[
-                String::from("aaa"),
-                String::from("bbb"),
-                String::from("ccc")
-            ]
-        )
-        .is_err());
     }
 
     #[test]
@@ -1742,11 +1461,9 @@ mod tests {
                         repo_root: "/repo".into(),
                         status: ExecutionStatus::Completed,
                         logs: vec![],
-                        approvals: vec![],
                         repo: None,
                         error: None,
                     },
-                    pending_steps: None,
                 },
             );
         }

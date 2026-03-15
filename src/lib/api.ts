@@ -50,6 +50,10 @@ export function approveExecutionSessionCommands(input: ApproveExecutionSessionIn
   return invoke<ExecutionSessionSnapshot>("approve_execution_session_commands", { input });
 }
 
+export function disposeExecutionSession(sessionId: string) {
+  return invoke<void>("dispose_execution_session_snapshot", { sessionId });
+}
+
 export function startRepoWorktree(input: StartWorktreeInput) {
   return invoke<ActionResponse>("start_repo_worktree", { input });
 }

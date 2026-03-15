@@ -5,9 +5,9 @@ mod models;
 mod store;
 
 use actions::{
-    approve_execution_session, approve_fingerprints, create_worktree, get_execution_session,
-    launch_worktree, mark_worktree_opened, preview_prune, prune_repo, remove_worktree,
-    run_hook_event, start_remove_worktree_session, start_worktree,
+    approve_execution_session, approve_fingerprints, create_worktree, dispose_execution_session,
+    get_execution_session, launch_worktree, mark_worktree_opened, preview_prune, prune_repo,
+    remove_worktree, run_hook_event, start_remove_worktree_session, start_worktree,
 };
 use config::save;
 use models::{
@@ -93,7 +93,10 @@ pub fn load_repo_snapshot(
 }
 
 #[tauri::command]
-async fn save_repo_configs(app: AppHandle, input: SaveConfigsInput) -> Result<RepoSnapshot, String> {
+async fn save_repo_configs(
+    app: AppHandle,
+    input: SaveConfigsInput,
+) -> Result<RepoSnapshot, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<SharedState>();
         let repo_root = git::resolve_repo_root(&input.repo_root)?;
@@ -167,12 +170,12 @@ async fn start_remove_repo_worktree_session(
 }
 
 #[tauri::command]
-async fn get_execution_session_snapshot(session_id: String) -> Result<ExecutionSessionSnapshot, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        get_execution_session(&session_id)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+async fn get_execution_session_snapshot(
+    session_id: String,
+) -> Result<ExecutionSessionSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || get_execution_session(&session_id))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -186,6 +189,13 @@ async fn approve_execution_session_commands(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn dispose_execution_session_snapshot(session_id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || dispose_execution_session(&session_id))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -251,11 +261,9 @@ async fn run_repo_hook_event(
 
 #[tauri::command]
 async fn preview_repo_prune(repo_root: String) -> Result<Vec<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        preview_prune(&repo_root)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || preview_prune(&repo_root))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -289,6 +297,7 @@ pub fn run() {
             start_remove_repo_worktree_session,
             get_execution_session_snapshot,
             approve_execution_session_commands,
+            dispose_execution_session_snapshot,
             start_repo_worktree,
             launch_repo_worktree,
             run_repo_hook_event,

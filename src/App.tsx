@@ -15,7 +15,9 @@ import {
   bootstrap,
   createRepoWorktree,
   approveExecutionSessionCommands,
+  disposeExecutionSession,
   fetchRemote,
+  getExecutionSessionSnapshot,
   launchRepoWorktree,
   listBranches,
   listRemoteBranches,
@@ -359,6 +361,34 @@ export default function App() {
     }
   }
 
+  function applyDeleteSessionSnapshot(session: ExecutionSessionSnapshot) {
+    setDeleteExecution((current) => {
+      if (!current) return current;
+      if (current.session && current.session.sessionId !== session.sessionId) {
+        return current;
+      }
+      return {
+        ...current,
+        phase: session.status,
+        session,
+        isLoading: false,
+      };
+    });
+    if (session.repo) {
+      setRepo(session.repo);
+      setRepoInput(session.repo.repoRoot);
+    }
+  }
+
+  async function refreshDeleteExecutionSession(sessionId: string) {
+    try {
+      const snapshot = await getExecutionSessionSnapshot(sessionId);
+      applyDeleteSessionSnapshot(snapshot);
+    } catch {
+      // Ignore stale or disposed sessions.
+    }
+  }
+
   function appendLogs(nextLogs: RunLog[], repoRoot?: string) {
     if (nextLogs.length === 0) return;
     const root = repoRoot ?? repo?.repoRoot;
@@ -432,10 +462,14 @@ export default function App() {
   }
 
   function handleCloseDeleteExecution() {
-    if (deleteExecution?.session?.logs.length) {
-      appendLogs(deleteExecution.session.logs, deleteExecution.session.repoRoot);
+    const session = deleteExecution?.session;
+    if (session?.logs.length) {
+      appendLogs(session.logs, session.repoRoot);
     }
     setDeleteExecution(null);
+    if (session?.sessionId) {
+      void disposeExecutionSession(session.sessionId).catch(() => {});
+    }
   }
 
   async function confirmDeleteExecution() {
@@ -455,19 +489,9 @@ export default function App() {
         worktreePath: deleteExecution.worktree.path,
         force: deleteExecution.force,
       });
-      setDeleteExecution((current) =>
-        current
-          ? {
-              ...current,
-              phase: session.status,
-              session,
-              isLoading: false,
-            }
-          : current,
-      );
-      if (session.status === "completed" && session.repo) {
-        setRepo(session.repo);
-        setRepoInput(session.repo.repoRoot);
+      applyDeleteSessionSnapshot(session);
+      if (session.sessionId) {
+        void refreshDeleteExecutionSession(session.sessionId);
       }
     } catch (reason) {
       const message = String(reason);
@@ -497,18 +521,12 @@ export default function App() {
     try {
       const session = await approveExecutionSessionCommands({
         sessionId: deleteExecution.session.sessionId,
-        fingerprints: deleteExecution.session.approvals.map((item) => item.fingerprint),
+        fingerprints: [],
       });
-      setDeleteExecution((current) =>
-        current
-          ? {
-              ...current,
-              phase: session.status,
-              session,
-              isLoading: false,
-            }
-          : current,
-      );
+      applyDeleteSessionSnapshot(session);
+      if (session.sessionId) {
+        void refreshDeleteExecutionSession(session.sessionId);
+      }
     } catch (reason) {
       const message = String(reason);
       setDeleteExecution((current) =>

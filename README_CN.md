@@ -9,7 +9,7 @@ macOS 优先的 Tauri 2 桌面应用，用于管理 Git Worktree。
 - **删除工作树** — 流式执行日志，支持预览和执行 `git worktree prune`
 - **一键启动** — 支持 Terminal、Ghostty、iTerm2、VS Code、Cursor、Claude CLI、Codex CLI、Gemini CLI
 - **GitHub PR 集成** — 通过 `gh` CLI 自动查询并缓存关联的 Pull Request
-- **项目钩子** — 支持 pre-create、post-create、post-start、post-scan 等生命周期钩子
+- **项目Hooks** — 支持 pre-create、post-create、post-start、post-scan 等生命周期Hooks
 - **冷启动预热** — 自动复制忽略文件（`.env`、`.npmrc`），生成确定性端口
 - **审批机制** — 项目定义的 shell 命令需一次性授权，指纹持久化存储
 - **中英双语** — 默认中文界面，可一键切换英文
@@ -50,7 +50,7 @@ src-tauri/src/          # Rust 后端
   git.rs                # Git CLI 交互（worktree、status、branch、fetch）
   config.rs             # 配置加载与合并
   models.rs             # Serde 数据结构
-  actions.rs            # 创建/删除/启动/钩子执行
+  actions.rs            # 创建/删除/启动/Hooks执行
   store.rs              # 持久化存储（~/.grove/store.json）
 ```
 

@@ -46,6 +46,7 @@ export const en: Translations = {
   hookEventPreRemoveHelp: "Runs before removing the selected worktree.",
   hookEventPostRemoveHelp: "Runs after the selected worktree has been removed.",
   saveHooks: "Save Hooks",
+  reRunHooks: "Re-run Hooks",
   addStep: "Add Step",
   deleteConfirm: (branch) => `Delete ${branch}?`,
   deletePathLabel: "Target path",

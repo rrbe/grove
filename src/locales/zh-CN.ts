@@ -46,6 +46,7 @@ export const zhCN: Translations = {
   hookEventPreRemoveHelp: "在删除当前 worktree 前执行。",
   hookEventPostRemoveHelp: "在删除当前 worktree 后执行。",
   saveHooks: "保存 Hooks",
+  reRunHooks: "重跑 Hooks",
   addStep: "新增步骤",
   deleteConfirm: (branch) => `删除 ${branch}？`,
   deletePathLabel: "目标路径",

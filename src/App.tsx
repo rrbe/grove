@@ -22,6 +22,7 @@ import {
   openRepo,
   previewRepoPrune,
   pruneRepoMetadata,
+  runRepoHookEvent,
   saveRepoConfig,
   saveRepoHooks,
   startRemoveRepoWorktreeSession,
@@ -714,6 +715,7 @@ export default function App() {
                 isBusy={isBusy}
                 t={t}
                 onLaunch={(launcher) => void handleLaunch(selectedWorktree, launcher)}
+                onRunHook={(event) => void runAction(() => runRepoHookEvent({ repoRoot: repo.repoRoot, event, worktreePath: selectedWorktree.path }))}
                 showActionLog={showActionLog}
                 onToggleActionLog={() => setShowActionLog((v) => !v)}
                 logs={logs.filter((l) => l.repoRoot === repo.repoRoot)}
@@ -944,6 +946,7 @@ function WorktreeDetail({
   isBusy,
   t,
   onLaunch,
+  onRunHook,
   showActionLog,
   onToggleActionLog,
   logs,
@@ -957,6 +960,7 @@ function WorktreeDetail({
   isBusy: boolean;
   t: Translations;
   onLaunch: (launcher: LauncherProfile) => void;
+  onRunHook: (event: HookEvent) => void;
   showActionLog: boolean;
   onToggleActionLog: () => void;
   logs: TaggedLog[];
@@ -1111,6 +1115,41 @@ function WorktreeDetail({
           })}
         </div>
       </section>
+
+      {/* Re-run Hooks */}
+      {(() => {
+        const configuredEvents = HOOK_EVENTS.filter((e) => (repo.mergedConfig.hooks[e]?.length ?? 0) > 0);
+        if (configuredEvents.length === 0) return null;
+        return (
+          <section className="card stack">
+            <div className="section-heading">
+              <span>{t.reRunHooks}</span>
+            </div>
+            <div className="action-grid">
+              {configuredEvents.map((event) => {
+                const stepCount = repo.mergedConfig.hooks[event]?.length ?? 0;
+                return (
+                  <button
+                    key={event}
+                    className="ghost-button"
+                    onClick={() => onRunHook(event)}
+                    disabled={isBusy}
+                    title={`${event} (${stepCount} ${stepCount === 1 ? "step" : "steps"})`}
+                  >
+                    <span className="launcher-button-content">
+                      <span className="hook-event-icon">&#x21BB;</span>
+                      <span className="launcher-copy">
+                        <span>{event}</span>
+                        <span className="launcher-terminal-hint">{stepCount} {stepCount === 1 ? "step" : "steps"}</span>
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })()}
 
       {/* Action Log (collapsible) */}
       <section className="card">

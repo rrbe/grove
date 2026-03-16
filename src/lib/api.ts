@@ -84,6 +84,10 @@ export function setDefaultTerminal(terminalId: string) {
   return invoke<void>("set_default_terminal", { terminalId });
 }
 
+export function getFileDiff(worktreePath: string, filePath: string, status: string) {
+  return invoke<string>("get_file_diff", { worktreePath, filePath, status });
+}
+
 export function setWorktreeRoot(repoRoot: string, worktreeRoot: string) {
   return invoke<RepoSnapshot>("set_repo_worktree_root", { repoRoot, worktreeRoot });
 }

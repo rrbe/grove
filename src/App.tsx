@@ -16,6 +16,7 @@ import {
   disposeExecutionSession,
   fetchRemote,
   getExecutionSessionSnapshot,
+  getFileDiff,
   launchRepoWorktree,
   listBranches,
   listRemoteBranches,
@@ -1054,17 +1055,7 @@ function WorktreeDetail({
 
       {/* Changed Files */}
       {worktree.changedFiles.length > 0 && (
-        <section className="card stack">
-          <div className="section-heading">
-            <span>{t.changedFiles}</span>
-            <span className="section-heading-count">{worktree.changedFiles.length}</span>
-          </div>
-          <div className="changed-files-list">
-            {worktree.changedFiles.map((file) => (
-              <FileChangeRow key={file.path} file={file} t={t} />
-            ))}
-          </div>
-        </section>
+        <ChangedFilesSection worktree={worktree} t={t} />
       )}
 
       {/* Recent Commits */}
@@ -1912,7 +1903,68 @@ const FILE_STATUS_LETTERS: Record<FileChange["status"], string> = {
   untracked: "?",
 };
 
-function FileChangeRow({ file, t }: { file: FileChange; t: Translations }) {
+function ChangedFilesSection({ worktree, t }: { worktree: WorktreeRecord; t: Translations }) {
+  const [expandedFile, setExpandedFile] = useState<string | null>(null);
+  const [diffContent, setDiffContent] = useState<string | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+
+  const handleToggle = async (file: FileChange) => {
+    if (expandedFile === file.path) {
+      setExpandedFile(null);
+      setDiffContent(null);
+      return;
+    }
+    setExpandedFile(file.path);
+    setDiffContent(null);
+    setDiffLoading(true);
+    try {
+      const diff = await getFileDiff(worktree.path, file.path, file.status);
+      setDiffContent(diff);
+    } catch {
+      setDiffContent("Failed to load diff");
+    } finally {
+      setDiffLoading(false);
+    }
+  };
+
+  return (
+    <section className="card stack">
+      <div className="section-heading">
+        <span>{t.changedFiles}</span>
+        <span className="section-heading-count">{worktree.changedFiles.length}</span>
+      </div>
+      <div className="changed-files-list">
+        {worktree.changedFiles.map((file) => (
+          <FileChangeRow
+            key={file.path}
+            file={file}
+            t={t}
+            expanded={expandedFile === file.path}
+            diffContent={expandedFile === file.path ? diffContent : null}
+            diffLoading={expandedFile === file.path && diffLoading}
+            onToggle={() => void handleToggle(file)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function FileChangeRow({
+  file,
+  t,
+  expanded,
+  diffContent,
+  diffLoading,
+  onToggle,
+}: {
+  file: FileChange;
+  t: Translations;
+  expanded: boolean;
+  diffContent: string | null;
+  diffLoading: boolean;
+  onToggle: () => void;
+}) {
   const statusLabel: Record<FileChange["status"], string> = {
     modified: t.fileStatusModified,
     added: t.fileStatusAdded,
@@ -1921,12 +1973,65 @@ function FileChangeRow({ file, t }: { file: FileChange; t: Translations }) {
     untracked: t.fileStatusUntracked,
   };
   return (
-    <div className="file-change-row">
-      <code className={`file-status file-status-${file.status}`} title={statusLabel[file.status]}>
-        {FILE_STATUS_LETTERS[file.status]}
-      </code>
-      <span className="file-path">{file.path}</span>
+    <div className={`file-change-item${expanded ? " expanded" : ""}`}>
+      <div className="file-change-row" onClick={onToggle}>
+        <code className={`file-status file-status-${file.status}`} title={statusLabel[file.status]}>
+          {FILE_STATUS_LETTERS[file.status]}
+        </code>
+        <span className="file-path">{file.path}</span>
+        <span className="file-expand-indicator">{expanded ? "▾" : "▸"}</span>
+      </div>
+      {expanded && (
+        <div className="file-diff-container">
+          {diffLoading ? (
+            <div className="file-diff-loading">...</div>
+          ) : (
+            <DiffView content={diffContent ?? ""} isUntracked={file.status === "untracked"} />
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+function DiffView({ content, isUntracked }: { content: string; isUntracked: boolean }) {
+  if (!content) return <div className="file-diff-empty">No changes</div>;
+
+  const lines = content.split("\n");
+  // For real diffs, skip the header (lines before first @@ or all-add for untracked)
+  let diffLines: { text: string; type: "add" | "del" | "ctx" | "hunk" }[];
+  if (isUntracked) {
+    diffLines = lines.map((line) => ({
+      text: line,
+      type: "add" as const,
+    }));
+  } else {
+    diffLines = [];
+    let inHunk = false;
+    for (const line of lines) {
+      if (line.startsWith("@@")) {
+        inHunk = true;
+        diffLines.push({ text: line, type: "hunk" });
+      } else if (inHunk) {
+        if (line.startsWith("+")) {
+          diffLines.push({ text: line, type: "add" });
+        } else if (line.startsWith("-")) {
+          diffLines.push({ text: line, type: "del" });
+        } else {
+          diffLines.push({ text: line, type: "ctx" });
+        }
+      }
+    }
+  }
+
+  return (
+    <pre className="file-diff-content">
+      {diffLines.map((line, i) => (
+        <div key={i} className={`diff-line diff-line-${line.type}`}>
+          {line.text}
+        </div>
+      ))}
+    </pre>
   );
 }
 

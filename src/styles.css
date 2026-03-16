@@ -1555,6 +1555,15 @@ textarea {
   gap: 2px;
 }
 
+.file-change-item {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.file-change-item.expanded {
+  background: rgba(16, 33, 46, 0.03);
+}
+
 .file-change-row {
   display: flex;
   align-items: baseline;
@@ -1563,6 +1572,16 @@ textarea {
   border-radius: 10px;
   background: rgba(16, 33, 46, 0.03);
   font-size: 0.82rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.file-change-row:hover {
+  background: rgba(16, 33, 46, 0.07);
+}
+
+.file-change-item.expanded > .file-change-row {
+  border-radius: 10px 10px 0 0;
 }
 
 .file-status {
@@ -1589,10 +1608,64 @@ textarea {
   font-size: 0.78rem;
 }
 
+.file-expand-indicator {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  color: rgba(16, 33, 46, 0.35);
+}
+
 .section-heading-count {
   font-size: 0.73rem;
   color: rgba(16, 33, 46, 0.45);
   margin-left: 6px;
+}
+
+/* Diff viewer */
+.file-diff-container {
+  border-top: 1px solid rgba(16, 33, 46, 0.06);
+}
+
+.file-diff-content {
+  margin: 0;
+  padding: 8px 0;
+  font-family: var(--font-mono, "SF Mono", "Menlo", monospace);
+  font-size: 0.72rem;
+  line-height: 1.55;
+  overflow-x: auto;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.file-diff-loading,
+.file-diff-empty {
+  padding: 12px 14px;
+  font-size: 0.78rem;
+  color: rgba(16, 33, 46, 0.45);
+}
+
+.diff-line {
+  padding: 0 14px;
+  white-space: pre;
+}
+
+.diff-line-add {
+  background: rgba(26, 127, 55, 0.1);
+  color: #1a6d2e;
+}
+
+.diff-line-del {
+  background: rgba(207, 34, 46, 0.1);
+  color: #a1232e;
+}
+
+.diff-line-hunk {
+  color: rgba(102, 57, 186, 0.7);
+  padding-top: 4px;
+  padding-bottom: 2px;
+}
+
+.diff-line-ctx {
+  color: rgba(16, 33, 46, 0.6);
 }
 
 /* Commit list */

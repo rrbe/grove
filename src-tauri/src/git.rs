@@ -325,6 +325,34 @@ pub fn git_status_details(worktree_path: &Path) -> Result<(bool, u32, u32, Vec<F
     Ok((dirty, 0, 0, files))
 }
 
+pub fn file_diff(worktree_path: &Path, file_path: &str, status: &str) -> Result<String, String> {
+    match status {
+        "untracked" => {
+            // For untracked files, show the full file content as an "add" diff
+            let full_path = worktree_path.join(file_path);
+            std::fs::read_to_string(&full_path)
+                .map(|content| {
+                    content
+                        .lines()
+                        .map(|line| format!("+{line}"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .map_err(|e| format!("failed to read file: {e}"))
+        }
+        _ => {
+            // For tracked files, use git diff (includes both staged and unstaged)
+            let output = run_git_text(worktree_path, ["diff", "HEAD", "--", file_path])?;
+            if output.trim().is_empty() {
+                // Might be a newly staged file
+                run_git_text(worktree_path, ["diff", "--cached", "--", file_path])
+            } else {
+                Ok(output)
+            }
+        }
+    }
+}
+
 fn parse_porcelain_status(output: &str) -> Vec<FileChange> {
     if output.is_empty() {
         return Vec::new();

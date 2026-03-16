@@ -36,6 +36,7 @@ import type {
   BootstrapResponse,
   CommitSummary,
   CreateMode,
+  FileChange,
   CreateWorktreeInput,
   ExecutionEvent,
   ExecutionSessionSnapshot,
@@ -1047,6 +1048,21 @@ function WorktreeDetail({
         </div>
       </section>
 
+      {/* Changed Files */}
+      {worktree.changedFiles.length > 0 && (
+        <section className="card stack">
+          <div className="section-heading">
+            <span>{t.changedFiles}</span>
+            <span className="section-heading-count">{worktree.changedFiles.length}</span>
+          </div>
+          <div className="changed-files-list">
+            {worktree.changedFiles.map((file) => (
+              <FileChangeRow key={file.path} file={file} t={t} />
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Recent Commits */}
       {worktree.recentCommits.length > 0 && (
         <section className="card stack">
@@ -1845,6 +1861,32 @@ function ToolRow({ tool, t }: { tool: ToolStatus; t: Translations }) {
         </div>
       </div>
       <Badge label={tool.available ? t.ready : t.missing} tone={tool.available ? "good" : "warning"} />
+    </div>
+  );
+}
+
+const FILE_STATUS_LETTERS: Record<FileChange["status"], string> = {
+  modified: "M",
+  added: "A",
+  deleted: "D",
+  renamed: "R",
+  untracked: "?",
+};
+
+function FileChangeRow({ file, t }: { file: FileChange; t: Translations }) {
+  const statusLabel: Record<FileChange["status"], string> = {
+    modified: t.fileStatusModified,
+    added: t.fileStatusAdded,
+    deleted: t.fileStatusDeleted,
+    renamed: t.fileStatusRenamed,
+    untracked: t.fileStatusUntracked,
+  };
+  return (
+    <div className="file-change-row">
+      <code className={`file-status file-status-${file.status}`} title={statusLabel[file.status]}>
+        {FILE_STATUS_LETTERS[file.status]}
+      </code>
+      <span className="file-path">{file.path}</span>
     </div>
   );
 }

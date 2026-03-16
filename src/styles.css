@@ -1534,6 +1534,53 @@ textarea {
   background: rgba(46, 107, 99, 0.35);
 }
 
+/* Changed files list */
+.changed-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.file-change-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  background: rgba(16, 33, 46, 0.03);
+  font-size: 0.82rem;
+}
+
+.file-status {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  width: 1.2em;
+  text-align: center;
+}
+
+.file-status-modified { color: #b08800; }
+.file-status-added { color: #1a7f37; }
+.file-status-deleted { color: #cf222e; }
+.file-status-renamed { color: #6639ba; }
+.file-status-untracked { color: rgba(16, 33, 46, 0.45); }
+
+.file-path {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono, "SF Mono", "Menlo", monospace);
+  font-size: 0.78rem;
+}
+
+.section-heading-count {
+  font-size: 0.73rem;
+  color: rgba(16, 33, 46, 0.45);
+  margin-left: 6px;
+}
+
 /* Commit list */
 .commit-list {
   display: flex;

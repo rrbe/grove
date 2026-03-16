@@ -124,6 +124,12 @@ export interface Translations {
   langEn: string;
   recentRepos: string;
   recentCommits: string;
+  changedFiles: string;
+  fileStatusModified: string;
+  fileStatusAdded: string;
+  fileStatusDeleted: string;
+  fileStatusRenamed: string;
+  fileStatusUntracked: string;
   defaultTerminalLabel: string;
   defaultTerminalDescription: string;
   inUse: string;

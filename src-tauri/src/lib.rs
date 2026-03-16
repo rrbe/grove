@@ -13,6 +13,7 @@ use models::{
     BootstrapResponse, CreateWorktreeInput, ExecutionSessionSnapshot, LaunchWorktreeInput,
     RemoveWorktreeInput, RepoSnapshot, RunHookEventInput, SaveConfigInput, SaveHooksInput,
 };
+use std::sync::OnceLock;
 use store::{push_recent, SharedState};
 use tauri::{AppHandle, Manager, State};
 
@@ -406,8 +407,51 @@ fn tool_status(
     }
 }
 
+/// Returns the full PATH as seen by the user's login shell.
+///
+/// macOS apps launched from Finder/Dock inherit a minimal PATH from launchd
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`), which doesn't include paths added by
+/// the user's shell profile (e.g. homebrew, nvm, cargo, etc.).
+/// We resolve this once by spawning a login shell and printing $PATH.
+fn get_user_shell_path() -> &'static str {
+    static CACHED: OnceLock<String> = OnceLock::new();
+    CACHED.get_or_init(|| {
+        // Determine user's login shell (defaults to zsh on modern macOS)
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+
+        // -ilc: interactive login shell, then run a command
+        // This sources ~/.zshrc / ~/.bashrc / ~/.profile etc.
+        let output = std::process::Command::new(&shell)
+            .args(["-ilc", "echo __GROVE_PATH__${PATH}__GROVE_PATH__"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output();
+
+        if let Ok(out) = output {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            // Extract PATH between markers to avoid shell greeting noise
+            if let Some(start) = stdout.find("__GROVE_PATH__") {
+                let rest = &stdout[start + 14..];
+                if let Some(end) = rest.find("__GROVE_PATH__") {
+                    let path = rest[..end].trim();
+                    if !path.is_empty() {
+                        return path.to_string();
+                    }
+                }
+            }
+        }
+
+        // Fallback: current process PATH
+        std::env::var("PATH").unwrap_or_default()
+    })
+}
+
 fn cli_status(id: &str, label: &str) -> models::ToolStatus {
-    let output = std::process::Command::new("which").arg(id).output();
+    let path = get_user_shell_path();
+    let output = std::process::Command::new("which")
+        .arg(id)
+        .env("PATH", path)
+        .output();
     match output {
         Ok(output) if output.status.success() => tool_status(
             id,

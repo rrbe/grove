@@ -1441,7 +1441,7 @@ function FileChangeRow({
         <code className={`file-status file-status-${file.status}`} title={statusLabel[file.status]}>
           {FILE_STATUS_LETTERS[file.status]}
         </code>
-        <span className="file-path">{file.path}</span>
+        <span className="file-path" title={file.path}>{file.path}</span>
         <span className="file-expand-indicator">{expanded ? "▾" : "▸"}</span>
       </div>
       {expanded && (

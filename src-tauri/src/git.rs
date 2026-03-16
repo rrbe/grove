@@ -301,8 +301,8 @@ fn run_git_bytes<const N: usize>(repo_root: &Path, args: [&str; N]) -> Result<Ve
 }
 
 pub fn git_status_details(worktree_path: &Path) -> Result<(bool, u32, u32, Vec<FileChange>), String> {
-    let status_output = run_git_text(worktree_path, ["status", "--porcelain=v1"])?;
-    let trimmed = status_output.trim();
+    let status_output = run_git_text(worktree_path, ["-c", "core.quotePath=false", "status", "--porcelain=v1"])?;
+    let trimmed = status_output.trim_end();
     let dirty = !trimmed.is_empty();
     let files = parse_porcelain_status(trimmed);
     let upstream = run_git_text(

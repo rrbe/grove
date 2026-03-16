@@ -1,4 +1,4 @@
-use crate::models::{ColdStartConfig, CommitSummary, PortAssignment, WarmupPreview, WorktreeRecord};
+use crate::models::{ColdStartConfig, CommitSummary, FileChange, FileStatus, PortAssignment, WarmupPreview, WorktreeRecord};
 use crate::store::AppStore;
 use sha2::{Digest, Sha256};
 use std::{
@@ -51,7 +51,7 @@ pub fn scan_worktrees(
         .into_iter()
         .map(|entry| {
             let canonical = canonicalize(&entry.path).unwrap_or(entry.path.clone());
-            let (dirty, ahead, behind) = git_status_details(&canonical)?;
+            let (dirty, ahead, behind, files) = git_status_details(&canonical)?;
             let warmup_preview =
                 build_warmup_preview(repo_root, &canonical, entry.branch.as_deref(), cold_start);
             let (pr_number, pr_url) = entry
@@ -79,6 +79,7 @@ pub fn scan_worktrees(
                 pr_number,
                 pr_url,
                 recent_commits: commits,
+                changed_files: files,
             })
         })
         .collect()
@@ -299,10 +300,11 @@ fn run_git_bytes<const N: usize>(repo_root: &Path, args: [&str; N]) -> Result<Ve
     Ok(output.stdout)
 }
 
-pub fn git_status_details(worktree_path: &Path) -> Result<(bool, u32, u32), String> {
-    let dirty = !run_git_text(worktree_path, ["status", "--porcelain=v1"])?
-        .trim()
-        .is_empty();
+pub fn git_status_details(worktree_path: &Path) -> Result<(bool, u32, u32, Vec<FileChange>), String> {
+    let status_output = run_git_text(worktree_path, ["status", "--porcelain=v1"])?;
+    let trimmed = status_output.trim();
+    let dirty = !trimmed.is_empty();
+    let files = parse_porcelain_status(trimmed);
     let upstream = run_git_text(
         worktree_path,
         ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
@@ -317,10 +319,80 @@ pub fn git_status_details(worktree_path: &Path) -> Result<(bool, u32, u32), Stri
             let mut parts = counts.split_whitespace();
             let ahead = parts.next().unwrap_or("0").parse::<u32>().unwrap_or(0);
             let behind = parts.next().unwrap_or("0").parse::<u32>().unwrap_or(0);
-            return Ok((dirty, ahead, behind));
+            return Ok((dirty, ahead, behind, files));
         }
     }
-    Ok((dirty, 0, 0))
+    Ok((dirty, 0, 0, files))
+}
+
+pub fn file_diff(worktree_path: &Path, file_path: &str, status: &str) -> Result<String, String> {
+    match status {
+        "untracked" => {
+            // For untracked files, show the full file content as an "add" diff
+            let full_path = worktree_path.join(file_path);
+            std::fs::read_to_string(&full_path)
+                .map(|content| {
+                    content
+                        .lines()
+                        .map(|line| format!("+{line}"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .map_err(|e| format!("failed to read file: {e}"))
+        }
+        _ => {
+            // For tracked files, use git diff (includes both staged and unstaged)
+            let output = run_git_text(worktree_path, ["diff", "HEAD", "--", file_path])?;
+            if output.trim().is_empty() {
+                // Might be a newly staged file
+                run_git_text(worktree_path, ["diff", "--cached", "--", file_path])
+            } else {
+                Ok(output)
+            }
+        }
+    }
+}
+
+fn parse_porcelain_status(output: &str) -> Vec<FileChange> {
+    if output.is_empty() {
+        return Vec::new();
+    }
+    output
+        .lines()
+        .filter_map(|line| {
+            if line.len() < 4 {
+                return None;
+            }
+            let xy = &line[..2];
+            let path = line[3..].to_string();
+            // For renames "R  old -> new", show the new path
+            let display_path = if let Some(pos) = path.find(" -> ") {
+                path[pos + 4..].to_string()
+            } else {
+                path
+            };
+            let status = match xy {
+                "??" => FileStatus::Untracked,
+                _ => {
+                    let x = xy.as_bytes()[0];
+                    let y = xy.as_bytes()[1];
+                    // Prefer worktree status (y), fall back to index status (x)
+                    match if y != b' ' { y } else { x } {
+                        b'M' => FileStatus::Modified,
+                        b'A' => FileStatus::Added,
+                        b'D' => FileStatus::Deleted,
+                        b'R' => FileStatus::Renamed,
+                        b'C' => FileStatus::Added,
+                        _ => FileStatus::Modified,
+                    }
+                }
+            };
+            Some(FileChange {
+                status,
+                path: display_path,
+            })
+        })
+        .collect()
 }
 
 pub fn parse_worktree_porcelain(stdout: &[u8]) -> Result<Vec<ParsedWorktree>, String> {

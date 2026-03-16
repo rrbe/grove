@@ -95,6 +95,7 @@ export interface WorktreeRecord {
   prNumber: number | null;
   prUrl: string | null;
   recentCommits: CommitSummary[];
+  changedFiles: FileChange[];
 }
 
 export interface CommitSummary {
@@ -102,6 +103,13 @@ export interface CommitSummary {
   message: string;
   date: string;
   author: string;
+}
+
+export type FileStatus = "modified" | "added" | "deleted" | "renamed" | "untracked";
+
+export interface FileChange {
+  status: FileStatus;
+  path: string;
 }
 
 export interface RepoSnapshot {

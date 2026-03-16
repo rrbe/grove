@@ -42,6 +42,7 @@ pub struct WorktreeRecord {
     pub pr_number: Option<u32>,
     pub pr_url: Option<String>,
     pub recent_commits: Vec<CommitSummary>,
+    pub changed_files: Vec<FileChange>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,6 +52,23 @@ pub struct CommitSummary {
     pub message: String,
     pub date: String,
     pub author: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileChange {
+    pub status: FileStatus,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FileStatus {
+    Modified,
+    Added,
+    Deleted,
+    Renamed,
+    Untracked,
 }
 
 #[derive(Debug, Clone, Serialize)]

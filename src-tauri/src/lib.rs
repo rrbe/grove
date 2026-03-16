@@ -283,7 +283,8 @@ pub fn run() {
             fetch_remote,
             get_default_terminal,
             set_default_terminal,
-            set_repo_worktree_root
+            set_repo_worktree_root,
+            get_file_diff
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -369,6 +370,19 @@ async fn set_repo_worktree_root(
             store::persist(&app, &store)?;
         }
         load_repo_snapshot(&app, &state, repo_root_str)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn get_file_diff(
+    worktree_path: String,
+    file_path: String,
+    status: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        git::file_diff(std::path::Path::new(&worktree_path), &file_path, &status)
     })
     .await
     .map_err(|e| e.to_string())?

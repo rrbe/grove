@@ -58,6 +58,7 @@ enum ExecutionStep {
     InstallDependencies {
         label: String,
         worktree_path: PathBuf,
+        custom_command: Option<String>,
     },
     CopyProjectFiles {
         label: String,
@@ -625,6 +626,7 @@ fn plan_hooks(
                 steps.push(ExecutionStep::InstallDependencies {
                     label,
                     worktree_path: PathBuf::from(&context.values["worktree_path"]),
+                    custom_command: hook.run.clone().filter(|s| !s.trim().is_empty()),
                 });
             }
             HookStepType::CopyFiles => {
@@ -921,7 +923,8 @@ impl ExecutionStep {
             ExecutionStep::InstallDependencies {
                 label,
                 worktree_path,
-            } => run_install_dependencies(sink, &label, &worktree_path),
+                custom_command,
+            } => run_install_dependencies(sink, &label, &worktree_path, custom_command.as_deref()),
             ExecutionStep::CopyProjectFiles {
                 label,
                 repo_root,
@@ -995,6 +998,7 @@ fn run_install_dependencies(
     sink: &mut impl LogWriter,
     label: &str,
     worktree_path: &Path,
+    custom_command: Option<&str>,
 ) -> Result<(), String> {
     if !worktree_path.exists() {
         return Err(format!(
@@ -1002,40 +1006,101 @@ fn run_install_dependencies(
             worktree_path.display()
         ));
     }
-    if !worktree_path.join("package.json").exists() {
-        sink.push(info(format!(
-            "{label}: skipped (no package.json in {})",
-            worktree_path.display()
-        )));
-        return Ok(());
-    }
-    let command = resolve_package_manager(worktree_path)?;
-    let args = vec!["install".to_string()];
-    let mut process = Command::new(command);
-    process.current_dir(worktree_path).args(&args);
+    let full_command = match custom_command {
+        Some(cmd) => cmd.to_string(),
+        None => detect_install_command(worktree_path)
+            .ok_or_else(|| "could not detect install command; please specify one manually".to_string())?,
+    };
+    let shell = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
+    let flag = if cfg!(target_os = "windows") { "/C" } else { "-c" };
+    let mut process = Command::new(shell);
+    process.arg(flag).arg(&full_command).current_dir(worktree_path);
     run_command_streaming(
         sink,
         label,
-        &render_terminal_command(command, &args),
+        &full_command,
         &format!("failed to run install in {}", worktree_path.display()),
         process,
     )
 }
 
-fn resolve_package_manager(worktree_path: &Path) -> Result<&'static str, String> {
-    if worktree_path.join("pnpm-lock.yaml").exists() {
-        return Ok("pnpm");
+/// Detects the most likely install command for a project directory by checking
+/// for lockfiles and manifest files across multiple language ecosystems.
+pub fn detect_install_command(dir: &Path) -> Option<String> {
+    // Node.js
+    if dir.join("pnpm-lock.yaml").exists() {
+        return Some("pnpm install".into());
     }
-    if worktree_path.join("package-lock.json").exists() {
-        return Ok("npm");
+    if dir.join("bun.lockb").exists() || dir.join("bun.lock").exists() {
+        return Some("bun install".into());
     }
-    if worktree_path.join("yarn.lock").exists() {
-        return Ok("yarn");
+    if dir.join("yarn.lock").exists() {
+        return Some("yarn install".into());
     }
-    if worktree_path.join("bun.lockb").exists() || worktree_path.join("bun.lock").exists() {
-        return Ok("bun");
+    if dir.join("package-lock.json").exists() {
+        return Some("npm install".into());
     }
-    Err("could not detect a package manager from the worktree lockfiles".into())
+    // If package.json exists but no lockfile, fall back to npm
+    if dir.join("package.json").exists() {
+        return Some("npm install".into());
+    }
+    // Python
+    if dir.join("poetry.lock").exists() {
+        return Some("poetry install".into());
+    }
+    if dir.join("pdm.lock").exists() {
+        return Some("pdm install".into());
+    }
+    if dir.join("Pipfile.lock").exists() || dir.join("Pipfile").exists() {
+        return Some("pipenv install".into());
+    }
+    if dir.join("uv.lock").exists() {
+        return Some("uv sync".into());
+    }
+    if dir.join("requirements.txt").exists() {
+        return Some("pip install -r requirements.txt".into());
+    }
+    // Ruby
+    if dir.join("Gemfile.lock").exists() || dir.join("Gemfile").exists() {
+        return Some("bundle install".into());
+    }
+    // Rust
+    if dir.join("Cargo.lock").exists() || dir.join("Cargo.toml").exists() {
+        return Some("cargo build".into());
+    }
+    // Go
+    if dir.join("go.sum").exists() || dir.join("go.mod").exists() {
+        return Some("go mod download".into());
+    }
+    // PHP
+    if dir.join("composer.lock").exists() || dir.join("composer.json").exists() {
+        return Some("composer install".into());
+    }
+    // .NET
+    if dir.join("packages.lock.json").exists()
+        || std::fs::read_dir(dir)
+            .ok()
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .any(|e| {
+                        e.path()
+                            .extension()
+                            .map_or(false, |ext| ext == "csproj" || ext == "sln")
+                    })
+            })
+            .unwrap_or(false)
+    {
+        return Some("dotnet restore".into());
+    }
+    // Java / Kotlin
+    if dir.join("gradlew").exists() {
+        return Some("./gradlew build".into());
+    }
+    if dir.join("pom.xml").exists() {
+        return Some("mvn install".into());
+    }
+    None
 }
 
 fn run_copy_project_files(
@@ -1653,27 +1718,30 @@ mod tests {
     }
 
     #[test]
-    fn resolve_package_manager_detects_pnpm_from_lockfile() {
+    fn detect_install_command_pnpm() {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("pnpm-lock.yaml"), "lockfileVersion: '9.0'").unwrap();
-
-        assert_eq!(resolve_package_manager(dir.path()).unwrap(), "pnpm");
+        assert_eq!(detect_install_command(dir.path()), Some("pnpm install".into()));
     }
 
     #[test]
-    fn install_hook_fails_when_no_lockfile_detected() {
+    fn detect_install_command_poetry() {
         let dir = tempdir().unwrap();
-        fs::write(dir.path().join("package.json"), "{}").unwrap();
+        fs::write(dir.path().join("poetry.lock"), "").unwrap();
+        assert_eq!(detect_install_command(dir.path()), Some("poetry install".into()));
+    }
 
-        let mut logs = Vec::new();
-        let mut sink = VecLogWriter { logs: &mut logs };
-        let result = run_install_dependencies(
-            &mut sink,
-            "Hook post-create step 1",
-            dir.path(),
-        );
+    #[test]
+    fn detect_install_command_cargo() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("Cargo.toml"), "[package]").unwrap();
+        assert_eq!(detect_install_command(dir.path()), Some("cargo build".into()));
+    }
 
-        assert!(result.is_err());
+    #[test]
+    fn detect_install_command_none() {
+        let dir = tempdir().unwrap();
+        assert_eq!(detect_install_command(dir.path()), None);
     }
 
     #[test]

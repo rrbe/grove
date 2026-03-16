@@ -30,6 +30,7 @@ import {
   getDefaultTerminal,
   setDefaultTerminal,
   setWorktreeRoot,
+  detectInstallCommand,
 } from "./lib/api";
 import { generateBranchName } from "./lib/branch-name-gen";
 import { useI18n, type Locale, type Translations } from "./lib/i18n";
@@ -744,6 +745,7 @@ export default function App() {
         <HooksModal
           hooks={hooksMap}
           launchers={launchers}
+          repoRoot={repo!.repoRoot}
           onSave={(nextHooks) => void handleSaveHooks(nextHooks)}
           onClose={() => setShowHooksModal(false)}
           isBusy={isBusy}
@@ -1385,6 +1387,7 @@ function SettingsPage({
 function HooksModal({
   hooks,
   launchers,
+  repoRoot,
   onSave,
   onClose,
   isBusy,
@@ -1392,6 +1395,7 @@ function HooksModal({
 }: {
   hooks: HooksMap;
   launchers: LauncherProfile[];
+  repoRoot: string;
   onSave: (hooks: HooksMap) => void;
   onClose: () => void;
   isBusy: boolean;
@@ -1403,10 +1407,17 @@ function HooksModal({
     const active = HOOK_EVENTS.filter((e) => (hooks[e]?.length ?? 0) > 0);
     return new Set(active);
   });
+  const [installPlaceholder, setInstallPlaceholder] = useState("");
 
   useEffect(() => {
     setDraft({ ...hooks });
   }, [hooks]);
+
+  useEffect(() => {
+    detectInstallCommand(repoRoot).then((cmd) => {
+      setInstallPlaceholder(cmd ?? "");
+    });
+  }, [repoRoot]);
 
   function toggleExpand(event: HookEvent) {
     setExpanded((prev) => {
@@ -1582,7 +1593,16 @@ function HooksModal({
                               </label>
                             )}
                             {step.type === "install" && (
-                              <p className="install-hint">{t.hookInstallHint}</p>
+                              <label className="field-label">
+                                {t.hookCommand}
+                                <textarea
+                                  rows={2}
+                                  value={step.run ?? ""}
+                                  placeholder={installPlaceholder || t.hookInstallHint}
+                                  onChange={(e) => patchStep(event, stepIndex, { run: e.target.value })}
+                                  disabled={isBusy}
+                                />
+                              </label>
                             )}
                             {step.type === "copy-files" && (
                               <label className="field-label">

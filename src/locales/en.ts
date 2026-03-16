@@ -37,7 +37,7 @@ export const en: Translations = {
   hookTypeScript: "Script",
   hookTypeLaunch: "Launch",
   hookTypeInstall: "Install",
-  hookInstallHint: "Auto-detects package manager and runs install",
+  hookInstallHint: "e.g. pnpm install, pip install -r requirements.txt",
   hookTypeCopyFiles: "Copy files",
   hookEventPreCreateHelp: "Runs before the new worktree is created.",
   hookEventPostCreateHelp: "Runs after the new worktree has been created.",

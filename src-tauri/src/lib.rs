@@ -256,6 +256,15 @@ async fn prune_repo_metadata(
     .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+async fn detect_install_command(repo_root: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(actions::detect_install_command(std::path::Path::new(&repo_root)))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -284,7 +293,8 @@ pub fn run() {
             get_default_terminal,
             set_default_terminal,
             set_repo_worktree_root,
-            get_file_diff
+            get_file_diff,
+            detect_install_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

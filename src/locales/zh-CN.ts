@@ -37,7 +37,7 @@ export const zhCN: Translations = {
   hookTypeScript: "脚本",
   hookTypeLaunch: "启动器",
   hookTypeInstall: "安装依赖",
-  hookInstallHint: "自动检测包管理器并执行 install",
+  hookInstallHint: "例如 pnpm install、pip install -r requirements.txt",
   hookTypeCopyFiles: "复制文件",
   hookEventPreCreateHelp: "在新 worktree 创建前执行。",
   hookEventPostCreateHelp: "在新 worktree 创建完成后执行。",

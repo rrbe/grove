@@ -91,3 +91,7 @@ export function getFileDiff(worktreePath: string, filePath: string, status: stri
 export function setWorktreeRoot(repoRoot: string, worktreeRoot: string) {
   return invoke<RepoSnapshot>("set_repo_worktree_root", { repoRoot, worktreeRoot });
 }
+
+export function detectInstallCommand(repoRoot: string) {
+  return invoke<string | null>("detect_install_command", { repoRoot });
+}

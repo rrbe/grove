@@ -1435,12 +1435,6 @@ textarea {
   font-size: 0.82rem;
 }
 
-.hook-step-config .install-hint {
-  font-size: 0.78rem;
-  color: rgba(16, 33, 46, 0.45);
-  margin: 0;
-}
-
 .hook-add-step {
   align-self: flex-start;
   padding: 5px 12px;

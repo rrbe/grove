@@ -14,12 +14,9 @@ import {
   bootstrap,
   createRepoWorktree,
   disposeExecutionSession,
-  fetchRemote,
   getExecutionSessionSnapshot,
   getFileDiff,
   launchRepoWorktree,
-  listBranches,
-  listRemoteBranches,
   openRepo,
   previewRepoPrune,
   pruneRepoMetadata,
@@ -31,20 +28,19 @@ import {
   setDefaultTerminal,
   setWorktreeRoot,
 } from "./lib/api";
-import { generateBranchName } from "./lib/branch-name-gen";
 import { useI18n, type Locale, type Translations } from "./lib/i18n";
+import { HooksModal, type HooksMap } from "./components/HooksModal";
+import { CreateWorktreeModal, type CreateFormState } from "./components/CreateWorktreeModal";
+import { DeleteExecutionModal, type DeleteExecutionState, type DeleteExecutionPhase } from "./components/DeleteExecutionModal";
 import type {
   ActionResponse,
   BootstrapResponse,
   CommitSummary,
-  CreateMode,
   FileChange,
   CreateWorktreeInput,
   ExecutionEvent,
   ExecutionSessionSnapshot,
-  ExecutionStatus,
   HookEvent,
-  HookStep,
   LauncherProfile,
   RepoSnapshot,
   RunLog,
@@ -63,7 +59,6 @@ const HOOK_EVENTS: HookEvent[] = [
   "pre-remove",
   "post-remove",
 ];
-const HOOK_STEP_TYPES: HookStep["type"][] = ["copy-files", "install", "script", "launch"];
 const LAUNCHER_ICONS: Record<string, string> = {
   claude: claudeIcon,
   codex: codexIcon,
@@ -72,25 +67,6 @@ const LAUNCHER_ICONS: Record<string, string> = {
   ghostty: ghosttyIcon,
   terminal: terminalIcon,
   vscode: vscodeIcon,
-};
-
-type CreateFormState = {
-  mode: CreateMode;
-  branch: string;
-  baseRef: string;
-  remoteRef: string;
-  path: string;
-  autoStartLaunchers: string[];
-};
-
-type DeleteExecutionPhase = "confirm" | ExecutionStatus;
-
-type DeleteExecutionState = {
-  worktree: WorktreeRecord;
-  force: boolean;
-  phase: DeleteExecutionPhase;
-  session: ExecutionSessionSnapshot | null;
-  isLoading: boolean;
 };
 
 const createInitialForm = (repo?: RepoSnapshot): CreateFormState => ({
@@ -135,28 +111,6 @@ function buildDeleteFailureSession(
     error: message,
   };
 }
-
-function createStepDraft(type: HookStep["type"], launchers: LauncherProfile[]): HookStep {
-  return {
-    type,
-    run: type === "script" ? "" : undefined,
-    launcherId: type === "launch" ? (launchers[0]?.id ?? "vscode") : undefined,
-    paths: type === "copy-files" ? [".env.local"] : undefined,
-  };
-}
-
-function formatHookPaths(paths: string[] | undefined): string {
-  return (paths ?? []).join("\n");
-}
-
-function parseHookPaths(raw: string): string[] {
-  return raw
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-type HooksMap = Partial<Record<HookEvent, HookStep[]>>;
 
 export default function App() {
   const { t, locale, setLocale } = useI18n();
@@ -414,8 +368,8 @@ export default function App() {
     }
   }
 
-  async function handleSaveHooks(nextHooks: HooksMap) {
-    if (!repo) return;
+  async function handleSaveHooks(nextHooks: HooksMap): Promise<boolean> {
+    if (!repo) return false;
     setIsBusy(true);
     setError(null);
     try {
@@ -426,9 +380,11 @@ export default function App() {
       });
       setRepo(snapshot);
       appendLogs([{ level: "success", message: t.logSavedHooks }], snapshot.repoRoot);
+      return true;
     } catch (reason) {
       setError(String(reason));
       appendLogs([{ level: "error", message: String(reason) }]);
+      return false;
     } finally {
       setIsBusy(false);
     }
@@ -744,7 +700,11 @@ export default function App() {
         <HooksModal
           hooks={hooksMap}
           launchers={launchers}
-          onSave={(nextHooks) => void handleSaveHooks(nextHooks)}
+          onSave={async (nextHooks) => {
+            const ok = await handleSaveHooks(nextHooks);
+            if (ok) setShowHooksModal(false);
+            return ok;
+          }}
           onClose={() => setShowHooksModal(false)}
           isBusy={isBusy}
           t={t}
@@ -1380,504 +1340,6 @@ function SettingsPage({
   );
 }
 
-/* ─── HooksModal ─── */
-
-function HooksModal({
-  hooks,
-  launchers,
-  onSave,
-  onClose,
-  isBusy,
-  t,
-}: {
-  hooks: HooksMap;
-  launchers: LauncherProfile[];
-  onSave: (hooks: HooksMap) => void;
-  onClose: () => void;
-  isBusy: boolean;
-  t: Translations;
-}) {
-  const [draft, setDraft] = useState<HooksMap>(() => ({ ...hooks }));
-  const [pendingEvent, setPendingEvent] = useState<HookEvent>("post-create");
-  const [expanded, setExpanded] = useState<Set<HookEvent>>(() => {
-    const active = HOOK_EVENTS.filter((e) => (hooks[e]?.length ?? 0) > 0);
-    return new Set(active);
-  });
-
-  useEffect(() => {
-    setDraft({ ...hooks });
-  }, [hooks]);
-
-  function toggleExpand(event: HookEvent) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(event)) next.delete(event);
-      else next.add(event);
-      return next;
-    });
-  }
-
-  function patchStep(event: HookEvent, stepIndex: number, patch: Partial<HookStep>) {
-    setDraft((prev) => ({
-      ...prev,
-      [event]: (prev[event] ?? []).map((step, i) =>
-        i === stepIndex ? { ...step, ...patch } : step
-      ),
-    }));
-  }
-
-  function updateStepType(event: HookEvent, stepIndex: number, type: HookStep["type"]) {
-    setDraft((prev) => ({
-      ...prev,
-      [event]: (prev[event] ?? []).map((step, i) =>
-        i === stepIndex ? createStepDraft(type, launchers) : step
-      ),
-    }));
-  }
-
-  function removeStep(event: HookEvent, stepIndex: number) {
-    setDraft((prev) => {
-      const steps = (prev[event] ?? []).filter((_, i) => i !== stepIndex);
-      const next = { ...prev };
-      if (steps.length === 0) {
-        delete next[event];
-        setExpanded((exp) => { const n = new Set(exp); n.delete(event); return n; });
-      } else {
-        next[event] = steps;
-      }
-      return next;
-    });
-  }
-
-  function removeEvent(event: HookEvent) {
-    setDraft((prev) => {
-      const next = { ...prev };
-      delete next[event];
-      return next;
-    });
-    setExpanded((prev) => { const n = new Set(prev); n.delete(event); return n; });
-  }
-
-  function addStep(event: HookEvent) {
-    setDraft((prev) => ({
-      ...prev,
-      [event]: [...(prev[event] ?? []), createStepDraft("copy-files", launchers)],
-    }));
-  }
-
-  const activeEvents = HOOK_EVENTS.filter((event) => (draft[event]?.length ?? 0) > 0);
-  const availableEvents = HOOK_EVENTS.filter((event) => !(draft[event]?.length));
-
-  // Keep pendingEvent in sync with available options
-  const effectivePendingEvent = availableEvents.includes(pendingEvent)
-    ? pendingEvent
-    : availableEvents[0] ?? pendingEvent;
-
-  return (
-    <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal-card hooks-modal-card">
-        <div className="section-heading">
-          <span>{t.hooks}</span>
-          <button className="ghost-button" onClick={onClose}>{t.close}</button>
-        </div>
-        <div className="hooks-add-bar">
-          <select
-            value={effectivePendingEvent}
-            onChange={(e) => setPendingEvent(e.target.value as HookEvent)}
-            disabled={isBusy || availableEvents.length === 0}
-          >
-            {availableEvents.map((event) => (
-              <option key={event} value={event}>{event}</option>
-            ))}
-            {availableEvents.length === 0 && <option disabled>—</option>}
-          </select>
-          <button
-            className="primary-button"
-            disabled={isBusy || availableEvents.length === 0}
-            onClick={() => {
-              if (draft[effectivePendingEvent]?.length) return;
-              setDraft((prev) => ({
-                ...prev,
-                [effectivePendingEvent]: [createStepDraft("copy-files", launchers)],
-              }));
-              setExpanded((prev) => new Set(prev).add(effectivePendingEvent));
-            }}
-          >
-            + {t.addHook}
-          </button>
-        </div>
-        <div className="hooks-list">
-          {activeEvents.length === 0 && <p className="hooks-empty">{t.noHooksConfigured}</p>}
-          {activeEvents.map((event) => {
-            const isOpen = expanded.has(event);
-            const steps = draft[event] ?? [];
-            return (
-              <section key={event} className="hook-group">
-                <div className="hook-group-header" onClick={() => toggleExpand(event)}>
-                  <svg className={`hook-group-chevron${isOpen ? " expanded" : ""}`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M6 4l4 4-4 4" />
-                  </svg>
-                  <span className="hook-group-event">{event}</span>
-                  <span className="hook-group-count">
-                    {steps.length} {steps.length === 1 ? "step" : "steps"}
-                  </span>
-                  <button
-                    className="hook-group-remove"
-                    onClick={(e) => { e.stopPropagation(); removeEvent(event); }}
-                    disabled={isBusy}
-                  >
-                    {t.removeHook}
-                  </button>
-                </div>
-                {isOpen && (
-                  <div className="hook-group-body">
-                    <p className="hook-event-help">{hookEventDescription(event, t)}</p>
-                    {steps.map((step, stepIndex) => (
-                      <div key={stepIndex} className="hook-step">
-                        <span className="hook-step-number">{stepIndex + 1}</span>
-                        <div className="hook-step-body">
-                          <div className="hook-step-top">
-                            <select
-                              value={step.type}
-                              onChange={(e) => updateStepType(event, stepIndex, e.target.value as HookStep["type"])}
-                              disabled={isBusy}
-                            >
-                              {HOOK_STEP_TYPES.map((type) => (
-                                <option key={type} value={type}>{hookTypeLabel(type, t)}</option>
-                              ))}
-                            </select>
-                            <button
-                              className="hook-step-remove"
-                              onClick={() => removeStep(event, stepIndex)}
-                              disabled={isBusy}
-                              title={t.removeHook}
-                            >
-                              ×
-                            </button>
-                          </div>
-                          <div className="hook-step-config">
-                            {step.type === "script" && (
-                              <label className="field-label">
-                                {t.hookCommand}
-                                <textarea
-                                  rows={2}
-                                  value={step.run ?? ""}
-                                  onChange={(e) => patchStep(event, stepIndex, { run: e.target.value })}
-                                  disabled={isBusy}
-                                />
-                              </label>
-                            )}
-                            {step.type === "launch" && (
-                              <label className="field-label">
-                                {t.hookLauncher}
-                                <select
-                                  value={step.launcherId ?? launchers[0]?.id ?? ""}
-                                  onChange={(e) => patchStep(event, stepIndex, { launcherId: e.target.value })}
-                                  disabled={isBusy}
-                                >
-                                  {launchers.map((launcher) => (
-                                    <option key={launcher.id} value={launcher.id}>{launcher.name}</option>
-                                  ))}
-                                </select>
-                              </label>
-                            )}
-                            {step.type === "install" && (
-                              <p className="install-hint">{t.hookInstallHint}</p>
-                            )}
-                            {step.type === "copy-files" && (
-                              <label className="field-label">
-                                {t.hookPaths}
-                                <textarea
-                                  rows={2}
-                                  value={formatHookPaths(step.paths)}
-                                  onChange={(e) => patchStep(event, stepIndex, { paths: parseHookPaths(e.target.value) })}
-                                  disabled={isBusy}
-                                />
-                              </label>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    <button
-                      className="hook-add-step"
-                      disabled={isBusy}
-                      onClick={() => addStep(event)}
-                    >
-                      + {t.addStep}
-                    </button>
-                  </div>
-                )}
-              </section>
-            );
-          })}
-        </div>
-        <div className="modal-actions">
-          <button className="primary-button" onClick={() => onSave(draft)} disabled={isBusy}>
-            {t.saveHooks}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function hookTypeLabel(type: HookStep["type"], t: Translations): string {
-  switch (type) {
-    case "script":
-      return t.hookTypeScript;
-    case "launch":
-      return t.hookTypeLaunch;
-    case "install":
-      return t.hookTypeInstall;
-    case "copy-files":
-      return t.hookTypeCopyFiles;
-  }
-}
-
-function hookEventDescription(event: HookEvent, t: Translations): string {
-  switch (event) {
-    case "pre-create":
-      return t.hookEventPreCreateHelp;
-    case "post-create":
-      return t.hookEventPostCreateHelp;
-    case "pre-launch":
-      return t.hookEventPreLaunchHelp;
-    case "post-launch":
-      return t.hookEventPostLaunchHelp;
-    case "pre-remove":
-      return t.hookEventPreRemoveHelp;
-    case "post-remove":
-      return t.hookEventPostRemoveHelp;
-  }
-}
-
-/* ─── CreateWorktreeModal ─── */
-
-function sanitizeBranch(branch: string): string {
-  return branch
-    .split("")
-    .map((ch) => (/[a-zA-Z0-9\-_]/.test(ch) ? ch : "-"))
-    .join("");
-}
-
-function CreateWorktreeModal({
-  repo,
-  form,
-  onFormChange,
-  onCreate,
-  onClose,
-  onGoToSettings,
-  isBusy,
-  t,
-}: {
-  repo: RepoSnapshot;
-  form: CreateFormState;
-  onFormChange: (fn: (prev: CreateFormState) => CreateFormState) => void;
-  onCreate: () => void;
-  onClose: () => void;
-  onGoToSettings: () => void;
-  isBusy: boolean;
-  t: Translations;
-}) {
-  const [localBranches, setLocalBranches] = useState<string[]>([]);
-  const [remoteBranches, setRemoteBranches] = useState<string[]>([]);
-  const [isFetching, setIsFetching] = useState(false);
-
-  const pathPreview = form.branch.trim()
-    ? `${repo.repoRoot}/${repo.mergedConfig.settings.worktreeRoot}/${sanitizeBranch(form.branch.trim())}`
-    : null;
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
-  // Load branches when mode changes
-  useEffect(() => {
-    if (form.mode === "new-branch" || form.mode === "existing-branch") {
-      listBranches(repo.repoRoot).then(setLocalBranches).catch(() => {});
-    } else if (form.mode === "remote-branch") {
-      listRemoteBranches(repo.repoRoot).then(setRemoteBranches).catch(() => {});
-    }
-  }, [form.mode, repo.repoRoot]);
-
-  const fetchingRef = useRef(false);
-  async function handleFetchRemote() {
-    if (fetchingRef.current) return;
-    fetchingRef.current = true;
-    setIsFetching(true);
-    try {
-      await fetchRemote(repo.repoRoot);
-      const branches = await listRemoteBranches(repo.repoRoot);
-      setRemoteBranches(branches);
-    } catch {
-      // ignore
-    } finally {
-      fetchingRef.current = false;
-      setIsFetching(false);
-    }
-  }
-
-  return (
-    <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="create-modal-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="section-heading">
-          <span>{t.createWorktree}</span>
-          <button className="ghost-button" onClick={onClose} style={{ fontSize: "0.78rem", padding: "4px 10px" }}>
-            {t.close}
-          </button>
-        </div>
-
-        <div className="stack" style={{ gap: 14, marginTop: 16 }}>
-          {/* Mode selector at the top */}
-          <label className="field-label">
-            {t.mode}
-            <select
-              value={form.mode}
-              onChange={(e) =>
-                onFormChange((c) => ({ ...c, mode: e.target.value as CreateMode, branch: "" }))
-              }
-            >
-              <option value="new-branch">{t.modeNewBranch}</option>
-              <option value="existing-branch">{t.modeExistingBranch}</option>
-              <option value="remote-branch">{t.modeRemoteBranch}</option>
-            </select>
-          </label>
-
-          {/* New branch: base branch on top, dashed line, then new branch name */}
-          {form.mode === "new-branch" && (
-            <>
-              <label className="field-label">
-                {t.baseRef}
-                <select
-                  value={form.baseRef}
-                  onChange={(e) => onFormChange((c) => ({ ...c, baseRef: e.target.value }))}
-                >
-                  {localBranches.map((b) => (
-                    <option key={b} value={b}>{b}</option>
-                  ))}
-                </select>
-              </label>
-              <div className="field-label">
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span>{t.newBranchName}</span>
-                  <button
-                    className="ghost-button"
-                    onClick={() => onFormChange((c) => ({ ...c, branch: generateBranchName() }))}
-                    style={{ fontSize: "0.72rem", padding: "2px 8px" }}
-                  >
-                    ✦ {t.suggestBranchName}
-                  </button>
-                </div>
-                <input
-                  autoFocus
-                  value={form.branch}
-                  onChange={(e) => onFormChange((c) => ({ ...c, branch: e.target.value }))}
-                  placeholder={t.branchPlaceholder}
-                />
-              </div>
-            </>
-          )}
-
-          {/* Existing branch: select from local branches */}
-          {form.mode === "existing-branch" && (() => {
-            const usedBranches = new Set(
-              repo.worktrees.map((w) => w.branch).filter(Boolean) as string[]
-            );
-            return (
-              <label className="field-label">
-                {t.branchPlaceholder}
-                <select
-                  autoFocus
-                  value={form.branch}
-                  onChange={(e) => onFormChange((c) => ({ ...c, branch: e.target.value }))}
-                >
-                  <option value="">{t.selectBranch}</option>
-                  {localBranches.map((b) => {
-                    const inUse = usedBranches.has(b);
-                    return (
-                      <option key={b} value={b} disabled={inUse}>
-                        {b}{inUse ? ` (${t.inUse})` : ""}
-                      </option>
-                    );
-                  })}
-                </select>
-              </label>
-            );
-          })()}
-
-          {/* Remote branch: select from remote branches + fetch button */}
-          {form.mode === "remote-branch" && (
-            <label className="field-label">
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span>{t.remoteRef}</span>
-                <button
-                  className="ghost-button"
-                  onClick={handleFetchRemote}
-                  disabled={isFetching}
-                  style={{ fontSize: "0.72rem", padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4 }}
-                >
-                  {isFetching && <span className="mini-spinner" />}
-                  {t.fetchRemote}
-                </button>
-              </div>
-              <select
-                autoFocus
-                value={form.remoteRef}
-                onChange={(e) => {
-                  const ref = e.target.value;
-                  // Auto-derive local branch name from remote ref (e.g., "origin/feat" -> "feat")
-                  const localName = ref.includes("/") ? ref.substring(ref.indexOf("/") + 1) : ref;
-                  onFormChange((c) => ({ ...c, remoteRef: ref, branch: localName }));
-                }}
-              >
-                <option value="">{t.selectBranch}</option>
-                {remoteBranches.map((b) => (
-                  <option key={b} value={b}>{b}</option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          <div className="field-label">
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span>{t.pathPreview}</span>
-              <button
-                className="ghost-button"
-                onClick={onGoToSettings}
-                style={{ fontSize: "0.72rem", padding: "2px 8px" }}
-              >
-                {t.setDefaultDirectory}
-              </button>
-            </div>
-            <input
-              value={form.path || pathPreview || ""}
-              onChange={(e) => onFormChange((c) => ({ ...c, path: e.target.value }))}
-            />
-          </div>
-        </div>
-
-        <div className="modal-actions">
-          <button className="ghost-button" onClick={onClose}>
-            {t.cancel}
-          </button>
-          <button
-            className="primary-button"
-            onClick={onCreate}
-            disabled={isBusy || !form.branch.trim()}
-          >
-            {t.createWorktree}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ─── Shared Components ─── */
 
 function ToolRow({ tool, t }: { tool: ToolStatus; t: Translations }) {
@@ -2084,107 +1546,6 @@ function LauncherIcon({ launcherId, label }: { launcherId: string; label: string
     <span className="launcher-icon-shell" data-launcher-id={launcherId} aria-hidden="true">
       {src ? <img className="launcher-icon" src={src} alt="" /> : <span className="launcher-icon-fallback">{fallback}</span>}
     </span>
-  );
-}
-
-function DeleteExecutionModal({
-  execution,
-  t,
-  onClose,
-  onConfirm,
-}: {
-  execution: DeleteExecutionState;
-  t: Translations;
-  onClose: () => void;
-  onConfirm: () => void;
-}) {
-  const logAnchorRef = useRef<HTMLDivElement>(null);
-  const session = execution.session;
-  const branchLabel = execution.worktree.branch ?? "worktree";
-  const canClose =
-    execution.phase === "confirm" ||
-    execution.phase === "completed" ||
-    execution.phase === "failed";
-
-  useEffect(() => {
-    logAnchorRef.current?.scrollIntoView({ block: "end" });
-  }, [session?.logs.length]);
-
-  let statusLabel = "";
-  if (execution.phase === "running") statusLabel = t.executing;
-  if (execution.phase === "completed") statusLabel = t.executionCompleted;
-  if (execution.phase === "failed") statusLabel = t.executionFailed;
-
-  return (
-    <div
-      className="modal-backdrop"
-      onClick={(e) => e.target === e.currentTarget && canClose && onClose()}
-    >
-      <div
-        className="modal-card delete-execution-modal"
-        data-phase={execution.phase}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-heading delete-execution-header">
-          <span>{session?.title ?? t.deleteConfirm(branchLabel)}</span>
-        </div>
-
-        <div className="inline-panel delete-execution-summary">
-          <div>
-            <strong>{branchLabel}</strong>
-            <p className="subtle delete-execution-path-label">{t.deletePathLabel}</p>
-            <p className="detail-path delete-execution-path">{execution.worktree.path}</p>
-          </div>
-        </div>
-
-        {execution.phase === "confirm" ? (
-          <div className="modal-actions delete-execution-actions">
-            <button className="ghost-button" onClick={onClose} disabled={execution.isLoading}>
-              {t.cancel}
-            </button>
-            <button className="danger-button" onClick={onConfirm} disabled={execution.isLoading}>
-              {execution.force ? t.force : t.delete}
-            </button>
-          </div>
-        ) : (
-          <>
-            <div className="section-heading delete-execution-log-header">
-              <span>{statusLabel}</span>
-            </div>
-
-            {session?.error && execution.phase === "failed" && (
-              <div className="error-banner delete-execution-error">
-                {session.error}
-              </div>
-            )}
-
-            <div className="delete-execution-log-stream">
-              {session?.logs.length ? (
-                session.logs.map((log, index) => (
-                  <div
-                    key={`${log.message}-${index}`}
-                    className={`delete-execution-log-line delete-execution-log-line-${log.level} ${log.message.startsWith("$ ") ? "delete-execution-log-line-command" : ""}`}
-                  >
-                    <span>{log.message}</span>
-                  </div>
-                ))
-              ) : (
-                <p className="empty-copy">{t.noLogsYet}</p>
-              )}
-              <div ref={logAnchorRef} />
-            </div>
-
-            {canClose && (
-              <div className="modal-actions delete-execution-actions">
-                <button className="ghost-button" onClick={onClose} disabled={execution.isLoading}>
-                  {t.close}
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
   );
 }
 

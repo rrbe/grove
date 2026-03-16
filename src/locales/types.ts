@@ -44,6 +44,7 @@ export interface Translations {
   hookEventPreRemoveHelp: string;
   hookEventPostRemoveHelp: string;
   saveHooks: string;
+  saveHooksFailed: string;
   reRunHooks: string;
   addStep: string;
   deleteConfirm: (branch: string) => string;

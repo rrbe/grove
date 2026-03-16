@@ -1036,6 +1036,68 @@ textarea {
   box-shadow: 0 32px 90px rgba(16, 33, 46, 0.26);
 }
 
+.modal-shell-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.modal-shell-close {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(16, 33, 46, 0.45);
+  font-size: 1.2rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+
+.modal-shell-close:hover {
+  background: rgba(16, 33, 46, 0.08);
+  color: rgba(16, 33, 46, 0.7);
+  transform: none;
+}
+
+.alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(197, 61, 46, 0.1);
+  border: 1px solid rgba(197, 61, 46, 0.2);
+  color: #8e2319;
+  font-size: 0.85rem;
+}
+
+.alert-banner span {
+  flex: 1;
+}
+
+.alert-dismiss {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: transparent;
+  color: #8e2319;
+  font-size: 1rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+
+.alert-dismiss:hover {
+  background: rgba(197, 61, 46, 0.15);
+  transform: none;
+}
+
 .delete-execution-modal {
   display: flex;
   flex-direction: column;
@@ -1205,8 +1267,10 @@ textarea {
   right: 0;
   width: min(480px, calc(100vw - 60px));
   height: 100vh;
+  max-height: 100vh;
   background: rgba(254, 251, 246, 0.98);
   box-shadow: -8px 0 40px rgba(16, 33, 46, 0.18);
+  border-radius: 0;
   padding: 24px;
   overflow-y: auto;
   display: flex;

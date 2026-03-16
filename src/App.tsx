@@ -9,10 +9,13 @@ import cursorIcon from "./assets/launcher-icons/cursor.svg";
 import geminiIcon from "./assets/launcher-icons/gemini.svg";
 import ghosttyIcon from "./assets/launcher-icons/ghostty.svg";
 import terminalIcon from "./assets/launcher-icons/terminal.svg";
+import warpIcon from "./assets/launcher-icons/warp.svg";
 import vscodeIcon from "./assets/launcher-icons/vscode.svg";
 import {
   bootstrap,
   createRepoWorktree,
+  deleteCustomLauncher,
+  listInstalledApps,
   disposeExecutionSession,
   fetchRemote,
   getExecutionSessionSnapshot,
@@ -24,6 +27,7 @@ import {
   previewRepoPrune,
   pruneRepoMetadata,
   runRepoHookEvent,
+  saveCustomLauncher,
   saveRepoConfig,
   saveRepoHooks,
   startRemoveRepoWorktreeSession,
@@ -46,16 +50,18 @@ import type {
   ExecutionStatus,
   HookEvent,
   HookStep,
+  LauncherKind,
   LauncherProfile,
   RepoSnapshot,
   RunLog,
+  SaveCustomLauncherInput,
   ToolStatus,
   WorktreeRecord,
 } from "./lib/types";
 
 type TaggedLog = RunLog & { repoRoot?: string };
 
-const TERMINAL_IDS = ["ghostty", "iterm2", "terminal"];
+const TERMINAL_IDS = ["ghostty", "warp", "iterm2", "terminal"];
 const HOOK_EVENTS: HookEvent[] = [
   "pre-create",
   "post-create",
@@ -73,6 +79,7 @@ const LAUNCHER_ICONS: Record<string, string> = {
   ghostty: ghosttyIcon,
   terminal: terminalIcon,
   vscode: vscodeIcon,
+  warp: warpIcon,
 };
 
 type CreateFormState = {
@@ -183,6 +190,7 @@ export default function App() {
   const [view, setView] = useState<"detail" | "settings">("detail");
   const [showActionLog, setShowActionLog] = useState(false);
   const [defaultTerminalId, setDefaultTerminalId] = useState("terminal");
+  const [customLauncherModal, setCustomLauncherModal] = useState<{ editing: LauncherProfile | null; repoRoot: string | null } | null>(null);
 
   const [sidebarWidth, setSidebarWidth] = useState(320);
   const isDragging = useRef(false);
@@ -559,6 +567,33 @@ export default function App() {
     setPrunePreview([]);
   }
 
+  async function handleSaveCustomLauncher(input: SaveCustomLauncherInput) {
+    setIsBusy(true);
+    setError(null);
+    try {
+      const snapshot = await saveCustomLauncher(input);
+      setRepo(snapshot);
+      setCustomLauncherModal(null);
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleDeleteCustomLauncher(launcherId: string, repoRoot: string | null) {
+    setIsBusy(true);
+    setError(null);
+    try {
+      const snapshot = await deleteCustomLauncher({ launcherId, repoRoot });
+      setRepo(snapshot);
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   const launchers = repo?.mergedConfig.launchers ?? [];
   const hooksMap: HooksMap = repo?.mergedConfig.hooks ?? {};
   const hookCount = Object.keys(hooksMap).filter((e) => (hooksMap[e as HookEvent]?.length ?? 0) > 0).length;
@@ -725,6 +760,13 @@ export default function App() {
                 onClearLogs={() => setLogs([])}
                 defaultTerminal={defaultTerminalId}
                 onSetDefaultTerminal={(id) => void handleSetDefaultTerminal(id)}
+                onAddCustomLauncher={() => setCustomLauncherModal({ editing: null, repoRoot: repo.repoRoot })}
+                onEditCustomLauncher={(launcher) => setCustomLauncherModal({ editing: launcher, repoRoot: repo.repoRoot })}
+                onDeleteCustomLauncher={(launcher) => {
+                  if (confirm(t.confirmDeleteLauncher(launcher.name))) {
+                    void handleDeleteCustomLauncher(launcher.id, repo.repoRoot);
+                  }
+                }}
               />
             )}
           </>
@@ -765,6 +807,18 @@ export default function App() {
           }}
           onClose={() => setShowCreateModal(false)}
           onGoToSettings={() => { setShowCreateModal(false); setView("settings"); }}
+          isBusy={isBusy}
+          t={t}
+        />
+      )}
+
+      {/* Custom Launcher Modal */}
+      {customLauncherModal && repo && (
+        <CustomLauncherModal
+          editing={customLauncherModal.editing}
+          repoRoot={customLauncherModal.repoRoot}
+          onSave={(input) => void handleSaveCustomLauncher(input)}
+          onClose={() => setCustomLauncherModal(null)}
           isBusy={isBusy}
           t={t}
         />
@@ -957,6 +1011,9 @@ function WorktreeDetail({
   onClearLogs,
   defaultTerminal,
   onSetDefaultTerminal,
+  onAddCustomLauncher,
+  onEditCustomLauncher,
+  onDeleteCustomLauncher,
 }: {
   repo: RepoSnapshot;
   worktree: WorktreeRecord;
@@ -971,6 +1028,9 @@ function WorktreeDetail({
   onClearLogs: () => void;
   defaultTerminal: string;
   onSetDefaultTerminal: (id: string) => void;
+  onAddCustomLauncher: () => void;
+  onEditCustomLauncher: (launcher: LauncherProfile) => void;
+  onDeleteCustomLauncher: (launcher: LauncherProfile) => void;
 }) {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const copyToClipboard = (text: string, field: string) => {
@@ -1098,30 +1158,54 @@ function WorktreeDetail({
         <div className="action-grid">
           {launchers.map((launcher) => {
             const tool = findTool(repo, launcher.id);
+            const isCustom = launcher.isCustom;
+            const isAvailable = isCustom ? true : tool?.available;
             const isCliLauncher = launcher.kind === "terminal-cli";
             const terminalTool = isCliLauncher
               ? repo.toolStatuses.find((ts) => ts.id === defaultTerminal)
               : null;
             return (
-              <button
-                key={launcher.id}
-                className="ghost-button"
-                onClick={() => onLaunch(launcher)}
-                disabled={isBusy || !tool?.available}
-                title={tool?.available ? launcher.appOrCmd : t.notDetectedSuffix(launcher.name)}
-              >
-                <span className="launcher-button-content">
-                  <LauncherIcon launcherId={launcher.id} label={launcher.name} />
-                  <span className="launcher-copy">
-                    <span>{launcher.name}</span>
-                    {isCliLauncher && terminalTool && (
-                      <span className="launcher-terminal-hint">({terminalTool.label})</span>
-                    )}
+              <div key={launcher.id} className={`launcher-btn-wrapper${isCustom ? " launcher-btn-custom" : ""}`}>
+                <button
+                  className="ghost-button"
+                  onClick={() => onLaunch(launcher)}
+                  disabled={isBusy || !isAvailable}
+                  title={isAvailable ? launcher.appOrCmd : t.notDetectedSuffix(launcher.name)}
+                >
+                  <span className="launcher-button-content">
+                    <LauncherIcon launcherId={launcher.id} label={launcher.name} iconChar={isCustom ? launcher.iconChar : null} />
+                    <span className="launcher-copy">
+                      <span>{launcher.name}</span>
+                      {isCliLauncher && terminalTool && (
+                        <span className="launcher-terminal-hint">({terminalTool.label})</span>
+                      )}
+                    </span>
                   </span>
-                </span>
-              </button>
+                </button>
+                {isCustom && (
+                  <span className="custom-launcher-actions">
+                    <button className="custom-launcher-action-btn" title={t.editLauncher} onClick={() => onEditCustomLauncher(launcher)}>✎</button>
+                    <button className="custom-launcher-action-btn" title={t.deleteLauncher} onClick={() => onDeleteCustomLauncher(launcher)}>✕</button>
+                  </span>
+                )}
+              </div>
             );
           })}
+          <button
+            className="ghost-button add-custom-launcher-btn"
+            onClick={onAddCustomLauncher}
+            disabled={isBusy}
+            title={t.addCustomLauncher}
+          >
+            <span className="launcher-button-content">
+              <span className="launcher-icon-shell launcher-icon-add" aria-hidden="true">
+                <span className="launcher-icon-fallback">+</span>
+              </span>
+              <span className="launcher-copy">
+                <span>{t.addCustomLauncher}</span>
+              </span>
+            </span>
+          </button>
         </div>
       </section>
 
@@ -2070,9 +2154,9 @@ function Badge({ label, tone }: { label: string; tone: "neutral" | "warning" | "
   return <span className={`badge badge-${tone}`}>{label}</span>;
 }
 
-function LauncherIcon({ launcherId, label }: { launcherId: string; label: string }) {
+function LauncherIcon({ launcherId, label, iconChar }: { launcherId: string; label: string; iconChar?: string | null }) {
   const src = LAUNCHER_ICONS[launcherId];
-  const fallback = label
+  const fallback = iconChar || label
     .split(/\s+/)
     .map((part) => part[0] ?? "")
     .join("")
@@ -2203,6 +2287,171 @@ function DeleteExecutionModal({
             )}
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── CustomLauncherModal ─── */
+
+function CustomLauncherModal({
+  editing,
+  repoRoot,
+  onSave,
+  onClose,
+  isBusy,
+  t,
+}: {
+  editing: LauncherProfile | null;
+  repoRoot: string | null;
+  onSave: (input: SaveCustomLauncherInput) => void;
+  onClose: () => void;
+  isBusy: boolean;
+  t: Translations;
+}) {
+  const [name, setName] = useState(editing?.name ?? "");
+  const [kind, setKind] = useState<LauncherKind>(editing?.kind ?? "app");
+  const [appOrCmd, setAppOrCmd] = useState(editing?.appOrCmd ?? "");
+  const [iconChar, setIconChar] = useState(editing?.iconChar ?? "");
+  const [scope, setScope] = useState<"global" | "repo">(editing ? "global" : "global");
+  const [installedApps, setInstalledApps] = useState<string[]>([]);
+  const [appFilter, setAppFilter] = useState(editing?.appOrCmd ?? "");
+
+  useEffect(() => {
+    listInstalledApps().then(setInstalledApps).catch(() => {});
+  }, []);
+
+  const filteredApps = appFilter.trim()
+    ? installedApps.filter((a) => a.toLowerCase().includes(appFilter.toLowerCase()))
+    : installedApps;
+
+  const canSave = name.trim() && appOrCmd.trim() && !isBusy;
+
+  function handleSave() {
+    const id = editing?.id ?? `custom-${Date.now()}`;
+    const launcher: LauncherProfile = {
+      id,
+      name: name.trim(),
+      kind,
+      appOrCmd: appOrCmd.trim(),
+      argsTemplate: kind === "app" ? ["{worktree_path}"] : [],
+      openInTerminal: kind !== "app",
+      promptTemplate: null,
+      isCustom: true,
+      iconChar: iconChar.trim() || name.trim().slice(0, 1).toUpperCase(),
+    };
+    onSave({
+      launcher,
+      repoRoot: scope === "repo" ? repoRoot : null,
+    });
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal-card custom-launcher-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="section-heading">
+          <span>{editing ? t.editLauncher : t.addCustomLauncher}</span>
+        </div>
+
+        <div className="custom-launcher-form">
+          <label className="form-field">
+            <span className="form-label">{t.customLauncherName}</span>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="My Launcher"
+              autoFocus
+            />
+          </label>
+
+          <label className="form-field">
+            <span className="form-label">{t.customLauncherKind}</span>
+            <select value={kind} onChange={(e) => setKind(e.target.value as LauncherKind)}>
+              <option value="app">{t.customLauncherKindApp}</option>
+              <option value="shell-script">{t.customLauncherKindShellScript}</option>
+              <option value="applescript">{t.customLauncherKindAppleScript}</option>
+            </select>
+          </label>
+
+          {kind === "app" ? (
+            <div className="form-field">
+              <span className="form-label">{t.customLauncherCommand}</span>
+              <input
+                type="text"
+                value={appFilter}
+                onChange={(e) => {
+                  setAppFilter(e.target.value);
+                  setAppOrCmd(e.target.value);
+                }}
+                placeholder="Sublime Text"
+              />
+              {installedApps.length > 0 && (
+                <div className="app-picker-list">
+                  {filteredApps.slice(0, 80).map((appName) => (
+                    <button
+                      key={appName}
+                      type="button"
+                      className={`app-picker-item${appOrCmd === appName ? " app-picker-item-selected" : ""}`}
+                      onClick={() => {
+                        setAppOrCmd(appName);
+                        setAppFilter(appName);
+                        if (!name.trim()) setName(appName);
+                      }}
+                    >
+                      {appName}
+                    </button>
+                  ))}
+                  {filteredApps.length === 0 && (
+                    <span className="app-picker-empty">{appFilter}</span>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <label className="form-field">
+              <span className="form-label">{t.customLauncherScript}</span>
+              <textarea
+                className="custom-launcher-script"
+                value={appOrCmd}
+                onChange={(e) => setAppOrCmd(e.target.value)}
+                placeholder={kind === "shell-script" ? "echo {worktree_path}" : 'display dialog "Hello"'}
+                rows={5}
+              />
+              <span className="form-hint">{t.customLauncherTemplateVars}</span>
+            </label>
+          )}
+
+          <div className="custom-launcher-row">
+            <label className="form-field" style={{ flex: "0 0 80px" }}>
+              <span className="form-label">{t.customLauncherIconChar}</span>
+              <input
+                type="text"
+                value={iconChar}
+                onChange={(e) => setIconChar(e.target.value.slice(0, 2))}
+                placeholder={name.trim().slice(0, 1).toUpperCase() || "A"}
+                maxLength={2}
+              />
+            </label>
+
+            <label className="form-field" style={{ flex: 1 }}>
+              <span className="form-label">{t.customLauncherScope}</span>
+              <select value={scope} onChange={(e) => setScope(e.target.value as "global" | "repo")}>
+                <option value="global">{t.customLauncherScopeGlobal}</option>
+                {repoRoot && <option value="repo">{t.customLauncherScopeRepo}</option>}
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div className="modal-actions">
+          <button className="ghost-button" onClick={onClose} disabled={isBusy}>
+            {t.cancel}
+          </button>
+          <button className="primary-button" onClick={handleSave} disabled={!canSave}>
+            {t.save}
+          </button>
+        </div>
       </div>
     </div>
   );

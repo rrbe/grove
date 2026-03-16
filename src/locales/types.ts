@@ -135,4 +135,21 @@ export interface Translations {
   defaultTerminalDescription: string;
   inUse: string;
   suggestBranchName: string;
+  addCustomLauncher: string;
+  editLauncher: string;
+  deleteLauncher: string;
+  customLauncherName: string;
+  customLauncherKind: string;
+  customLauncherKindApp: string;
+  customLauncherKindShellScript: string;
+  customLauncherKindAppleScript: string;
+  customLauncherCommand: string;
+  customLauncherScript: string;
+  customLauncherScope: string;
+  customLauncherScopeGlobal: string;
+  customLauncherScopeRepo: string;
+  customLauncherTemplateVars: string;
+  confirmDeleteLauncher: (name: string) => string;
+  customLauncherIconChar: string;
+  save: string;
 }

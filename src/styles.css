@@ -547,7 +547,8 @@ textarea {
   gap: 8px;
 }
 
-.action-grid button {
+.action-grid > button,
+.action-grid > .launcher-btn-wrapper > .ghost-button {
   padding: 10px 14px;
   font-size: 0.85rem;
   border-radius: 14px;
@@ -644,6 +645,13 @@ textarea {
   background: rgba(107, 99, 246, 0.14);
 }
 
+.launcher-icon-shell[data-launcher-id="warp"] {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.16), transparent 34%),
+    linear-gradient(135deg, #01a4c7 0%, #0184a0 52%, #016f86 100%);
+  border-color: rgba(1, 164, 199, 0.28);
+}
+
 .launcher-icon {
   width: 20px;
   height: 20px;
@@ -665,6 +673,10 @@ textarea {
 }
 
 .launcher-icon-shell[data-launcher-id="ghostty"] .launcher-icon {
+  filter: brightness(0) invert(1);
+}
+
+.launcher-icon-shell[data-launcher-id="warp"] .launcher-icon {
   filter: brightness(0) invert(1);
 }
 
@@ -1726,4 +1738,173 @@ textarea {
 
 @keyframes mini-spin {
   to { transform: rotate(360deg); }
+}
+
+/* ─── Custom Launcher ─── */
+
+.launcher-btn-wrapper {
+  position: relative;
+}
+
+.launcher-btn-wrapper .ghost-button {
+  width: 100%;
+}
+
+.custom-launcher-actions {
+  display: none;
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  gap: 2px;
+}
+
+.launcher-btn-custom:hover .custom-launcher-actions {
+  display: inline-flex;
+}
+
+.custom-launcher-action-btn {
+  all: unset;
+  background: rgba(0, 0, 0, 0.45);
+  border: none;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.6rem;
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.custom-launcher-action-btn:hover {
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+}
+
+.add-custom-launcher-btn {
+  border-style: dashed !important;
+  opacity: 0.6;
+}
+
+.add-custom-launcher-btn:hover {
+  opacity: 1;
+}
+
+.launcher-icon-add {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-style: dashed !important;
+}
+
+.launcher-icon-shell.launcher-icon-custom {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.12), transparent 34%),
+    linear-gradient(135deg, rgba(120, 120, 140, 0.3) 0%, rgba(80, 80, 100, 0.3) 100%);
+  border-color: rgba(120, 120, 140, 0.2);
+}
+
+/* Custom Launcher Modal */
+.custom-launcher-modal {
+  width: min(500px, 90%);
+}
+
+.custom-launcher-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.custom-launcher-form .form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.custom-launcher-form .form-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(16, 33, 46, 0.55);
+}
+
+.custom-launcher-form input,
+.custom-launcher-form select,
+.custom-launcher-form textarea {
+  background: rgba(16, 33, 46, 0.04);
+  border: 1px solid rgba(16, 33, 46, 0.12);
+  border-radius: 6px;
+  color: rgba(16, 33, 46, 0.85);
+  font: inherit;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+}
+
+.custom-launcher-form input:focus,
+.custom-launcher-form select:focus,
+.custom-launcher-form textarea:focus {
+  outline: none;
+  border-color: rgba(16, 33, 46, 0.3);
+}
+
+.custom-launcher-script {
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+  font-size: 0.8rem !important;
+  resize: vertical;
+  min-height: 80px;
+}
+
+/* App picker list */
+.app-picker-list {
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid rgba(16, 33, 46, 0.1);
+  border-radius: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px;
+  background: rgba(16, 33, 46, 0.02);
+}
+
+.app-picker-item {
+  background: rgba(16, 33, 46, 0.06);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.78rem;
+  color: rgba(16, 33, 46, 0.75);
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.app-picker-item:hover {
+  background: rgba(16, 33, 46, 0.12);
+}
+
+.app-picker-item-selected {
+  background: rgba(49, 143, 114, 0.15);
+  border-color: rgba(49, 143, 114, 0.3);
+  color: rgba(16, 33, 46, 0.9);
+  font-weight: 600;
+}
+
+.app-picker-empty {
+  font-size: 0.78rem;
+  color: rgba(16, 33, 46, 0.4);
+  padding: 4px;
+}
+
+.custom-launcher-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.custom-launcher-form .form-hint {
+  font-size: 0.72rem;
+  color: rgba(16, 33, 46, 0.4);
 }

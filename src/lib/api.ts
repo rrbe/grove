@@ -3,12 +3,14 @@ import type {
   ActionResponse,
   BootstrapResponse,
   CreateWorktreeInput,
+  DeleteCustomLauncherInput,
   ExecutionSessionSnapshot,
   LaunchWorktreeInput,
   RepoSnapshot,
   RemoveWorktreeInput,
   RunHookEventInput,
   SaveConfigInput,
+  SaveCustomLauncherInput,
   SaveHooksInput,
 } from "./types";
 
@@ -94,4 +96,16 @@ export function setWorktreeRoot(repoRoot: string, worktreeRoot: string) {
 
 export function detectInstallCommand(repoRoot: string) {
   return invoke<string | null>("detect_install_command", { repoRoot });
+}
+
+export function listInstalledApps() {
+  return invoke<string[]>("list_installed_apps");
+}
+
+export function saveCustomLauncher(input: SaveCustomLauncherInput) {
+  return invoke<RepoSnapshot>("save_custom_launcher", { input });
+}
+
+export function deleteCustomLauncher(input: DeleteCustomLauncherInput) {
+  return invoke<RepoSnapshot>("delete_custom_launcher", { input });
 }

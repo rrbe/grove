@@ -10,8 +10,9 @@ use actions::{
     start_remove_worktree_session,
 };
 use models::{
-    BootstrapResponse, CreateWorktreeInput, ExecutionSessionSnapshot, LaunchWorktreeInput,
-    RemoveWorktreeInput, RepoSnapshot, RunHookEventInput, SaveConfigInput, SaveHooksInput,
+    BootstrapResponse, CreateWorktreeInput, DeleteCustomLauncherInput, ExecutionSessionSnapshot,
+    LaunchWorktreeInput, RemoveWorktreeInput, RepoSnapshot, RunHookEventInput, SaveConfigInput,
+    SaveCustomLauncherInput, SaveHooksInput,
 };
 use std::sync::OnceLock;
 use store::{push_recent, SharedState};
@@ -49,7 +50,7 @@ pub fn load_repo_snapshot(
     push_recent(&mut store, &repo_root_str);
     store.last_active_repo = Some(repo_root_str.clone());
     store::persist(app, &store)?;
-    let loaded = config::load(&repo_root, stored_config.as_ref());
+    let loaded = config::load(&repo_root, stored_config.as_ref(), &store.custom_launchers);
     let worktrees = git::scan_worktrees(&repo_root, &loaded.merged.cold_start, &store)?;
 
     // Update PR cache with freshly fetched data
@@ -265,6 +266,103 @@ async fn detect_install_command(repo_root: String) -> Result<Option<String>, Str
     .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+async fn list_installed_apps() -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let output = std::process::Command::new("mdfind")
+            .args([
+                "kMDItemContentType=com.apple.application-bundle",
+                "-onlyin",
+                "/Applications",
+                "-onlyin",
+                &format!(
+                    "{}/Applications",
+                    std::env::var("HOME").unwrap_or_default()
+                ),
+            ])
+            .output()
+            .map_err(|e| format!("failed to run mdfind: {e}"))?;
+        if !output.status.success() {
+            return Ok(Vec::new());
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut names: Vec<String> = stdout
+            .lines()
+            .filter_map(|line| {
+                let path = std::path::Path::new(line.trim());
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_string())
+            })
+            .collect();
+        names.sort_unstable_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        names.dedup();
+        Ok(names)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn save_custom_launcher(
+    app: AppHandle,
+    input: SaveCustomLauncherInput,
+) -> Result<RepoSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SharedState>();
+        let mut store = state.store.lock().unwrap();
+        let launcher = input.launcher;
+        match &input.repo_root {
+            Some(repo_root) => {
+                let config = store.repo_configs.entry(repo_root.clone()).or_default();
+                config.launchers.retain(|l| l.id != launcher.id);
+                config.launchers.push(launcher);
+            }
+            None => {
+                store.custom_launchers.retain(|l| l.id != launcher.id);
+                store.custom_launchers.push(launcher);
+            }
+        }
+        store::persist(&app, &store)?;
+        let repo_root_str = input.repo_root.unwrap_or_else(|| {
+            store.last_active_repo.clone().unwrap_or_default()
+        });
+        drop(store);
+        load_repo_snapshot(&app, &state, repo_root_str)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn delete_custom_launcher(
+    app: AppHandle,
+    input: DeleteCustomLauncherInput,
+) -> Result<RepoSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<SharedState>();
+        let mut store = state.store.lock().unwrap();
+        match &input.repo_root {
+            Some(repo_root) => {
+                if let Some(config) = store.repo_configs.get_mut(repo_root) {
+                    config.launchers.retain(|l| l.id != input.launcher_id);
+                }
+            }
+            None => {
+                store.custom_launchers.retain(|l| l.id != input.launcher_id);
+            }
+        }
+        store::persist(&app, &store)?;
+        let repo_root_str = input.repo_root.unwrap_or_else(|| {
+            store.last_active_repo.clone().unwrap_or_default()
+        });
+        drop(store);
+        load_repo_snapshot(&app, &state, repo_root_str)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -294,7 +392,10 @@ pub fn run() {
             set_default_terminal,
             set_repo_worktree_root,
             get_file_diff,
-            detect_install_command
+            detect_install_command,
+            list_installed_apps,
+            save_custom_launcher,
+            delete_custom_launcher
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -339,7 +440,7 @@ fn get_default_terminal(state: State<'_, SharedState>) -> String {
     // Auto-detect: prefer ghostty > iterm2 > terminal
     drop(store);
     let tools = detect_tools();
-    for id in &["ghostty", "iterm2", "terminal"] {
+    for id in &["ghostty", "warp", "iterm2", "terminal"] {
         if tools.iter().any(|t| t.id == *id && t.available) {
             return id.to_string();
         }
@@ -409,6 +510,7 @@ fn detect_tools() -> Vec<models::ToolStatus> {
         tool_status("terminal", "Terminal", true, None, "app"),
         app_status("ghostty", "Ghostty", "Ghostty"),
         app_status("iterm2", "iTerm2", "iTerm"),
+        app_status("warp", "Warp", "Warp"),
         cli_status("claude", "Claude CLI"),
         cli_status("codex", "Codex CLI"),
         cli_status("gemini", "Gemini CLI"),

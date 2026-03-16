@@ -13,11 +13,22 @@ pub struct LoadedConfig {
     pub errors: Vec<String>,
 }
 
-pub fn load(repo_root: &Path, stored_config: Option<&ConfigFile>) -> LoadedConfig {
+pub fn load(
+    repo_root: &Path,
+    stored_config: Option<&ConfigFile>,
+    custom_launchers: &[LauncherProfile],
+) -> LoadedConfig {
     let mut merged = builtin_config();
     merged.settings.default_base_branch = git::detect_default_branch(repo_root);
     if let Some(config) = stored_config {
         merged = merge_config(merged, config.clone());
+    }
+
+    // Merge global custom launchers (from store)
+    for launcher in custom_launchers {
+        if !merged.launchers.iter().any(|l| l.id == launcher.id) {
+            merged.launchers.push(launcher.clone());
+        }
     }
 
     LoadedConfig {
@@ -83,6 +94,8 @@ fn builtin_launchers() -> Vec<LauncherProfile> {
             args_template: vec!["{worktree_path}".into()],
             open_in_terminal: false,
             prompt_template: None,
+            is_custom: false,
+            icon_char: None,
         },
         LauncherProfile {
             id: "cursor".into(),
@@ -92,6 +105,8 @@ fn builtin_launchers() -> Vec<LauncherProfile> {
             args_template: vec!["{worktree_path}".into()],
             open_in_terminal: false,
             prompt_template: None,
+            is_custom: false,
+            icon_char: None,
         },
         LauncherProfile {
             id: "terminal".into(),
@@ -101,6 +116,8 @@ fn builtin_launchers() -> Vec<LauncherProfile> {
             args_template: vec!["{worktree_path}".into()],
             open_in_terminal: false,
             prompt_template: None,
+            is_custom: false,
+            icon_char: None,
         },
         LauncherProfile {
             id: "ghostty".into(),
@@ -110,6 +127,8 @@ fn builtin_launchers() -> Vec<LauncherProfile> {
             args_template: vec!["{worktree_path}".into()],
             open_in_terminal: false,
             prompt_template: None,
+            is_custom: false,
+            icon_char: None,
         },
         LauncherProfile {
             id: "iterm2".into(),
@@ -119,6 +138,19 @@ fn builtin_launchers() -> Vec<LauncherProfile> {
             args_template: vec!["{worktree_path}".into()],
             open_in_terminal: false,
             prompt_template: None,
+            is_custom: false,
+            icon_char: None,
+        },
+        LauncherProfile {
+            id: "warp".into(),
+            name: "Warp".into(),
+            kind: LauncherKind::App,
+            app_or_cmd: "Warp".into(),
+            args_template: vec!["{worktree_path}".into()],
+            open_in_terminal: false,
+            prompt_template: None,
+            is_custom: false,
+            icon_char: None,
         },
         LauncherProfile {
             id: "claude".into(),
@@ -128,6 +160,8 @@ fn builtin_launchers() -> Vec<LauncherProfile> {
             args_template: vec![],
             open_in_terminal: true,
             prompt_template: None,
+            is_custom: false,
+            icon_char: None,
         },
         LauncherProfile {
             id: "codex".into(),
@@ -137,6 +171,8 @@ fn builtin_launchers() -> Vec<LauncherProfile> {
             args_template: vec!["--worktree".into()],
             open_in_terminal: true,
             prompt_template: None,
+            is_custom: false,
+            icon_char: None,
         },
         LauncherProfile {
             id: "gemini".into(),
@@ -146,6 +182,8 @@ fn builtin_launchers() -> Vec<LauncherProfile> {
             args_template: vec![],
             open_in_terminal: true,
             prompt_template: None,
+            is_custom: false,
+            icon_char: None,
         },
     ]
 }
@@ -267,6 +305,8 @@ mod tests {
                     args_template: vec!["{worktree_path}".into(), "--reuse-window".into()],
                     open_in_terminal: false,
                     prompt_template: None,
+                    is_custom: false,
+                    icon_char: None,
                 }],
                 hooks: BTreeMap::from([(
                     HookEvent::PostCreate,

@@ -154,6 +154,8 @@ pub struct PortTemplate {
 pub enum LauncherKind {
     App,
     TerminalCli,
+    ShellScript,
+    AppleScript,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,6 +170,10 @@ pub struct LauncherProfile {
     #[serde(default)]
     pub open_in_terminal: bool,
     pub prompt_template: Option<String>,
+    #[serde(default)]
+    pub is_custom: bool,
+    #[serde(default)]
+    pub icon_char: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -365,4 +371,18 @@ pub enum LogLevel {
     Info,
     Success,
     Error,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveCustomLauncherInput {
+    pub launcher: LauncherProfile,
+    pub repo_root: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteCustomLauncherInput {
+    pub launcher_id: String,
+    pub repo_root: Option<String>,
 }

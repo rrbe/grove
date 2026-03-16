@@ -566,8 +566,9 @@ fn load_repo_config(state: &SharedState, repo_root: &Path) -> LoadedConfig {
     let repo_root_key = repo_root.to_string_lossy().to_string();
     let store = state.store.lock().unwrap();
     let stored_config = store.repo_configs.get(&repo_root_key).cloned();
+    let custom_launchers = store.custom_launchers.clone();
     drop(store);
-    config::load(repo_root, stored_config.as_ref())
+    config::load(repo_root, stored_config.as_ref(), &custom_launchers)
 }
 
 fn plan_hooks(
@@ -690,6 +691,8 @@ fn plan_launch_action(
         LauncherKind::TerminalCli => format!("{} {}", launcher.app_or_cmd, rendered_args.join(" "))
             .trim()
             .to_string(),
+        LauncherKind::ShellScript => format!("sh {}", launcher.app_or_cmd),
+        LauncherKind::AppleScript => format!("osascript {}", launcher.app_or_cmd),
     };
 
     Ok(vec![ExecutionStep::Launch {
@@ -961,7 +964,7 @@ impl ExecutionStep {
                 match launcher.kind {
                     LauncherKind::App => {
                         let app_name = launcher.app_or_cmd.as_str();
-                        if matches!(app_name, "Terminal" | "Ghostty" | "iTerm2") {
+                        if matches!(app_name, "Terminal" | "Ghostty" | "iTerm2" | "Warp") {
                             let worktree_path = &context.values["worktree_path"];
                             open_terminal_app(app_name, worktree_path)?;
                         } else {
@@ -985,6 +988,17 @@ impl ExecutionStep {
                         let command = render_terminal_command(&launcher.app_or_cmd, &rendered_args);
                         let term = terminal_id.as_deref().unwrap_or("terminal");
                         open_terminal_at(term, &cwd, &command, &context)?;
+                    }
+                    LauncherKind::ShellScript => {
+                        let rendered_cmd = render_template(&launcher.app_or_cmd, &context);
+                        let term = terminal_id.as_deref().unwrap_or("terminal");
+                        open_terminal_at(term, &cwd, &rendered_cmd, &context)?;
+                    }
+                    LauncherKind::AppleScript => {
+                        let rendered_script = render_template(&launcher.app_or_cmd, &context);
+                        let osascript_cmd = format!("osascript -e {}", shell_quote(&rendered_script));
+                        let term = terminal_id.as_deref().unwrap_or("terminal");
+                        open_terminal_at(term, &cwd, &osascript_cmd, &context)?;
                     }
                 }
                 sink.push(info(format!("{label}: launched")));
@@ -1364,6 +1378,7 @@ fn open_terminal_at(
     match terminal_id {
         "iterm2" => run_script_in_iterm2(&script),
         "ghostty" => run_script_in_ghostty(&script),
+        "warp" => run_script_in_warp(&script),
         _ => run_script_in_terminal_app(&script),
     }
 }
@@ -1448,6 +1463,44 @@ fn run_script_in_ghostty(script: &str) -> Result<(), String> {
     }
 }
 
+fn run_script_in_warp(script: &str) -> Result<(), String> {
+    use std::io::Write;
+    let hash = {
+        let mut hasher = Sha256::new();
+        hasher.update(script.as_bytes());
+        format!("{:x}", hasher.finalize())
+    };
+    let tmp_path = format!("/tmp/grove-{}.sh", &hash[..12]);
+    {
+        let mut file = fs::File::create(&tmp_path)
+            .map_err(|e| format!("failed to create temp script: {e}"))?;
+        file.write_all(script.as_bytes())
+            .map_err(|e| format!("failed to write temp script: {e}"))?;
+    }
+
+    let invoke_cmd = format!(
+        "bash {} ; rm -f {}",
+        shell_quote(&tmp_path),
+        shell_quote(&tmp_path)
+    );
+    let applescript = format!(
+        "tell application \"Warp\"\nactivate\ndelay 0.5\ntell application \"System Events\" to tell process \"Warp\" to keystroke \"t\" using command down\ndelay 0.3\ntell application \"System Events\" to tell process \"Warp\" to keystroke {}\nend tell",
+        apple_quote(&format!("{invoke_cmd}\n"))
+    );
+    let output = Command::new("osascript")
+        .arg("-e")
+        .arg(&applescript)
+        .output();
+    match output {
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(out) => Err(format!(
+            "Warp osascript failed with status {}",
+            out.status
+        )),
+        Err(e) => Err(format!("failed to open Warp: {e}")),
+    }
+}
+
 fn open_terminal_app(app_name: &str, cwd: &str) -> Result<(), String> {
     let script = match app_name {
         "Terminal" => {
@@ -1488,6 +1541,15 @@ fn open_terminal_app(app_name: &str, cwd: &str) -> Result<(), String> {
                 "tell application \"iTerm2\"\nactivate\nset newWindow to (create window with default profile)\ntell current session of newWindow\nwrite text {}\nend tell\nend tell",
                 apple_quote(&format!("cd {}", shell_quote(cwd)))
             )
+        }
+        "Warp" => {
+            let output = Command::new("open")
+                .arg("-a").arg("Warp").arg(cwd)
+                .output().map_err(|e| format!("failed to open Warp: {e}"))?;
+            if !output.status.success() {
+                return Err(format!("Warp failed with status {}", output.status));
+            }
+            return Ok(());
         }
         _ => return Err(format!("unsupported terminal app: {app_name}")),
     };

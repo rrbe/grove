@@ -1,4 +1,4 @@
-export type LauncherKind = "app" | "terminal-cli";
+export type LauncherKind = "app" | "terminal-cli" | "shell-script" | "applescript";
 export type HookEvent =
   | "pre-create"
   | "post-create"
@@ -50,6 +50,18 @@ export interface LauncherProfile {
   argsTemplate: string[];
   openInTerminal: boolean;
   promptTemplate: string | null;
+  isCustom: boolean;
+  iconChar: string | null;
+}
+
+export interface SaveCustomLauncherInput {
+  launcher: LauncherProfile;
+  repoRoot: string | null;
+}
+
+export interface DeleteCustomLauncherInput {
+  launcherId: string;
+  repoRoot: string | null;
 }
 
 export interface HookStep {

@@ -342,14 +342,12 @@ async fn delete_custom_launcher(
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<SharedState>();
         let mut store = state.store.lock().unwrap();
-        match &input.repo_root {
-            Some(repo_root) => {
-                if let Some(config) = store.repo_configs.get_mut(repo_root) {
-                    config.launchers.retain(|l| l.id != input.launcher_id);
-                }
-            }
-            None => {
-                store.custom_launchers.retain(|l| l.id != input.launcher_id);
+        // Remove from global custom launchers
+        store.custom_launchers.retain(|l| l.id != input.launcher_id);
+        // Also remove from repo-level config if a repo is specified
+        if let Some(repo_root) = &input.repo_root {
+            if let Some(config) = store.repo_configs.get_mut(repo_root) {
+                config.launchers.retain(|l| l.id != input.launcher_id);
             }
         }
         store::persist(&app, &store)?;

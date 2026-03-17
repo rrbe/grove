@@ -1,4 +1,4 @@
-import { open } from "@tauri-apps/plugin-dialog";
+import { ask, open } from "@tauri-apps/plugin-dialog";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
@@ -719,9 +719,9 @@ export default function App() {
                 onAddCustomLauncher={() => setCustomLauncherModal({ editing: null, repoRoot: repo.repoRoot })}
                 onEditCustomLauncher={(launcher) => setCustomLauncherModal({ editing: launcher, repoRoot: repo.repoRoot })}
                 onDeleteCustomLauncher={(launcher) => {
-                  if (confirm(t.confirmDeleteLauncher(launcher.name))) {
-                    void handleDeleteCustomLauncher(launcher.id, repo.repoRoot);
-                  }
+                  void ask(t.confirmDeleteLauncher(launcher.name), { kind: "warning" }).then((yes) => {
+                    if (yes) void handleDeleteCustomLauncher(launcher.id, repo.repoRoot);
+                  });
                 }}
               />
             )}

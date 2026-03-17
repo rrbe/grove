@@ -2,6 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
+import { Input, Textarea, Select } from "./components/FormControls";
 import groveMark from "./assets/grove-mark.svg";
 import claudeIcon from "./assets/launcher-icons/claude.svg";
 import codexIcon from "./assets/launcher-icons/codex.svg";
@@ -565,7 +566,7 @@ export default function App() {
 
         {/* Repo Picker */}
         <div className="repo-picker">
-          <input
+          <Input
             value={repoInput}
             onChange={(e) => setRepoInput(e.target.value)}
             placeholder={t.repoPlaceholder}
@@ -1099,7 +1100,7 @@ function WorktreeDetail({
           <span>{t.launchers}</span>
           <label className="terminal-select-inline">
             <span className="terminal-select-label">{t.defaultTerminalLabel}:</span>
-            <select
+            <Select
               value={defaultTerminal}
               onChange={(e) => onSetDefaultTerminal(e.target.value)}
             >
@@ -1111,7 +1112,7 @@ function WorktreeDetail({
                   </option>
                 );
               })}
-            </select>
+            </Select>
           </label>
         </div>
         <div className="action-grid">
@@ -1315,7 +1316,7 @@ function SettingsPage({
           <span>{t.defaultTerminalLabel}</span>
         </div>
         <p className="empty-copy" style={{ marginBottom: 8 }}>{t.defaultTerminalDescription}</p>
-        <select
+        <Select
           className="ghost-button"
           style={{ textAlign: "left", padding: "6px 10px" }}
           value={defaultTerminal}
@@ -1330,7 +1331,7 @@ function SettingsPage({
               </option>
             );
           })}
-        </select>
+        </Select>
       </section>
 
       {/* Worktree Directory */}
@@ -1339,7 +1340,7 @@ function SettingsPage({
           <div className="section-heading">
             <span>{t.worktreeRootLabel}</span>
           </div>
-          <input
+          <Input
             className="ghost-button"
             style={{ textAlign: "left", padding: "6px 10px" }}
             value={repo.mergedConfig.settings.worktreeRoot}
@@ -1409,7 +1410,7 @@ function SettingsPage({
             <p className="empty-copy">{t.localConfigDescription}</p>
             <label className="field-label">
               {t.projectConfigToml}
-              <textarea
+              <Textarea
                 value={configText}
                 onChange={(e) => onConfigChange(e.target.value)}
                 rows={14}
@@ -1698,7 +1699,7 @@ function CustomLauncherModal({
         <div className="custom-launcher-form">
           <label className="form-field">
             <span className="form-label">{t.customLauncherName}</span>
-            <input
+            <Input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -1709,17 +1710,17 @@ function CustomLauncherModal({
 
           <label className="form-field">
             <span className="form-label">{t.customLauncherKind}</span>
-            <select value={kind} onChange={(e) => setKind(e.target.value as LauncherKind)}>
+            <Select value={kind} onChange={(e) => setKind(e.target.value as LauncherKind)}>
               <option value="app">{t.customLauncherKindApp}</option>
               <option value="shell-script">{t.customLauncherKindShellScript}</option>
               <option value="applescript">{t.customLauncherKindAppleScript}</option>
-            </select>
+            </Select>
           </label>
 
           {kind === "app" ? (
             <div className="form-field">
               <span className="form-label">{t.customLauncherCommand}</span>
-              <input
+              <Input
                 type="text"
                 value={appFilter}
                 onChange={(e) => {
@@ -1753,7 +1754,7 @@ function CustomLauncherModal({
           ) : (
             <label className="form-field">
               <span className="form-label">{t.customLauncherScript}</span>
-              <textarea
+              <Textarea
                 className="custom-launcher-script"
                 value={appOrCmd}
                 onChange={(e) => setAppOrCmd(e.target.value)}
@@ -1767,7 +1768,7 @@ function CustomLauncherModal({
           <div className="custom-launcher-row">
             <label className="form-field" style={{ flex: "0 0 80px" }}>
               <span className="form-label">{t.customLauncherIconChar}</span>
-              <input
+              <Input
                 type="text"
                 value={iconChar}
                 onChange={(e) => setIconChar(e.target.value.slice(0, 2))}
@@ -1778,10 +1779,10 @@ function CustomLauncherModal({
 
             <label className="form-field" style={{ flex: 1 }}>
               <span className="form-label">{t.customLauncherScope}</span>
-              <select value={scope} onChange={(e) => setScope(e.target.value as "global" | "repo")}>
+              <Select value={scope} onChange={(e) => setScope(e.target.value as "global" | "repo")}>
                 <option value="global">{t.customLauncherScopeGlobal}</option>
                 {repoRoot && <option value="repo">{t.customLauncherScopeRepo}</option>}
-              </select>
+              </Select>
             </label>
           </div>
         </div>

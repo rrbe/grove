@@ -39,6 +39,7 @@ cd src-tauri && cargo clippy # lint Rust code
 
 - All Tauri commands that do git/file I/O must be async (`spawn_blocking`), never blocking the main thread.
 - `run_command_streaming` treats stderr as info-level during streaming; only escalates to error if exit code is non-zero (git writes informational messages like "Preparing worktree..." to stderr).
+- **Reuse `src/components/` components** — use `Input`, `Textarea`, `Select` from `FormControls.tsx` instead of native `<input>`, `<textarea>`, `<select>`; use `ModalShell` for modals, `Alert` for error banners. Do not introduce new wrapper components for things that already exist.
 
 ## UI Layout
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Input, Select } from "./FormControls";
 import { ModalShell } from "./ModalShell";
 import { fetchRemote, listBranches, listRemoteBranches } from "../lib/api";
 import { generateBranchName } from "../lib/branch-name-gen";
@@ -82,7 +83,7 @@ export function CreateWorktreeModal({
         {/* Mode selector at the top */}
         <label className="field-label">
           {t.mode}
-          <select
+          <Select
             value={form.mode}
             onChange={(e) =>
               onFormChange((c) => ({ ...c, mode: e.target.value as CreateMode, branch: "" }))
@@ -91,7 +92,7 @@ export function CreateWorktreeModal({
             <option value="new-branch">{t.modeNewBranch}</option>
             <option value="existing-branch">{t.modeExistingBranch}</option>
             <option value="remote-branch">{t.modeRemoteBranch}</option>
-          </select>
+          </Select>
         </label>
 
         {/* New branch: base branch on top, dashed line, then new branch name */}
@@ -99,14 +100,14 @@ export function CreateWorktreeModal({
           <>
             <label className="field-label">
               {t.baseRef}
-              <select
+              <Select
                 value={form.baseRef}
                 onChange={(e) => onFormChange((c) => ({ ...c, baseRef: e.target.value }))}
               >
                 {localBranches.map((b) => (
                   <option key={b} value={b}>{b}</option>
                 ))}
-              </select>
+              </Select>
             </label>
             <div className="field-label">
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -119,7 +120,7 @@ export function CreateWorktreeModal({
                   ✦ {t.suggestBranchName}
                 </button>
               </div>
-              <input
+              <Input
                 autoFocus
                 value={form.branch}
                 onChange={(e) => onFormChange((c) => ({ ...c, branch: e.target.value }))}
@@ -137,7 +138,7 @@ export function CreateWorktreeModal({
           return (
             <label className="field-label">
               {t.branchPlaceholder}
-              <select
+              <Select
                 autoFocus
                 value={form.branch}
                 onChange={(e) => onFormChange((c) => ({ ...c, branch: e.target.value }))}
@@ -151,7 +152,7 @@ export function CreateWorktreeModal({
                     </option>
                   );
                 })}
-              </select>
+              </Select>
             </label>
           );
         })()}
@@ -171,7 +172,7 @@ export function CreateWorktreeModal({
                 {t.fetchRemote}
               </button>
             </div>
-            <select
+            <Select
               autoFocus
               value={form.remoteRef}
               onChange={(e) => {
@@ -184,7 +185,7 @@ export function CreateWorktreeModal({
               {remoteBranches.map((b) => (
                 <option key={b} value={b}>{b}</option>
               ))}
-            </select>
+            </Select>
           </label>
         )}
 
@@ -199,7 +200,7 @@ export function CreateWorktreeModal({
               {t.setDefaultDirectory}
             </button>
           </div>
-          <input
+          <Input
             value={form.path || pathPreview || ""}
             onChange={(e) => onFormChange((c) => ({ ...c, path: e.target.value }))}
           />

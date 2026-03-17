@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Textarea, Select } from "./FormControls";
 import { ModalShell } from "./ModalShell";
 import { Alert } from "./Alert";
 import { detectInstallCommand } from "../lib/api";
@@ -173,7 +174,7 @@ export function HooksModal({
     <ModalShell title={t.hooks} onClose={onClose} className="hooks-modal-card">
       <Alert message={error} onDismiss={() => setError(null)} />
       <div className="hooks-add-bar">
-        <select
+        <Select
           value={effectivePendingEvent}
           onChange={(e) => setPendingEvent(e.target.value as HookEvent)}
           disabled={isBusy || availableEvents.length === 0}
@@ -182,7 +183,7 @@ export function HooksModal({
             <option key={event} value={event}>{event}</option>
           ))}
           {availableEvents.length === 0 && <option disabled>—</option>}
-        </select>
+        </Select>
         <button
           className="primary-button"
           disabled={isBusy || availableEvents.length === 0}
@@ -229,7 +230,7 @@ export function HooksModal({
                       <span className="hook-step-number">{stepIndex + 1}</span>
                       <div className="hook-step-body">
                         <div className="hook-step-top">
-                          <select
+                          <Select
                             value={step.type}
                             onChange={(e) => updateStepType(event, stepIndex, e.target.value as HookStep["type"])}
                             disabled={isBusy}
@@ -237,7 +238,7 @@ export function HooksModal({
                             {HOOK_STEP_TYPES.map((type) => (
                               <option key={type} value={type}>{hookTypeLabel(type, t)}</option>
                             ))}
-                          </select>
+                          </Select>
                           <button
                             className="hook-step-remove"
                             onClick={() => removeStep(event, stepIndex)}
@@ -251,7 +252,7 @@ export function HooksModal({
                           {step.type === "script" && (
                             <label className="field-label">
                               {t.hookCommand}
-                              <textarea
+                              <Textarea
                                 rows={2}
                                 value={step.run ?? ""}
                                 onChange={(e) => patchStep(event, stepIndex, { run: e.target.value })}
@@ -262,7 +263,7 @@ export function HooksModal({
                           {step.type === "launch" && (
                             <label className="field-label">
                               {t.hookLauncher}
-                              <select
+                              <Select
                                 value={step.launcherId ?? launchers[0]?.id ?? ""}
                                 onChange={(e) => patchStep(event, stepIndex, { launcherId: e.target.value })}
                                 disabled={isBusy}
@@ -270,13 +271,13 @@ export function HooksModal({
                                 {launchers.map((launcher) => (
                                   <option key={launcher.id} value={launcher.id}>{launcher.name}</option>
                                 ))}
-                              </select>
+                              </Select>
                             </label>
                           )}
                           {step.type === "install" && (
                             <label className="field-label">
                               {t.hookCommand}
-                              <textarea
+                              <Textarea
                                 rows={2}
                                 value={step.run ?? ""}
                                 placeholder={installPlaceholder || t.hookInstallHint}
@@ -288,7 +289,7 @@ export function HooksModal({
                           {step.type === "copy-files" && (
                             <label className="field-label">
                               {t.hookPaths}
-                              <textarea
+                              <Textarea
                                 rows={2}
                                 value={formatHookPaths(step.paths)}
                                 onChange={(e) => patchStep(event, stepIndex, { paths: parseHookPaths(e.target.value) })}

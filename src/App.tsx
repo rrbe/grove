@@ -148,6 +148,8 @@ export default function App() {
   const [view, setView] = useState<"detail" | "settings">("detail");
   const [showActionLog, setShowActionLog] = useState(false);
   const [defaultTerminalId, setDefaultTerminalId] = useState("terminal");
+  const [toast, setToast] = useState<{ message: string; level: "success" | "error" } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [defaultShellPath, setDefaultShellPath] = useState("/bin/bash");
   const [availableShells, setAvailableShells] = useState<ShellInfo[]>([]);
   const [customLauncherModal, setCustomLauncherModal] = useState<{ editing: LauncherProfile | null; repoRoot: string | null } | null>(null);
@@ -309,6 +311,12 @@ export default function App() {
     }
   }
 
+  function showToast(message: string, level: "success" | "error") {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ message, level });
+    toastTimer.current = setTimeout(() => setToast(null), 3000);
+  }
+
   async function runAction(action: () => Promise<ActionResponse>, selectBranch?: string) {
     setError(null);
     setIsBusy(true);
@@ -323,9 +331,16 @@ export default function App() {
           if (match) setSelectedWorktreeId(match.id);
         }
       }
+      const hasError = response.logs.some((l) => l.level === "error");
+      if (hasError) {
+        showToast(t.executionFailed, "error");
+      } else {
+        showToast(t.executionCompleted, "success");
+      }
     } catch (reason) {
       setError(String(reason));
       appendLogs([{ level: "error", message: String(reason) }]);
+      showToast(t.executionFailed, "error");
     } finally {
       setIsBusy(false);
     }
@@ -798,6 +813,12 @@ export default function App() {
           isBusy={isBusy}
           t={t}
         />
+      )}
+
+      {toast && (
+        <div className={`toast toast-${toast.level}`} onClick={() => setToast(null)}>
+          {toast.level === "success" ? "✓" : "✗"} {toast.message}
+        </div>
       )}
     </div>
   );

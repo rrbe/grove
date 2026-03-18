@@ -1942,3 +1942,39 @@ textarea {
   font-size: 0.72rem;
   color: rgba(16, 33, 46, 0.4);
 }
+
+/* ─── Toast ─── */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: 10px 18px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  z-index: 9999;
+  animation: toast-in 200ms ease, toast-out 300ms ease 2.7s forwards;
+}
+
+.toast-success {
+  background: rgba(49, 143, 114, 0.15);
+  color: #185b46;
+  border: 1px solid rgba(49, 143, 114, 0.25);
+}
+
+.toast-error {
+  background: rgba(197, 61, 46, 0.15);
+  color: #8e2319;
+  border: 1px solid rgba(197, 61, 46, 0.25);
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toast-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}

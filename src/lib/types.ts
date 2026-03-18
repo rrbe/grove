@@ -57,6 +57,7 @@ export interface HookStep {
   run?: string | null;
   launcherId?: string | null;
   paths?: string[];
+  shell?: string | null;
 }
 
 export interface ResolvedConfig {

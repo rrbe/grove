@@ -601,12 +601,13 @@ fn plan_hooks(
                     .as_deref()
                     .ok_or_else(|| "script hook is missing run field".to_string())?;
                 let command = render_template(raw, context);
+                let shell = hook.shell.as_deref().unwrap_or(default_shell).to_string();
                 steps.push(ExecutionStep::Script {
                     label,
                     cwd: hook_cwd.clone(),
                     command,
                     context: context.clone(),
-                    shell: default_shell.to_string(),
+                    shell,
                 });
             }
             HookStepType::Launch => {
@@ -625,11 +626,12 @@ fn plan_hooks(
                 )?);
             }
             HookStepType::Install => {
+                let shell = hook.shell.as_deref().unwrap_or(default_shell).to_string();
                 steps.push(ExecutionStep::InstallDependencies {
                     label,
                     worktree_path: PathBuf::from(&context.values["worktree_path"]),
                     custom_command: hook.run.clone().filter(|s| !s.trim().is_empty()),
-                    shell: default_shell.to_string(),
+                    shell,
                 });
             }
             HookStepType::CopyFiles => {

@@ -3,7 +3,7 @@ import { Textarea, Select } from "./FormControls";
 import { ModalShell } from "./ModalShell";
 import { Alert } from "./Alert";
 import { detectInstallCommand } from "../lib/api";
-import type { HookEvent, HookStep, LauncherProfile } from "../lib/types";
+import type { HookEvent, HookStep, LauncherProfile, ShellInfo } from "../lib/types";
 import type { Translations } from "../lib/i18n";
 
 type HooksMap = Partial<Record<HookEvent, HookStep[]>>;
@@ -78,6 +78,8 @@ export function HooksModal({
   onClose,
   isBusy,
   t,
+  availableShells,
+  defaultShell,
 }: {
   hooks: HooksMap;
   launchers: LauncherProfile[];
@@ -86,6 +88,8 @@ export function HooksModal({
   onClose: () => void;
   isBusy: boolean;
   t: Translations;
+  availableShells: ShellInfo[];
+  defaultShell: string;
 }) {
   const [draft, setDraft] = useState<HooksMap>(() => ({ ...hooks }));
   const [pendingEvent, setPendingEvent] = useState<HookEvent>("post-create");
@@ -250,15 +254,30 @@ export function HooksModal({
                         </div>
                         <div className="hook-step-config">
                           {step.type === "script" && (
-                            <label className="field-label">
-                              {t.hookCommand}
-                              <Textarea
-                                rows={2}
-                                value={step.run ?? ""}
-                                onChange={(e) => patchStep(event, stepIndex, { run: e.target.value })}
-                                disabled={isBusy}
-                              />
-                            </label>
+                            <>
+                              <label className="field-label">
+                                {t.hookCommand}
+                                <Textarea
+                                  rows={2}
+                                  value={step.run ?? ""}
+                                  onChange={(e) => patchStep(event, stepIndex, { run: e.target.value })}
+                                  disabled={isBusy}
+                                />
+                              </label>
+                              <label className="field-label">
+                                Shell
+                                <Select
+                                  value={step.shell ?? ""}
+                                  onChange={(e) => patchStep(event, stepIndex, { shell: e.target.value || null })}
+                                  disabled={isBusy}
+                                >
+                                  <option value="">{t.defaultShellLabel} ({availableShells.find((s) => s.path === defaultShell)?.label ?? defaultShell})</option>
+                                  {availableShells.map((s) => (
+                                    <option key={s.path} value={s.path}>{s.label} ({s.path})</option>
+                                  ))}
+                                </Select>
+                              </label>
+                            </>
                           )}
                           {step.type === "launch" && (
                             <label className="field-label">
@@ -275,16 +294,31 @@ export function HooksModal({
                             </label>
                           )}
                           {step.type === "install" && (
-                            <label className="field-label">
-                              {t.hookCommand}
-                              <Textarea
-                                rows={2}
-                                value={step.run ?? ""}
-                                placeholder={installPlaceholder || t.hookInstallHint}
-                                onChange={(e) => patchStep(event, stepIndex, { run: e.target.value })}
-                                disabled={isBusy}
-                              />
-                            </label>
+                            <>
+                              <label className="field-label">
+                                {t.hookCommand}
+                                <Textarea
+                                  rows={2}
+                                  value={step.run ?? ""}
+                                  placeholder={installPlaceholder || t.hookInstallHint}
+                                  onChange={(e) => patchStep(event, stepIndex, { run: e.target.value })}
+                                  disabled={isBusy}
+                                />
+                              </label>
+                              <label className="field-label">
+                                Shell
+                                <Select
+                                  value={step.shell ?? ""}
+                                  onChange={(e) => patchStep(event, stepIndex, { shell: e.target.value || null })}
+                                  disabled={isBusy}
+                                >
+                                  <option value="">{t.defaultShellLabel} ({availableShells.find((s) => s.path === defaultShell)?.label ?? defaultShell})</option>
+                                  {availableShells.map((s) => (
+                                    <option key={s.path} value={s.path}>{s.label} ({s.path})</option>
+                                  ))}
+                                </Select>
+                              </label>
+                            </>
                           )}
                           {step.type === "copy-files" && (
                             <label className="field-label">

@@ -783,6 +783,8 @@ export default function App() {
           onClose={() => setShowHooksModal(false)}
           isBusy={isBusy}
           t={t}
+          availableShells={availableShells}
+          defaultShell={defaultShellPath}
         />
       )}
 

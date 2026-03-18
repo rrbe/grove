@@ -30,6 +30,8 @@ pub struct AppStore {
     #[serde(default)]
     pub default_terminal: Option<String>,
     #[serde(default)]
+    pub default_shell: Option<String>,
+    #[serde(default)]
     pub repo_configs: BTreeMap<String, ConfigFile>,
     #[serde(default)]
     pub custom_launchers: Vec<crate::models::LauncherProfile>,

@@ -53,6 +53,7 @@ enum ExecutionStep {
         label: String,
         worktree_path: PathBuf,
         custom_command: Option<String>,
+        shell: String,
     },
     CopyProjectFiles {
         label: String,
@@ -65,6 +66,7 @@ enum ExecutionStep {
         cwd: PathBuf,
         command: String,
         context: TemplateContext,
+        shell: String,
     },
     Launch {
         label: String,
@@ -100,6 +102,7 @@ pub fn create_worktree(
     state: &SharedState,
     input: CreateWorktreeInput,
     default_terminal: Option<&str>,
+    default_shell: &str,
 ) -> Result<ActionResponse, String> {
     let repo_root = git::resolve_repo_root(&input.repo_root)?;
     let loaded = load_repo_config(state, &repo_root);
@@ -144,6 +147,7 @@ pub fn create_worktree(
         HookEvent::PreCreate,
         &context,
         default_terminal,
+        default_shell,
     )?);
     steps.push(ExecutionStep::GitCreate {
         repo_root: repo_root.clone(),
@@ -159,6 +163,7 @@ pub fn create_worktree(
         HookEvent::PostCreate,
         &context,
         default_terminal,
+        default_shell,
     )?);
 
     if !input.auto_start_launchers.is_empty() {
@@ -183,8 +188,9 @@ pub fn remove_worktree(
     state: &SharedState,
     input: RemoveWorktreeInput,
     default_terminal: Option<&str>,
+    default_shell: &str,
 ) -> Result<ActionResponse, String> {
-    let planned = plan_remove_worktree_execution(state, input, default_terminal)?;
+    let planned = plan_remove_worktree_execution(state, input, default_terminal, default_shell)?;
     execute(app, state, &planned.repo_root, planned.steps)
 }
 
@@ -193,8 +199,9 @@ pub fn start_remove_worktree_session(
     state: &SharedState,
     input: RemoveWorktreeInput,
     default_terminal: Option<&str>,
+    default_shell: &str,
 ) -> Result<ExecutionSessionSnapshot, String> {
-    let planned = plan_remove_worktree_execution(state, input, default_terminal)?;
+    let planned = plan_remove_worktree_execution(state, input, default_terminal, default_shell)?;
     let session_id = next_session_id();
     let snapshot = ExecutionSessionSnapshot {
         session_id: session_id.clone(),
@@ -228,6 +235,7 @@ pub fn run_hook_event(
     state: &SharedState,
     input: RunHookEventInput,
     default_terminal: Option<&str>,
+    default_shell: &str,
 ) -> Result<ActionResponse, String> {
     run_event_internal(
         app,
@@ -236,6 +244,7 @@ pub fn run_hook_event(
         input.event,
         input.worktree_path,
         default_terminal,
+        default_shell,
     )
 }
 
@@ -244,6 +253,7 @@ pub fn launch_worktree(
     state: &SharedState,
     input: LaunchWorktreeInput,
     default_terminal: Option<&str>,
+    default_shell: &str,
 ) -> Result<ActionResponse, String> {
     let repo_root = git::resolve_repo_root(&input.repo_root)?;
     let loaded = load_repo_config(state, &repo_root);
@@ -259,6 +269,7 @@ pub fn launch_worktree(
         HookEvent::PreLaunch,
         &context,
         default_terminal,
+        default_shell,
     )?;
     steps.extend(plan_launch_action(
         &repo_root,
@@ -275,6 +286,7 @@ pub fn launch_worktree(
         HookEvent::PostLaunch,
         &context,
         default_terminal,
+        default_shell,
     )?);
     execute(app, state, &repo_root, steps)
 }
@@ -303,6 +315,7 @@ fn run_event_internal(
     event: HookEvent,
     worktree_path: Option<String>,
     default_terminal: Option<&str>,
+    default_shell: &str,
 ) -> Result<ActionResponse, String> {
     let repo_root = git::resolve_repo_root(&repo_root)?;
     let loaded = load_repo_config(state, &repo_root);
@@ -330,6 +343,7 @@ fn run_event_internal(
         event,
         &worktree_context,
         default_terminal,
+        default_shell,
     )?;
     execute(app, state, &repo_root, steps)
 }
@@ -338,6 +352,7 @@ fn plan_remove_worktree_execution(
     state: &SharedState,
     input: RemoveWorktreeInput,
     default_terminal: Option<&str>,
+    default_shell: &str,
 ) -> Result<PlannedExecution, String> {
     let repo_root = git::resolve_repo_root(&input.repo_root)?;
     let loaded = load_repo_config(state, &repo_root);
@@ -356,6 +371,7 @@ fn plan_remove_worktree_execution(
         HookEvent::PreRemove,
         &context,
         default_terminal,
+        default_shell,
     )?;
     steps.push(ExecutionStep::GitRemove {
         repo_root: repo_root.clone(),
@@ -369,6 +385,7 @@ fn plan_remove_worktree_execution(
         HookEvent::PostRemove,
         &context,
         default_terminal,
+        default_shell,
     )?);
     Ok(PlannedExecution {
         repo_root,
@@ -559,6 +576,7 @@ fn plan_hooks(
     event: HookEvent,
     context: &TemplateContext,
     default_terminal: Option<&str>,
+    default_shell: &str,
 ) -> Result<Vec<ExecutionStep>, String> {
     let mut steps = Vec::new();
     let hook_cwd = if matches!(event, HookEvent::PreCreate) {
@@ -588,6 +606,7 @@ fn plan_hooks(
                     cwd: hook_cwd.clone(),
                     command,
                     context: context.clone(),
+                    shell: default_shell.to_string(),
                 });
             }
             HookStepType::Launch => {
@@ -610,6 +629,7 @@ fn plan_hooks(
                     label,
                     worktree_path: PathBuf::from(&context.values["worktree_path"]),
                     custom_command: hook.run.clone().filter(|s| !s.trim().is_empty()),
+                    shell: default_shell.to_string(),
                 });
             }
             HookStepType::CopyFiles => {
@@ -876,7 +896,8 @@ impl ExecutionStep {
                 label,
                 worktree_path,
                 custom_command,
-            } => run_install_dependencies(sink, &label, &worktree_path, custom_command.as_deref()),
+                shell,
+            } => run_install_dependencies(sink, &label, &worktree_path, custom_command.as_deref(), &shell),
             ExecutionStep::CopyProjectFiles {
                 label,
                 repo_root,
@@ -888,7 +909,7 @@ impl ExecutionStep {
                 cwd,
                 command,
                 context,
-                ..
+                shell,
             } => {
                 run_shell_command_streaming(
                     sink,
@@ -896,6 +917,7 @@ impl ExecutionStep {
                     &cwd,
                     &command,
                     build_envs(&context),
+                    &shell,
                 )?;
                 Ok(())
             }
@@ -962,6 +984,7 @@ fn run_install_dependencies(
     label: &str,
     worktree_path: &Path,
     custom_command: Option<&str>,
+    shell: &str,
 ) -> Result<(), String> {
     if !worktree_path.exists() {
         return Err(format!(
@@ -974,9 +997,9 @@ fn run_install_dependencies(
         None => detect_install_command(worktree_path)
             .ok_or_else(|| "could not detect install command; please specify one manually".to_string())?,
     };
-    let shell = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
-    let flag = if cfg!(target_os = "windows") { "/C" } else { "-c" };
-    let mut process = Command::new(shell);
+    let shell_bin = if cfg!(target_os = "windows") { "cmd" } else { shell };
+    let flag = if cfg!(target_os = "windows") { "/C" } else { "-lc" };
+    let mut process = Command::new(shell_bin);
     process.arg(flag).arg(&full_command).current_dir(worktree_path);
     run_command_streaming(
         sink,
@@ -1221,8 +1244,9 @@ fn run_shell_command_streaming(
     cwd: &Path,
     command: &str,
     envs: BTreeMap<String, String>,
+    shell: &str,
 ) -> Result<(), String> {
-    let mut child = Command::new("/bin/zsh");
+    let mut child = Command::new(shell);
     child.arg("-lc").arg(command).current_dir(cwd).envs(envs);
     run_command_streaming(
         sink,

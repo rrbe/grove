@@ -12,7 +12,7 @@ use actions::{
 use models::{
     BootstrapResponse, CreateWorktreeInput, DeleteCustomLauncherInput, ExecutionSessionSnapshot,
     LaunchWorktreeInput, RemoveWorktreeInput, RepoSnapshot, RunHookEventInput, SaveConfigInput,
-    SaveCustomLauncherInput, SaveHooksInput,
+    SaveCustomLauncherInput, SaveHooksInput, ShellInfo,
 };
 use std::sync::OnceLock;
 use store::{push_recent, SharedState};
@@ -146,7 +146,8 @@ async fn create_repo_worktree(
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<SharedState>();
         let dt = read_default_terminal(&state);
-        create_worktree(&app, &state, input, dt.as_deref())
+        let ds = read_default_shell(&state);
+        create_worktree(&app, &state, input, dt.as_deref(), &ds)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -160,7 +161,8 @@ async fn remove_repo_worktree(
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<SharedState>();
         let dt = read_default_terminal(&state);
-        remove_worktree(&app, &state, input, dt.as_deref())
+        let ds = read_default_shell(&state);
+        remove_worktree(&app, &state, input, dt.as_deref(), &ds)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -174,7 +176,8 @@ async fn start_remove_repo_worktree_session(
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<SharedState>();
         let dt = read_default_terminal(&state);
-        start_remove_worktree_session(&app, &state, input, dt.as_deref())
+        let ds = read_default_shell(&state);
+        start_remove_worktree_session(&app, &state, input, dt.as_deref(), &ds)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -204,6 +207,7 @@ async fn launch_repo_worktree(
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<SharedState>();
         let dt = read_default_terminal(&state);
+        let ds = read_default_shell(&state);
         if let Ok(repo_root) = git::resolve_repo_root(&input.repo_root) {
             let response = launch_worktree(
                 &app,
@@ -213,11 +217,12 @@ async fn launch_repo_worktree(
                     ..input.clone()
                 },
                 dt.as_deref(),
+                &ds,
             )?;
             let _ = mark_worktree_opened(&app, &state, &input.worktree_path);
             return Ok(response);
         }
-        launch_worktree(&app, &state, input, dt.as_deref())
+        launch_worktree(&app, &state, input, dt.as_deref(), &ds)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -231,7 +236,8 @@ async fn run_repo_hook_event(
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<SharedState>();
         let dt = read_default_terminal(&state);
-        run_hook_event(&app, &state, input, dt.as_deref())
+        let ds = read_default_shell(&state);
+        run_hook_event(&app, &state, input, dt.as_deref(), &ds)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -388,6 +394,9 @@ pub fn run() {
             fetch_remote,
             get_default_terminal,
             set_default_terminal,
+            list_available_shells,
+            get_default_shell,
+            set_default_shell,
             set_repo_worktree_root,
             get_file_diff,
             detect_install_command,
@@ -499,6 +508,64 @@ async fn get_file_diff(
 
 fn read_default_terminal(state: &SharedState) -> Option<String> {
     state.store.lock().unwrap().default_terminal.clone()
+}
+
+fn read_default_shell(state: &SharedState) -> String {
+    state
+        .store
+        .lock()
+        .unwrap()
+        .default_shell
+        .clone()
+        .unwrap_or_else(|| "/bin/bash".to_string())
+}
+
+#[tauri::command]
+fn list_available_shells() -> Vec<ShellInfo> {
+    let content = match std::fs::read_to_string("/etc/shells") {
+        Ok(c) => c,
+        Err(_) => return vec![ShellInfo { path: "/bin/bash".into(), label: "bash".into() }],
+    };
+    let mut shells = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let path = std::path::Path::new(line);
+        if !path.exists() {
+            continue;
+        }
+        let label = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(line)
+            .to_string();
+        shells.push(ShellInfo {
+            path: line.to_string(),
+            label,
+        });
+    }
+    if shells.is_empty() {
+        shells.push(ShellInfo { path: "/bin/bash".into(), label: "bash".into() });
+    }
+    shells
+}
+
+#[tauri::command]
+fn get_default_shell(state: State<'_, SharedState>) -> String {
+    read_default_shell(&state)
+}
+
+#[tauri::command]
+fn set_default_shell(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+    shell: String,
+) -> Result<(), String> {
+    let mut store = state.store.lock().unwrap();
+    store.default_shell = Some(shell);
+    store::persist(&app, &store)
 }
 
 fn detect_tools() -> Vec<models::ToolStatus> {

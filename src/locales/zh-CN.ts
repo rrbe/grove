@@ -131,6 +131,8 @@ export const zhCN: Translations = {
   fileStatusUntracked: "未跟踪",
   defaultTerminalLabel: "默认终端",
   defaultTerminalDescription: "Claude、Codex、Gemini 等 CLI 工具将在此终端中打开",
+  defaultShellLabel: "默认 Shell",
+  defaultShellDescription: "用于执行 Hooks 和安装命令的 Shell",
   inUse: "已占用",
   suggestBranchName: "帮我想一个",
   addCustomLauncher: "添加自定义启动器",

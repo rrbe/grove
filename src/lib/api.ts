@@ -12,6 +12,7 @@ import type {
   SaveConfigInput,
   SaveCustomLauncherInput,
   SaveHooksInput,
+  ShellInfo,
 } from "./types";
 
 export function bootstrap() {
@@ -108,4 +109,16 @@ export function saveCustomLauncher(input: SaveCustomLauncherInput) {
 
 export function deleteCustomLauncher(input: DeleteCustomLauncherInput) {
   return invoke<RepoSnapshot>("delete_custom_launcher", { input });
+}
+
+export function listAvailableShells() {
+  return invoke<ShellInfo[]>("list_available_shells");
+}
+
+export function getDefaultShell() {
+  return invoke<string>("get_default_shell");
+}
+
+export function setDefaultShell(shell: string) {
+  return invoke<void>("set_default_shell", { shell });
 }

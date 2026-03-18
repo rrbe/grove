@@ -133,6 +133,8 @@ export const en: Translations = {
   fileStatusUntracked: "Untracked",
   defaultTerminalLabel: "Default Terminal",
   defaultTerminalDescription: "CLI tools like Claude, Codex, and Gemini will open in this terminal",
+  defaultShellLabel: "Default Shell",
+  defaultShellDescription: "Shell used to execute hooks and install commands",
   inUse: "in use",
   suggestBranchName: "Suggest",
   addCustomLauncher: "Add Custom Launcher",

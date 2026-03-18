@@ -31,6 +31,9 @@ import {
   startRemoveRepoWorktreeSession,
   getDefaultTerminal,
   setDefaultTerminal,
+  getDefaultShell,
+  setDefaultShell,
+  listAvailableShells,
   setWorktreeRoot,
 } from "./lib/api";
 import { useI18n, type Locale, type Translations } from "./lib/i18n";
@@ -51,6 +54,7 @@ import type {
   RepoSnapshot,
   RunLog,
   SaveCustomLauncherInput,
+  ShellInfo,
   ToolStatus,
   WorktreeRecord,
 } from "./lib/types";
@@ -144,6 +148,8 @@ export default function App() {
   const [view, setView] = useState<"detail" | "settings">("detail");
   const [showActionLog, setShowActionLog] = useState(false);
   const [defaultTerminalId, setDefaultTerminalId] = useState("terminal");
+  const [defaultShellPath, setDefaultShellPath] = useState("/bin/bash");
+  const [availableShells, setAvailableShells] = useState<ShellInfo[]>([]);
   const [customLauncherModal, setCustomLauncherModal] = useState<{ editing: LauncherProfile | null; repoRoot: string | null } | null>(null);
 
   const [sidebarWidth, setSidebarWidth] = useState(320);
@@ -189,6 +195,8 @@ export default function App() {
         const data = await bootstrap();
         setBootstrapState(data);
         getDefaultTerminal().then(setDefaultTerminalId).catch(() => {});
+        getDefaultShell().then(setDefaultShellPath).catch(() => {});
+        listAvailableShells().then(setAvailableShells).catch(() => {});
         if (data.lastActiveRepo) {
           setRepoInput(data.lastActiveRepo);
           await loadRepoInner(data.lastActiveRepo);
@@ -517,6 +525,11 @@ export default function App() {
     await setDefaultTerminal(terminalId);
   }
 
+  async function handleSetDefaultShell(shell: string) {
+    setDefaultShellPath(shell);
+    await setDefaultShell(shell);
+  }
+
   async function handlePrune() {
     if (!repo) return;
     await runAction(() => pruneRepoMetadata(repo.repoRoot));
@@ -678,6 +691,9 @@ export default function App() {
             t={t}
             defaultTerminal={defaultTerminalId}
             onSetDefaultTerminal={(id) => void handleSetDefaultTerminal(id)}
+            defaultShell={defaultShellPath}
+            availableShells={availableShells}
+            onSetDefaultShell={(s) => void handleSetDefaultShell(s)}
             onRepoUpdate={setRepo}
           />
         ) : (
@@ -1254,6 +1270,9 @@ function SettingsPage({
   t,
   defaultTerminal,
   onSetDefaultTerminal,
+  defaultShell,
+  availableShells,
+  onSetDefaultShell,
   onRepoUpdate,
 }: {
   toolStatuses: ToolStatus[];
@@ -1270,6 +1289,9 @@ function SettingsPage({
   t: Translations;
   defaultTerminal: string;
   onSetDefaultTerminal: (id: string) => void;
+  defaultShell: string;
+  availableShells: ShellInfo[];
+  onSetDefaultShell: (shell: string) => void;
   onRepoUpdate: (repo: RepoSnapshot) => void;
 }) {
   const [showConfigEditor, setShowConfigEditor] = useState(false);
@@ -1331,6 +1353,27 @@ function SettingsPage({
               </option>
             );
           })}
+        </Select>
+      </section>
+
+      {/* Default Shell */}
+      <section className="card stack">
+        <div className="section-heading">
+          <span>{t.defaultShellLabel}</span>
+        </div>
+        <p className="empty-copy" style={{ marginBottom: 8 }}>{t.defaultShellDescription}</p>
+        <Select
+          className="ghost-button"
+          style={{ textAlign: "left", padding: "6px 10px" }}
+          value={defaultShell}
+          onChange={(e) => onSetDefaultShell(e.target.value)}
+          disabled={isBusy}
+        >
+          {availableShells.map((s) => (
+            <option key={s.path} value={s.path}>
+              {s.label} ({s.path})
+            </option>
+          ))}
         </Select>
       </section>
 

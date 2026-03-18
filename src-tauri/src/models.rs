@@ -342,3 +342,10 @@ pub struct DeleteCustomLauncherInput {
     pub launcher_id: String,
     pub repo_root: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellInfo {
+    pub path: String,
+    pub label: String,
+}

@@ -169,6 +169,11 @@ export interface ExecutionSessionSnapshot {
   error: string | null;
 }
 
+export interface ShellInfo {
+  path: string;
+  label: string;
+}
+
 export interface ExecutionEvent {
   sessionId: string;
   kind: ExecutionEventKind;

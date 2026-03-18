@@ -129,6 +129,8 @@ export interface Translations {
   fileStatusUntracked: string;
   defaultTerminalLabel: string;
   defaultTerminalDescription: string;
+  defaultShellLabel: string;
+  defaultShellDescription: string;
   inUse: string;
   suggestBranchName: string;
   addCustomLauncher: string;

@@ -368,6 +368,16 @@ async fn delete_custom_launcher(
 }
 
 pub fn run() {
+    // Fix PATH for packaged macOS apps. Apps launched from Finder/Dock inherit a
+    // minimal launchd PATH (/usr/bin:/bin:/usr/sbin:/sbin) that excludes
+    // user-installed tools (Homebrew, nvm, pnpm, cargo, etc.). Resolve the full
+    // PATH from the user's login shell and apply it process-wide so ALL child
+    // processes (hooks, install commands, git) inherit it automatically.
+    #[cfg(not(target_os = "windows"))]
+    unsafe {
+        std::env::set_var("PATH", get_user_shell_path());
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -638,10 +648,8 @@ fn get_user_shell_path() -> &'static str {
 }
 
 fn cli_status(id: &str, label: &str) -> models::ToolStatus {
-    let path = get_user_shell_path();
     let output = std::process::Command::new("which")
         .arg(id)
-        .env("PATH", path)
         .output();
     match output {
         Ok(output) if output.status.success() => tool_status(

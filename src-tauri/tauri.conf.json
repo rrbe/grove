@@ -28,7 +28,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg", "updater"],
+    "targets": ["dmg"],
     "macOS": {
       "minimumSystemVersion": "13.0"
     },

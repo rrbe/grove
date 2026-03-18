@@ -1,6 +1,6 @@
 [package]
 name = "grove"
-version = "0.5.0"
+version = "0.6.0"
 description = "Desktop worktree manager built with Tauri"
 authors = ["gaoxin"]
 edition = "2021"

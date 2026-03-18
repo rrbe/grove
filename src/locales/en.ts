@@ -54,7 +54,6 @@ export const en: Translations = {
   executing: "Running",
   executionCompleted: "Completed",
   executionFailed: "Failed",
-  pendingApproval: "Awaiting approval",
   cancel: "Cancel",
   force: "Force Delete",
   delete: "Delete",
@@ -103,11 +102,6 @@ export const en: Translations = {
   localOverrideToml: "Local override TOML",
   saveConfig: "Save Config",
   close: "Close",
-  approveProjectCommands: "Approve Project Commands",
-  commandCount: (n) => `${n} command(s)`,
-  approvalCopy:
-    "These commands came from project-level hooks or terminal launchers. They will be remembered for this repository until the command content changes.",
-  approveAndRetry: "Approve And Retry",
   heroTitle: "Start with a local Git repository",
   heroDescription:
     "Pick any repo to scan worktrees, manage launchers, and run hooks from one place.",

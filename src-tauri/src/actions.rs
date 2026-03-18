@@ -28,7 +28,6 @@ use tauri::{AppHandle, Emitter, Manager};
 #[derive(Clone)]
 struct TemplateContext {
     values: BTreeMap<String, String>,
-    ports: BTreeMap<String, (u16, Option<String>)>,
 }
 
 #[derive(Clone)]
@@ -49,11 +48,6 @@ enum ExecutionStep {
     },
     GitPrune {
         repo_root: PathBuf,
-    },
-    CopyWarmupFiles {
-        repo_root: PathBuf,
-        worktree_path: PathBuf,
-        files: Vec<String>,
     },
     InstallDependencies {
         label: String,
@@ -141,7 +135,6 @@ pub fn create_worktree(
         head_sha,
         false,
         default_remote,
-        &loaded,
     );
 
     let mut steps = Vec::new();
@@ -160,13 +153,6 @@ pub fn create_worktree(
         remote_ref: input.remote_ref.clone(),
         worktree_path: worktree_path.clone(),
     });
-    if !loaded.merged.cold_start.copy_files.is_empty() {
-        steps.push(ExecutionStep::CopyWarmupFiles {
-            repo_root: repo_root.clone(),
-            worktree_path: worktree_path.clone(),
-            files: loaded.merged.cold_start.copy_files.clone(),
-        });
-    }
     steps.extend(plan_hooks(
         &repo_root,
         &loaded,
@@ -263,7 +249,6 @@ pub fn launch_worktree(
     let loaded = load_repo_config(state, &repo_root);
     let worktrees = git::scan_worktrees(
         &repo_root,
-        &loaded.merged.cold_start,
         &state.store.lock().unwrap(),
     )?;
     let worktree = find_worktree(&worktrees, &input.worktree_path)?;
@@ -324,7 +309,6 @@ fn run_event_internal(
     let worktree_context = if let Some(path) = worktree_path {
         let worktrees = git::scan_worktrees(
             &repo_root,
-            &loaded.merged.cold_start,
             &state.store.lock().unwrap(),
         )?;
         let worktree = find_worktree(&worktrees, &path)?;
@@ -338,7 +322,6 @@ fn run_event_internal(
             git::resolve_head_sha(&repo_root, "HEAD")?,
             true,
             git::detect_default_remote(&repo_root).unwrap_or_else(|| "origin".into()),
-            &loaded,
         )
     };
     let steps = plan_hooks(
@@ -360,7 +343,6 @@ fn plan_remove_worktree_execution(
     let loaded = load_repo_config(state, &repo_root);
     let worktrees = git::scan_worktrees(
         &repo_root,
-        &loaded.merged.cold_start,
         &state.store.lock().unwrap(),
     )?;
     let worktree = find_worktree(&worktrees, &input.worktree_path)?;
@@ -888,39 +870,6 @@ impl ExecutionStep {
                     &["worktree".into(), "prune".into(), "--verbose".into()],
                     "git",
                 )?;
-                Ok(())
-            }
-            ExecutionStep::CopyWarmupFiles {
-                repo_root,
-                worktree_path,
-                files,
-            } => {
-                let mut copied = 0;
-                for relative in files {
-                    let source = repo_root.join(&relative);
-                    let target = worktree_path.join(&relative);
-                    if !source.exists() || target.exists() {
-                        continue;
-                    }
-                    if let Some(parent) = target.parent() {
-                        fs::create_dir_all(parent).map_err(|error| {
-                            format!("failed to create {}: {error}", parent.display())
-                        })?;
-                    }
-                    fs::copy(&source, &target).map_err(|error| {
-                        format!(
-                            "failed to copy {} to {}: {error}",
-                            source.display(),
-                            target.display()
-                        )
-                    })?;
-                    copied += 1;
-                }
-                sink.push(info(format!(
-                    "Warmup copied {} file(s) into {}",
-                    copied,
-                    worktree_path.display()
-                )));
                 Ok(())
             }
             ExecutionStep::InstallDependencies {
@@ -1603,12 +1552,6 @@ fn render_template(template: &str, context: &TemplateContext) -> String {
     for (key, value) in &context.values {
         rendered = rendered.replace(&format!("{{{key}}}"), value);
     }
-    for (name, (port, url)) in &context.ports {
-        rendered = rendered.replace(&format!("{{port:{name}}}"), &port.to_string());
-        if let Some(url) = url {
-            rendered = rendered.replace(&format!("{{url:{name}}}"), url);
-        }
-    }
     rendered
 }
 
@@ -1620,14 +1563,7 @@ fn build_context(
     head_sha: String,
     is_main: bool,
     default_remote: String,
-    loaded: &LoadedConfig,
 ) -> TemplateContext {
-    let warmup = git::build_warmup_preview(
-        repo_root,
-        worktree_path,
-        branch.as_deref(),
-        &loaded.merged.cold_start,
-    );
     let mut values = BTreeMap::new();
     values.insert("repo_root".into(), repo_root.to_string_lossy().to_string());
     values.insert(
@@ -1639,11 +1575,7 @@ fn build_context(
     values.insert("head_sha".into(), head_sha);
     values.insert("is_main_worktree".into(), is_main.to_string());
     values.insert("default_remote".into(), default_remote);
-    let mut ports = BTreeMap::new();
-    for port in warmup.ports {
-        ports.insert(port.name, (port.port, port.url));
-    }
-    TemplateContext { values, ports }
+    TemplateContext { values }
 }
 
 fn build_context_from_worktree(
@@ -1664,7 +1596,6 @@ fn build_context_from_worktree(
             worktree.is_main
         },
         git::detect_default_remote(repo_root).unwrap_or_else(|| "origin".into()),
-        loaded,
     )
 }
 
@@ -1700,7 +1631,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn render_template_replaces_ports() {
+    fn render_template_replaces_values() {
         let context = TemplateContext {
             values: BTreeMap::from([
                 ("repo_root".into(), "/repo".into()),
@@ -1711,11 +1642,10 @@ mod tests {
                 ("is_main_worktree".into(), "false".into()),
                 ("default_remote".into(), "origin".into()),
             ]),
-            ports: BTreeMap::from([("web".into(), (3123, Some("http://localhost:3123".into())))]),
         };
         assert_eq!(
-            render_template("open {url:web} on {branch}", &context),
-            "open http://localhost:3123 on feat"
+            render_template("checkout {branch} at {worktree_path}", &context),
+            "checkout feat at /repo/.worktrees/feat"
         );
     }
 

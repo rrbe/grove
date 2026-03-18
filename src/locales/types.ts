@@ -52,7 +52,6 @@ export interface Translations {
   executing: string;
   executionCompleted: string;
   executionFailed: string;
-  pendingApproval: string;
   cancel: string;
   force: string;
   delete: string;
@@ -100,10 +99,6 @@ export interface Translations {
   localOverrideToml: string;
   saveConfig: string;
   close: string;
-  approveProjectCommands: string;
-  commandCount: (n: number) => string;
-  approvalCopy: string;
-  approveAndRetry: string;
   heroTitle: string;
   heroDescription: string;
   heroPoint1: string;

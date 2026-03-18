@@ -1,6 +1,5 @@
-use crate::models::{ColdStartConfig, CommitSummary, FileChange, FileStatus, PortAssignment, WarmupPreview, WorktreeRecord};
+use crate::models::{CommitSummary, FileChange, FileStatus, WorktreeRecord};
 use crate::store::AppStore;
-use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs,
@@ -34,7 +33,6 @@ pub fn resolve_repo_root(candidate: &str) -> Result<PathBuf, String> {
 
 pub fn scan_worktrees(
     repo_root: &Path,
-    cold_start: &ColdStartConfig,
     store: &AppStore,
 ) -> Result<Vec<WorktreeRecord>, String> {
     let output = run_git_bytes(repo_root, ["worktree", "list", "--porcelain", "-z"])?;
@@ -52,8 +50,6 @@ pub fn scan_worktrees(
         .map(|entry| {
             let canonical = canonicalize(&entry.path).unwrap_or(entry.path.clone());
             let (dirty, ahead, behind, files) = git_status_details(&canonical)?;
-            let warmup_preview =
-                build_warmup_preview(repo_root, &canonical, entry.branch.as_deref(), cold_start);
             let (pr_number, pr_url) = entry
                 .branch
                 .as_deref()
@@ -75,7 +71,6 @@ pub fn scan_worktrees(
                 behind,
                 last_opened_at: crate::store::last_opened(store, &canonical),
                 head_commit_date: commit_date,
-                warmup_preview,
                 pr_number,
                 pr_url,
                 recent_commits: commits,
@@ -447,54 +442,6 @@ fn parse_reason(value: &str) -> Option<String> {
     }
 }
 
-pub fn build_warmup_preview(
-    repo_root: &Path,
-    worktree_path: &Path,
-    branch: Option<&str>,
-    cold_start: &ColdStartConfig,
-) -> WarmupPreview {
-    let copy_candidates = cold_start
-        .copy_files
-        .iter()
-        .filter(|relative| repo_root.join(relative).exists())
-        .cloned()
-        .collect();
-
-    let branch_seed = branch
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| worktree_path.to_string_lossy().to_string());
-    let ports = cold_start
-        .ports
-        .iter()
-        .map(|template| {
-            let port = hash_port(&branch_seed, template.base, &template.name);
-            PortAssignment {
-                name: template.name.clone(),
-                env_var: template.env_var.clone(),
-                port,
-                url: template
-                    .url_template
-                    .as_ref()
-                    .map(|template| template.replace("{port}", &port.to_string())),
-            }
-        })
-        .collect();
-
-    WarmupPreview {
-        copy_candidates,
-        ports,
-    }
-}
-
-pub fn hash_port(seed: &str, base: u16, name: &str) -> u16 {
-    let mut hasher = Sha256::new();
-    hasher.update(seed.as_bytes());
-    hasher.update(name.as_bytes());
-    let digest = hasher.finalize();
-    let offset = u16::from_be_bytes([digest[0], digest[1]]) % 200;
-    base.saturating_add(offset)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -513,15 +460,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn hash_port_is_stable() {
-        assert_eq!(
-            hash_port("feature/demo", 3000, "web"),
-            hash_port("feature/demo", 3000, "web")
-        );
-        assert_ne!(
-            hash_port("feature/demo", 3000, "web"),
-            hash_port("feature/demo", 3000, "vite")
-        );
-    }
 }

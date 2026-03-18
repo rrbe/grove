@@ -1,7 +1,7 @@
 use crate::git;
 use crate::models::{
-    ColdStartConfig, ColdStartPatch, ConfigFile, HookEvent, HookStep, HookStepType, LauncherKind,
-    LauncherProfile, PortTemplate, RepoSettings, ResolvedConfig, SettingsPatch,
+    ConfigFile, HookEvent, HookStep, HookStepType, LauncherKind,
+    LauncherProfile, RepoSettings, ResolvedConfig, SettingsPatch,
 };
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -61,23 +61,6 @@ pub fn builtin_config() -> ResolvedConfig {
         settings: RepoSettings {
             worktree_root: ".claude".into(),
             default_base_branch: "main".into(),
-        },
-        cold_start: ColdStartConfig {
-            copy_files: Vec::new(),
-            ports: vec![
-                PortTemplate {
-                    name: "web".into(),
-                    base: 3000,
-                    env_var: "PORT".into(),
-                    url_template: Some("http://localhost:{port}".into()),
-                },
-                PortTemplate {
-                    name: "vite".into(),
-                    base: 5173,
-                    env_var: "VITE_PORT".into(),
-                    url_template: Some("http://localhost:{port}".into()),
-                },
-            ],
         },
         launchers: builtin_launchers(),
         hooks: BTreeMap::new(),
@@ -194,23 +177,6 @@ pub fn sample_config_text() -> String {
             worktree_root: Some(".claude".into()),
             default_base_branch: Some("main".into()),
         },
-        cold_start: ColdStartPatch {
-            copy_files: None,
-            ports: Some(vec![
-                PortTemplate {
-                    name: "web".into(),
-                    base: 3000,
-                    env_var: "PORT".into(),
-                    url_template: Some("http://localhost:{port}".into()),
-                },
-                PortTemplate {
-                    name: "vite".into(),
-                    base: 5173,
-                    env_var: "VITE_PORT".into(),
-                    url_template: Some("http://localhost:{port}".into()),
-                },
-            ]),
-        },
         launchers: builtin_launchers(),
         hooks: BTreeMap::from([(
             HookEvent::PostCreate,
@@ -246,12 +212,6 @@ pub fn merge_config(mut base: ResolvedConfig, patch: ConfigFile) -> ResolvedConf
     if let Some(default_base_branch) = patch.settings.default_base_branch {
         base.settings.default_base_branch = default_base_branch;
     }
-    if let Some(copy_files) = patch.cold_start.copy_files {
-        base.cold_start.copy_files = copy_files;
-    }
-    if let Some(ports) = patch.cold_start.ports {
-        base.cold_start.ports = ports;
-    }
 
     let mut launchers = BTreeMap::new();
     for launcher in base.launchers {
@@ -271,8 +231,6 @@ pub fn merge_config(mut base: ResolvedConfig, patch: ConfigFile) -> ResolvedConf
 pub fn is_effectively_empty(config: &ConfigFile) -> bool {
     config.settings.worktree_root.is_none()
         && config.settings.default_base_branch.is_none()
-        && config.cold_start.copy_files.is_none()
-        && config.cold_start.ports.is_none()
         && config.launchers.is_empty()
         && config.hooks.is_empty()
 }

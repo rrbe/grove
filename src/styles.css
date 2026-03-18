@@ -1190,11 +1190,6 @@ textarea {
   color: #185b46;
 }
 
-.delete-execution-approvals {
-  display: grid;
-  gap: 12px;
-}
-
 .delete-execution-actions {
   margin-top: 0;
   padding-top: 4px;
@@ -1202,31 +1197,6 @@ textarea {
 
 .modal-copy {
   color: rgba(16, 33, 46, 0.72);
-}
-
-.approval-list {
-  display: grid;
-  gap: 12px;
-}
-
-.approval-item {
-  border-radius: 14px;
-  background: rgba(16, 33, 46, 0.06);
-  padding: 14px;
-}
-
-.approval-item p {
-  margin: 6px 0 10px;
-  color: rgba(16, 33, 46, 0.58);
-}
-
-.approval-item pre {
-  margin: 0;
-  padding: 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.74);
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 .modal-actions {

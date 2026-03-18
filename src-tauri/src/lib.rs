@@ -51,7 +51,7 @@ pub fn load_repo_snapshot(
     store.last_active_repo = Some(repo_root_str.clone());
     store::persist(app, &store)?;
     let loaded = config::load(&repo_root, stored_config.as_ref(), &store.custom_launchers);
-    let worktrees = git::scan_worktrees(&repo_root, &loaded.merged.cold_start, &store)?;
+    let worktrees = git::scan_worktrees(&repo_root, &store)?;
 
     // Update PR cache with freshly fetched data
     for wt in &worktrees {

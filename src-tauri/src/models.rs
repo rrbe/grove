@@ -38,7 +38,6 @@ pub struct WorktreeRecord {
     pub behind: u32,
     pub last_opened_at: Option<String>,
     pub head_commit_date: Option<String>,
-    pub warmup_preview: WarmupPreview,
     pub pr_number: Option<u32>,
     pub pr_url: Option<String>,
     pub recent_commits: Vec<CommitSummary>,
@@ -71,22 +70,6 @@ pub enum FileStatus {
     Untracked,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WarmupPreview {
-    pub copy_candidates: Vec<String>,
-    pub ports: Vec<PortAssignment>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct PortAssignment {
-    pub name: String,
-    pub env_var: String,
-    pub port: u16,
-    pub url: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolStatus {
@@ -101,7 +84,6 @@ pub struct ToolStatus {
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedConfig {
     pub settings: RepoSettings,
-    pub cold_start: ColdStartConfig,
     pub launchers: Vec<LauncherProfile>,
     pub hooks: BTreeMap<HookEvent, Vec<HookStep>>,
 }
@@ -110,7 +92,6 @@ impl Default for ResolvedConfig {
     fn default() -> Self {
         Self {
             settings: RepoSettings::default(),
-            cold_start: ColdStartConfig::default(),
             launchers: Vec::new(),
             hooks: BTreeMap::new(),
         }
@@ -131,22 +112,6 @@ impl Default for RepoSettings {
             default_base_branch: "main".into(),
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct ColdStartConfig {
-    pub copy_files: Vec<String>,
-    pub ports: Vec<PortTemplate>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct PortTemplate {
-    pub name: String,
-    pub base: u16,
-    pub env_var: String,
-    pub url_template: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -228,8 +193,6 @@ pub struct ConfigFile {
     #[serde(default)]
     pub settings: SettingsPatch,
     #[serde(default)]
-    pub cold_start: ColdStartPatch,
-    #[serde(default)]
     pub launchers: Vec<LauncherProfile>,
     #[serde(default)]
     pub hooks: BTreeMap<HookEvent, Vec<HookStep>>,
@@ -240,13 +203,6 @@ pub struct ConfigFile {
 pub struct SettingsPatch {
     pub worktree_root: Option<String>,
     pub default_base_branch: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct ColdStartPatch {
-    pub copy_files: Option<Vec<String>>,
-    pub ports: Option<Vec<PortTemplate>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

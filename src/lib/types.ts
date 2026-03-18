@@ -25,18 +25,6 @@ export interface ToolStatus {
   kind: string;
 }
 
-export interface PortTemplate {
-  name: string;
-  base: number;
-  envVar: string;
-  urlTemplate: string | null;
-}
-
-export interface ColdStartConfig {
-  copyFiles: string[];
-  ports: PortTemplate[];
-}
-
 export interface RepoSettings {
   worktreeRoot: string;
   defaultBaseBranch: string;
@@ -73,21 +61,8 @@ export interface HookStep {
 
 export interface ResolvedConfig {
   settings: RepoSettings;
-  coldStart: ColdStartConfig;
   launchers: LauncherProfile[];
   hooks: Partial<Record<HookEvent, HookStep[]>>;
-}
-
-export interface PortAssignment {
-  name: string;
-  envVar: string;
-  port: number;
-  url: string | null;
-}
-
-export interface WarmupPreview {
-  copyCandidates: string[];
-  ports: PortAssignment[];
 }
 
 export interface WorktreeRecord {
@@ -103,7 +78,6 @@ export interface WorktreeRecord {
   behind: number;
   lastOpenedAt: string | null;
   headCommitDate: string | null;
-  warmupPreview: WarmupPreview;
   prNumber: number | null;
   prUrl: string | null;
   recentCommits: CommitSummary[];

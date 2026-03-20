@@ -145,9 +145,8 @@ export default function App() {
 
   const [selectedWorktreeId, setSelectedWorktreeId] = useState<string | null>(null);
   const [deleteExecution, setDeleteExecution] = useState<DeleteExecutionState | null>(null);
-  const [showHooksModal, setShowHooksModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [view, setView] = useState<"detail" | "settings">("detail");
+  const [view, setView] = useState<"repository" | "worktrees" | "hooks" | "settings">("worktrees");
   const [showActionLog, setShowActionLog] = useState(false);
   const [defaultTerminalId, setDefaultTerminalId] = useState("terminal");
   const [toast, setToast] = useState<{ message: string; level: "success" | "error" } | null>(null);
@@ -157,38 +156,17 @@ export default function App() {
   const [customLauncherModal, setCustomLauncherModal] = useState<{ editing: LauncherProfile | null; repoRoot: string | null } | null>(null);
   const [showTrayIconEnabled, setShowTrayIconEnabled] = useState(true);
 
-  const [sidebarWidth, setSidebarWidth] = useState(320);
-  const isDragging = useRef(false);
-
+  // Listen for Settings menu item (Cmd+, handled by native menu)
   useEffect(() => {
-    const onMouseMove = (e: MouseEvent) => {
-      if (!isDragging.current) return;
-      const clamped = Math.min(500, Math.max(220, e.clientX));
-      setSidebarWidth(clamped);
-    };
-    const onMouseUp = () => {
-      isDragging.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
+    let unlisten: UnlistenFn | null = null;
+    void listen("menu-settings", () => {
+      setView((v) => (v === "settings" ? "worktrees" : "settings"));
+    }).then((fn) => {
+      unlisten = fn;
+    });
     return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
+      if (unlisten) unlisten();
     };
-  }, []);
-
-  // Cmd+, toggles settings
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.metaKey && e.key === ",") {
-        e.preventDefault();
-        setView((v) => (v === "settings" ? "detail" : "settings"));
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   const selectedWorktree = repo?.worktrees.find((w) => w.id === selectedWorktreeId) ?? null;
@@ -206,8 +184,11 @@ export default function App() {
         if (data.lastActiveRepo) {
           setRepoInput(data.lastActiveRepo);
           await loadRepoInner(data.lastActiveRepo);
-        } else if (data.recentRepos[0]) {
-          setRepoInput(data.recentRepos[0]);
+        } else {
+          setView("repository");
+          if (data.recentRepos[0]) {
+            setRepoInput(data.recentRepos[0]);
+          }
         }
       } catch (reason) {
         setError(String(reason));
@@ -291,6 +272,7 @@ export default function App() {
       const snapshot = await openRepo(trimmed);
       setRepo(snapshot);
       setRepoInput(snapshot.repoRoot);
+      setView((v) => v === "repository" ? "worktrees" : v);
       appendLogs([{ level: "success", message: t.logLoaded(snapshot.repoRoot) }], snapshot.repoRoot);
     } catch (reason) {
       setError(String(reason));
@@ -424,11 +406,6 @@ export default function App() {
     } finally {
       setIsBusy(false);
     }
-  }
-
-  function handleOpenHooksModal() {
-    if (!repo) return;
-    setShowHooksModal(true);
   }
 
   async function handleCreateWorktree() {
@@ -587,76 +564,26 @@ export default function App() {
   const hookCount = Object.keys(hooksMap).filter((e) => (hooksMap[e as HookEvent]?.length ?? 0) > 0).length;
 
   return (
-    <div className="shell" style={{ gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr)` }}>
-      {/* Sidebar */}
-      <aside className="sidebar">
-        <div className="brand">
-          <img className="brand-mark" src={groveMark} alt="" aria-hidden="true" />
-          <h1>{t.brandName}</h1>
-          <LanguageSwitcher locale={locale} setLocale={setLocale} />
-        </div>
-
-        {/* Repo Picker */}
-        <div className="repo-picker">
-          <Input
-            value={repoInput}
-            onChange={(e) => setRepoInput(e.target.value)}
-            placeholder={t.repoPlaceholder}
-            onKeyDown={(e) => e.key === "Enter" && void loadRepo(repoInput)}
-            className="repo-picker-input"
-          />
-          <div className="repo-picker-actions">
-            <button className="primary-button" onClick={browseForRepo} disabled={isBusy}>
-              {t.chooseRepo}
-            </button>
+    <div className="shell">
+      {/* Top Navigation Bar */}
+      <nav className="topbar">
+        <div className="topbar-left">
+          <div className="topbar-brand">
+            <img className="brand-mark" src={groveMark} alt="" aria-hidden="true" />
+            <span>Git Grove</span>
           </div>
-          {bootstrapState.recentRepos.length > 0 && (
-            <RecentRepos
-              repos={bootstrapState.recentRepos}
-              isBusy={isBusy}
-              t={t}
-              onSelect={(item) => void loadRepo(item)}
-            />
-          )}
-          {repo && (
-            <div className="repo-info-line">
-              {t.worktreeCount(repo.worktrees.length)} · {t.baseBranch}{" "}
-              <code>{repo.mergedConfig.settings.defaultBaseBranch}</code>
-            </div>
-          )}
         </div>
-
-        <div className="sidebar-divider" />
-
-        {/* Worktree List */}
-        <div className="worktree-list">
-          {repo?.worktrees.map((wt) => (
-            <WorktreeListItem
-              key={wt.id}
-              worktree={wt}
-              active={wt.id === selectedWorktreeId}
-              t={t}
-              onSelect={() => {
-                setSelectedWorktreeId(wt.id);
-                setView("detail");
-              }}
-              onDelete={() => {
-                if (wt.isMain) return;
-                handleRemove(wt, wt.dirty || !!wt.lockedReason);
-              }}
-            />
-          ))}
-          {repo && repo.worktrees.length === 0 && (
-            <p className="empty-copy">{t.noWorktrees}</p>
-          )}
-        </div>
-
-        <div className="sidebar-divider" />
-
-        {/* Bottom buttons */}
-        <div className="sidebar-bottom">
+        {repo && (
+          <div className="topbar-path" title={repo.repoRoot}>
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, opacity: 0.55 }}>
+              <path d="M1.5 2.5h4.8l1.6 2H14.5v9h-13z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+            </svg>
+            <span className="topbar-path-text">{repo.repoRoot}</span>
+          </div>
+        )}
+        <div className="topbar-right">
           <button
-            className="primary-button sidebar-bottom-btn"
+            className="topbar-new-btn"
             onClick={() => {
               setCreateForm(createInitialForm(repo ?? undefined));
               setShowCreateModal(true);
@@ -665,36 +592,199 @@ export default function App() {
           >
             + {t.newWorktree}
           </button>
-          {repo && (
-            <button className="ghost-button sidebar-bottom-btn" onClick={handleOpenHooksModal}>
-              🪝 {t.hooks} {hookCount > 0 ? `(${hookCount})` : ""}
-            </button>
-          )}
-          <div className="sidebar-bottom-settings">
-            <button
-              className="settings-icon-button"
-              onClick={() => setView((v) => (v === "settings" ? "detail" : "settings"))}
-              title={`${t.settings} ⌘,`}
-            >
-              ⚙
-            </button>
-          </div>
         </div>
-        <div
-          className="sidebar-resize-handle"
-          onMouseDown={() => {
-            isDragging.current = true;
-            document.body.style.cursor = "col-resize";
-            document.body.style.userSelect = "none";
-          }}
-        />
-      </aside>
+      </nav>
 
-      {/* Main Panel */}
-      <main className="main">
+      <div className="body">
+        {/* Sidebar Navigation */}
+        <aside className="sidebar">
+          <button
+            className={`sidebar-tab${view === "repository" ? " active" : ""}`}
+            onClick={() => setView("repository")}
+          >
+            <svg className="sidebar-tab-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.3"/>
+              <path d="M5.5 6h5M5.5 8.5h3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+            </svg>
+            <span className="sidebar-tab-label">{t.tabRepository}</span>
+          </button>
+          <button
+            className={`sidebar-tab${view === "worktrees" ? " active" : ""}`}
+            onClick={() => setView("worktrees")}
+            disabled={!repo}
+          >
+            <svg className="sidebar-tab-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M8 2v12M8 5l-4 3M8 5l4 3M8 9l-3 2.5M8 9l3 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <span className="sidebar-tab-label">{t.tabWorktrees}</span>
+            {repo && <span className="sidebar-tab-badge">{repo.worktrees.length}</span>}
+          </button>
+          <button
+            className={`sidebar-tab${view === "hooks" ? " active" : ""}`}
+            onClick={() => setView("hooks")}
+            disabled={!repo}
+          >
+            <svg className="sidebar-tab-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M6 2v7a3 3 0 0 0 6 0V7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+              <path d="M12 8.5V7.5a1.5 1.5 0 0 0-3 0v1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+            </svg>
+            <span className="sidebar-tab-label">{t.hooks}</span>
+            {hookCount > 0 && <span className="sidebar-tab-badge">{hookCount}</span>}
+          </button>
+          <button
+            className={`sidebar-tab${view === "settings" ? " active" : ""}`}
+            onClick={() => setView("settings")}
+          >
+            <svg className="sidebar-tab-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M6.2 1.2L9.8 1.2 9.3 3.2 11.5 4.5 13 3.1 14.8 6.2 12.8 6.7 12.8 9.3 14.8 9.8 13 12.9 11.5 11.5 9.3 12.8 9.8 14.8 6.2 14.8 6.7 12.8 4.5 11.5 3.1 12.9 1.2 9.8 3.2 9.3 3.2 6.7 1.2 6.2 3.1 3.1 4.5 4.5 6.7 3.2Z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round"/>
+              <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.1"/>
+            </svg>
+            <span className="sidebar-tab-label">{t.settings}</span>
+          </button>
+        </aside>
+
+        {/* Main Content */}
+        <main className="main">
         {error && <div className="error-banner">{error}</div>}
 
-        {view === "settings" ? (
+        {view === "repository" && (
+          <div className="repo-view">
+            <section className="hero card">
+              <h2>{t.heroTitle}</h2>
+              <p>{t.heroDescription}</p>
+              <ul className="hero-points">
+                <li>{t.heroPoint1}</li>
+                <li>{t.heroPoint2}</li>
+                <li>{t.heroPoint3}</li>
+              </ul>
+            </section>
+            <section className="card stack">
+              <div className="repo-picker">
+                <Input
+                  value={repoInput}
+                  onChange={(e) => setRepoInput(e.target.value)}
+                  placeholder={t.repoPlaceholder}
+                  onKeyDown={(e) => e.key === "Enter" && void loadRepo(repoInput)}
+                  className="repo-picker-input"
+                />
+                <div className="repo-picker-actions">
+                  <button className="primary-button" onClick={browseForRepo} disabled={isBusy}>
+                    {t.chooseRepo}
+                  </button>
+                </div>
+                {bootstrapState.recentRepos.length > 0 && (
+                  <RecentRepos
+                    repos={bootstrapState.recentRepos}
+                    isBusy={isBusy}
+                    t={t}
+                    onSelect={(item) => void loadRepo(item)}
+                  />
+                )}
+                {repo && (
+                  <div className="repo-info-line">
+                    {t.worktreeCount(repo.worktrees.length)} · {t.baseBranch}{" "}
+                    <code>{repo.mergedConfig.settings.defaultBaseBranch}</code>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {view === "worktrees" && (
+          <>
+            {!repo ? (
+              <div className="repo-view">
+                <section className="hero card">
+                  <h2>{t.heroTitle}</h2>
+                  <p>{t.heroDescription}</p>
+                </section>
+              </div>
+            ) : (
+              <div className="worktrees-layout">
+                <div className="worktrees-panel">
+                  <div className="worktree-list">
+                    {repo.worktrees.map((wt) => (
+                      <WorktreeListItem
+                        key={wt.id}
+                        worktree={wt}
+                        active={wt.id === selectedWorktreeId}
+                        t={t}
+                        onSelect={() => setSelectedWorktreeId(wt.id)}
+                        onDelete={() => {
+                          if (wt.isMain) return;
+                          handleRemove(wt, wt.dirty || !!wt.lockedReason);
+                        }}
+                      />
+                    ))}
+                    {repo.worktrees.length === 0 && (
+                      <p className="empty-copy">{t.noWorktrees}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="worktrees-detail">
+                  {!selectedWorktree ? (
+                    <section className="hero card">
+                      <h2>{t.noWorktreeSelected}</h2>
+                      <p>{t.selectWorktreeHint}</p>
+                    </section>
+                  ) : (
+                    <WorktreeDetail
+                      repo={repo}
+                      worktree={selectedWorktree}
+                      launchers={launchers}
+                      isBusy={isBusy}
+                      t={t}
+                      onLaunch={(launcher) => void handleLaunch(selectedWorktree, launcher)}
+                      onRunHook={(event) => void runAction(() => runRepoHookEvent({ repoRoot: repo.repoRoot, event, worktreePath: selectedWorktree.path }))}
+                      showActionLog={showActionLog}
+                      onToggleActionLog={() => setShowActionLog((v) => !v)}
+                      logs={logs.filter((l) => l.repoRoot === repo.repoRoot)}
+                      onClearLogs={() => setLogs([])}
+                      defaultTerminal={defaultTerminalId}
+                      onSetDefaultTerminal={(id) => void handleSetDefaultTerminal(id)}
+                      onAddCustomLauncher={() => setCustomLauncherModal({ editing: null, repoRoot: repo.repoRoot })}
+                      onEditCustomLauncher={(launcher) => setCustomLauncherModal({ editing: launcher, repoRoot: repo.repoRoot })}
+                      onDeleteCustomLauncher={(launcher) => {
+                        void ask(t.confirmDeleteLauncher(launcher.name), { kind: "warning" }).then((yes) => {
+                          if (yes) void handleDeleteCustomLauncher(launcher.id, repo.repoRoot);
+                        });
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {view === "hooks" && (
+          <div className="hooks-view">
+            {!repo ? (
+              <section className="hero card">
+                <h2>{t.hooks}</h2>
+                <p>{t.heroDescription}</p>
+              </section>
+            ) : (
+              <HooksModal
+                hooks={hooksMap}
+                launchers={launchers}
+                repoRoot={repo.repoRoot}
+                onSave={async (nextHooks) => {
+                  const ok = await handleSaveHooks(nextHooks);
+                  return ok;
+                }}
+                onClose={() => setView("worktrees")}
+                isBusy={isBusy}
+                t={t}
+                availableShells={availableShells}
+                defaultShell={defaultShellPath}
+              />
+            )}
+          </div>
+        )}
+
+        {view === "settings" && (
           <SettingsPage
             toolStatuses={repo?.toolStatuses ?? bootstrapState.toolStatuses}
             logs={logs}
@@ -719,55 +809,12 @@ export default function App() {
               setShowTrayIconEnabled(enabled);
               setShowTrayIcon(enabled).catch(() => setShowTrayIconEnabled(!enabled));
             }}
+            locale={locale}
+            setLocale={setLocale}
           />
-        ) : (
-          <>
-            {!repo && (
-              <section className="hero card">
-                <h2>{t.heroTitle}</h2>
-                <p>{t.heroDescription}</p>
-                <ul className="hero-points">
-                  <li>{t.heroPoint1}</li>
-                  <li>{t.heroPoint2}</li>
-                  <li>{t.heroPoint3}</li>
-                </ul>
-              </section>
-            )}
-
-            {repo && !selectedWorktree && (
-              <section className="hero card">
-                <h2>{t.noWorktreeSelected}</h2>
-                <p>{t.selectWorktreeHint}</p>
-              </section>
-            )}
-
-            {repo && selectedWorktree && (
-              <WorktreeDetail
-                repo={repo}
-                worktree={selectedWorktree}
-                launchers={launchers}
-                isBusy={isBusy}
-                t={t}
-                onLaunch={(launcher) => void handleLaunch(selectedWorktree, launcher)}
-                onRunHook={(event) => void runAction(() => runRepoHookEvent({ repoRoot: repo.repoRoot, event, worktreePath: selectedWorktree.path }))}
-                showActionLog={showActionLog}
-                onToggleActionLog={() => setShowActionLog((v) => !v)}
-                logs={logs.filter((l) => l.repoRoot === repo.repoRoot)}
-                onClearLogs={() => setLogs([])}
-                defaultTerminal={defaultTerminalId}
-                onSetDefaultTerminal={(id) => void handleSetDefaultTerminal(id)}
-                onAddCustomLauncher={() => setCustomLauncherModal({ editing: null, repoRoot: repo.repoRoot })}
-                onEditCustomLauncher={(launcher) => setCustomLauncherModal({ editing: launcher, repoRoot: repo.repoRoot })}
-                onDeleteCustomLauncher={(launcher) => {
-                  void ask(t.confirmDeleteLauncher(launcher.name), { kind: "warning" }).then((yes) => {
-                    if (yes) void handleDeleteCustomLauncher(launcher.id, repo.repoRoot);
-                  });
-                }}
-              />
-            )}
-          </>
         )}
       </main>
+      </div>
 
       {deleteExecution && (
         <DeleteExecutionModal
@@ -775,25 +822,6 @@ export default function App() {
           t={t}
           onClose={handleCloseDeleteExecution}
           onConfirm={() => void confirmDeleteExecution()}
-        />
-      )}
-
-      {/* Hooks Modal */}
-      {showHooksModal && (
-        <HooksModal
-          hooks={hooksMap}
-          launchers={launchers}
-          repoRoot={repo!.repoRoot}
-          onSave={async (nextHooks) => {
-            const ok = await handleSaveHooks(nextHooks);
-            if (ok) setShowHooksModal(false);
-            return ok;
-          }}
-          onClose={() => setShowHooksModal(false)}
-          isBusy={isBusy}
-          t={t}
-          availableShells={availableShells}
-          defaultShell={defaultShellPath}
         />
       )}
 
@@ -846,8 +874,8 @@ function LanguageSwitcher({
 }) {
   return (
     <button
-      className="ghost-button"
-      style={{ marginLeft: "auto", fontSize: "0.75rem", padding: "4px 10px" }}
+      className="ghost-button btn-sm"
+      style={{ marginLeft: "auto" }}
       onClick={() => setLocale(locale === "zh-CN" ? "en" : "zh-CN")}
     >
       {locale === "zh-CN" ? "EN" : "中文"}
@@ -868,7 +896,7 @@ function RecentRepos({
   t: Translations;
   onSelect: (repo: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   return (
     <div className="recent-repos">
       <button className="recent-repos-toggle" onClick={() => setOpen((v) => !v)}>
@@ -930,7 +958,12 @@ function WorktreeListItem({
     >
       <div className="worktree-list-item-info">
         <div className="worktree-list-item-branch" title={worktree.branch ?? t.detachedShort}>
-          <span className="worktree-icon">{worktree.isMain ? "🪵" : "🌿"}</span>
+          <svg className="worktree-icon" width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <circle cx="5" cy="4" r="1.6" stroke="currentColor" strokeWidth="1.3"/>
+            <circle cx="5" cy="12" r="1.6" stroke="currentColor" strokeWidth="1.3"/>
+            <circle cx="11.5" cy="7" r="1.6" stroke="currentColor" strokeWidth="1.3"/>
+            <path d="M5 5.6v4.8M5 7.5c0-1.2.8-2.1 2-2.1h2.9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+          </svg>
           {worktree.branch ?? t.detachedShort}
         </div>
         <div
@@ -1264,7 +1297,7 @@ function WorktreeDetail({
         {showActionLog && (
           <div style={{ marginTop: 8 }}>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-              <button className="ghost-button" onClick={onClearLogs} style={{ fontSize: "0.78rem", padding: "4px 10px" }}>
+              <button className="ghost-button btn-sm" onClick={onClearLogs}>
                 {t.clear}
               </button>
             </div>
@@ -1308,6 +1341,8 @@ function SettingsPage({
   onRepoUpdate,
   showTrayIcon,
   onSetShowTrayIcon,
+  locale,
+  setLocale,
 }: {
   toolStatuses: ToolStatus[];
   logs: TaggedLog[];
@@ -1329,11 +1364,13 @@ function SettingsPage({
   onRepoUpdate: (repo: RepoSnapshot) => void;
   showTrayIcon: boolean;
   onSetShowTrayIcon: (enabled: boolean) => void;
+  locale: Locale;
+  setLocale: (l: Locale) => void;
 }) {
   const [showConfigEditor, setShowConfigEditor] = useState(false);
 
   return (
-    <>
+    <div className="settings-view">
       {/* Maintenance */}
       {repo && (
         <section className="card stack">
@@ -1375,8 +1412,8 @@ function SettingsPage({
         </div>
         <p className="empty-copy" style={{ marginBottom: 8 }}>{t.defaultTerminalDescription}</p>
         <Select
-          className="ghost-button"
-          style={{ textAlign: "left", padding: "6px 10px" }}
+          className="ghost-button btn-sm"
+          style={{ textAlign: "left" }}
           value={defaultTerminal}
           onChange={(e) => onSetDefaultTerminal(e.target.value)}
           disabled={isBusy}
@@ -1399,8 +1436,8 @@ function SettingsPage({
         </div>
         <p className="empty-copy" style={{ marginBottom: 8 }}>{t.defaultShellDescription}</p>
         <Select
-          className="ghost-button"
-          style={{ textAlign: "left", padding: "6px 10px" }}
+          className="ghost-button btn-sm"
+          style={{ textAlign: "left" }}
           value={defaultShell}
           onChange={(e) => onSetDefaultShell(e.target.value)}
           disabled={isBusy}
@@ -1411,6 +1448,14 @@ function SettingsPage({
             </option>
           ))}
         </Select>
+      </section>
+
+      {/* Language */}
+      <section className="card stack">
+        <div className="section-heading">
+          <span>{t.language}</span>
+          <LanguageSwitcher locale={locale} setLocale={setLocale} />
+        </div>
       </section>
 
       {/* Tray Icon */}
@@ -1436,8 +1481,8 @@ function SettingsPage({
             <span>{t.worktreeRootLabel}</span>
           </div>
           <Input
-            className="ghost-button"
-            style={{ textAlign: "left", padding: "6px 10px" }}
+            className="ghost-button btn-sm"
+            style={{ textAlign: "left" }}
             value={repo.mergedConfig.settings.worktreeRoot}
             onChange={(e) => {
               const newRoot = e.target.value;
@@ -1469,9 +1514,9 @@ function SettingsPage({
           <span>{t.allLogs}</span>
           {logs.length > 0 && <span className="subtle">{logs.length}</span>}
           <button
-            className="ghost-button"
+            className="ghost-button btn-sm"
             onClick={onClearLogs}
-            style={{ fontSize: "0.78rem", padding: "4px 10px", marginLeft: "auto" }}
+            style={{ marginLeft: "auto" }}
           >
             {t.clear}
           </button>
@@ -1517,7 +1562,7 @@ function SettingsPage({
           </div>
         )}
       </section>
-    </>
+    </div>
   );
 }
 

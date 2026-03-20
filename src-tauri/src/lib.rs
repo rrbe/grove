@@ -18,9 +18,9 @@ use std::sync::OnceLock;
 use store::{push_recent, SharedState};
 use tauri::{
     image::Image,
-    menu::{MenuBuilder, MenuItemBuilder},
+    menu::{AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder},
     tray::TrayIconBuilder,
-    AppHandle, Manager, State,
+    AppHandle, Emitter, Manager, State,
 };
 
 #[tauri::command]
@@ -398,6 +398,7 @@ pub fn run() {
             if tray_enabled {
                 setup_tray(app.handle());
             }
+            setup_menu(app.handle())?;
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -640,6 +641,69 @@ fn set_show_tray_icon(
             let _ = tray.set_visible(false);
         }
     }
+    Ok(())
+}
+
+fn setup_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let about = AboutMetadataBuilder::new()
+        .name(Some("Grove"))
+        .version(Some(env!("CARGO_PKG_VERSION")))
+        .build();
+
+    let settings_item = MenuItemBuilder::with_id("settings", "Settings…")
+        .accelerator("CmdOrCtrl+,")
+        .build(app)?;
+
+    let app_submenu = SubmenuBuilder::new(app, "Grove")
+        .about(Some(about))
+        .separator()
+        .item(&settings_item)
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
+        .build()?;
+
+    let edit_submenu = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+
+    let view_submenu = SubmenuBuilder::new(app, "View")
+        .fullscreen()
+        .build()?;
+
+    let window_submenu = SubmenuBuilder::new(app, "Window")
+        .minimize()
+        .separator()
+        .close_window()
+        .build()?;
+
+    let menu = MenuBuilder::new(app)
+        .item(&app_submenu)
+        .item(&edit_submenu)
+        .item(&view_submenu)
+        .item(&window_submenu)
+        .build()?;
+
+    app.set_menu(menu)?;
+
+    let handle = app.clone();
+    app.on_menu_event(move |_app, event| {
+        if event.id().as_ref() == "settings" {
+            let _ = handle.emit("menu-settings", ());
+        }
+    });
+
     Ok(())
 }
 

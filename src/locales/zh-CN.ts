@@ -152,4 +152,6 @@ export const zhCN: Translations = {
   confirmDeleteLauncher: (name) => `确定删除启动器「${name}」？`,
   customLauncherIconChar: "图标字符",
   save: "保存",
+  showTrayIconLabel: "菜单栏图标",
+  showTrayIconDescription: "开启后关闭窗口时 Grove 会留在菜单栏，点击图标可重新打开",
 };

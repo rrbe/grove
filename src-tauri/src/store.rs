@@ -35,6 +35,8 @@ pub struct AppStore {
     pub repo_configs: BTreeMap<String, ConfigFile>,
     #[serde(default)]
     pub custom_launchers: Vec<crate::models::LauncherProfile>,
+    #[serde(default)]
+    pub show_tray_icon: Option<bool>,
     #[serde(default, skip_serializing)]
     pub repo_worktree_roots: BTreeMap<String, String>,
 }

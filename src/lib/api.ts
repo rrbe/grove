@@ -122,3 +122,11 @@ export function getDefaultShell() {
 export function setDefaultShell(shell: string) {
   return invoke<void>("set_default_shell", { shell });
 }
+
+export function getShowTrayIcon() {
+  return invoke<boolean>("get_show_tray_icon");
+}
+
+export function setShowTrayIcon(enabled: boolean) {
+  return invoke<void>("set_show_tray_icon", { enabled });
+}

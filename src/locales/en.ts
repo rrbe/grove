@@ -154,4 +154,6 @@ export const en: Translations = {
   confirmDeleteLauncher: (name) => `Delete launcher "${name}"?`,
   customLauncherIconChar: "Icon character",
   save: "Save",
+  showTrayIconLabel: "Menu Bar Icon",
+  showTrayIconDescription: "When enabled, closing the window keeps Grove in the menu bar. Click the icon to reopen.",
 };

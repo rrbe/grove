@@ -150,4 +150,6 @@ export interface Translations {
   confirmDeleteLauncher: (name: string) => string;
   customLauncherIconChar: string;
   save: string;
+  showTrayIconLabel: string;
+  showTrayIconDescription: string;
 }

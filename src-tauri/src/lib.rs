@@ -16,7 +16,12 @@ use models::{
 };
 use std::sync::OnceLock;
 use store::{push_recent, SharedState};
-use tauri::{AppHandle, Manager, State};
+use tauri::{
+    image::Image,
+    menu::{MenuBuilder, MenuItemBuilder},
+    tray::TrayIconBuilder,
+    AppHandle, Manager, State,
+};
 
 #[tauri::command]
 fn bootstrap(state: State<'_, SharedState>) -> BootstrapResponse {
@@ -382,8 +387,34 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            app.manage(SharedState::load(app.handle())?);
+            let state = SharedState::load(app.handle())?;
+            let tray_enabled = state
+                .store
+                .lock()
+                .unwrap()
+                .show_tray_icon
+                .unwrap_or(true);
+            app.manage(state);
+            if tray_enabled {
+                setup_tray(app.handle());
+            }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let app = window.app_handle();
+                let state = app.state::<SharedState>();
+                let tray_enabled = state
+                    .store
+                    .lock()
+                    .unwrap()
+                    .show_tray_icon
+                    .unwrap_or(true);
+                if tray_enabled {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             bootstrap,
@@ -412,7 +443,9 @@ pub fn run() {
             detect_install_command,
             list_installed_apps,
             save_custom_launcher,
-            delete_custom_launcher
+            delete_custom_launcher,
+            get_show_tray_icon,
+            set_show_tray_icon
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -576,6 +609,94 @@ fn set_default_shell(
     let mut store = state.store.lock().unwrap();
     store.default_shell = Some(shell);
     store::persist(&app, &store)
+}
+
+#[tauri::command]
+fn get_show_tray_icon(state: State<'_, SharedState>) -> bool {
+    state
+        .store
+        .lock()
+        .unwrap()
+        .show_tray_icon
+        .unwrap_or(true)
+}
+
+#[tauri::command]
+fn set_show_tray_icon(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+    enabled: bool,
+) -> Result<(), String> {
+    {
+        let mut store = state.store.lock().unwrap();
+        store.show_tray_icon = Some(enabled);
+        store::persist(&app, &store)?;
+    }
+    if enabled {
+        setup_tray(&app);
+    } else {
+        // Remove existing tray icon
+        if let Some(tray) = app.tray_by_id("grove-tray") {
+            let _ = tray.set_visible(false);
+        }
+    }
+    Ok(())
+}
+
+fn setup_tray(app: &AppHandle) {
+    // If tray already exists, just make it visible
+    if let Some(existing) = app.tray_by_id("grove-tray") {
+        let _ = existing.set_visible(true);
+        return;
+    }
+
+    let icon = Image::from_bytes(include_bytes!("../icons/tray-icon.png"))
+        .expect("failed to load tray icon");
+
+    let show_item = MenuItemBuilder::with_id("show", "Show Grove").build(app).unwrap();
+    let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app).unwrap();
+    let menu = MenuBuilder::new(app)
+        .item(&show_item)
+        .separator()
+        .item(&quit_item)
+        .build()
+        .unwrap();
+
+    TrayIconBuilder::with_id("grove-tray")
+        .icon(icon)
+        .icon_as_template(true)
+        .menu(&menu)
+        .tooltip("Grove")
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "show" => {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
+            }
+            "quit" => {
+                app.exit(0);
+            }
+            _ => {}
+        })
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            if let tauri::tray::TrayIconEvent::Click {
+                button: tauri::tray::MouseButton::Left,
+                ..
+            } = event
+            {
+                let app = tray.app_handle();
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
+            }
+        })
+        .build(app)
+        .expect("failed to build tray icon");
 }
 
 fn detect_tools() -> Vec<models::ToolStatus> {

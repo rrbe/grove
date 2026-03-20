@@ -35,6 +35,8 @@ import {
   setDefaultShell,
   listAvailableShells,
   setWorktreeRoot,
+  getShowTrayIcon,
+  setShowTrayIcon,
 } from "./lib/api";
 import { useI18n, type Locale, type Translations } from "./lib/i18n";
 import { HooksModal, type HooksMap } from "./components/HooksModal";
@@ -153,6 +155,7 @@ export default function App() {
   const [defaultShellPath, setDefaultShellPath] = useState("/bin/bash");
   const [availableShells, setAvailableShells] = useState<ShellInfo[]>([]);
   const [customLauncherModal, setCustomLauncherModal] = useState<{ editing: LauncherProfile | null; repoRoot: string | null } | null>(null);
+  const [showTrayIconEnabled, setShowTrayIconEnabled] = useState(true);
 
   const [sidebarWidth, setSidebarWidth] = useState(320);
   const isDragging = useRef(false);
@@ -199,6 +202,7 @@ export default function App() {
         getDefaultTerminal().then(setDefaultTerminalId).catch(() => {});
         getDefaultShell().then(setDefaultShellPath).catch(() => {});
         listAvailableShells().then(setAvailableShells).catch(() => {});
+        getShowTrayIcon().then(setShowTrayIconEnabled).catch(() => {});
         if (data.lastActiveRepo) {
           setRepoInput(data.lastActiveRepo);
           await loadRepoInner(data.lastActiveRepo);
@@ -710,6 +714,11 @@ export default function App() {
             availableShells={availableShells}
             onSetDefaultShell={(s) => void handleSetDefaultShell(s)}
             onRepoUpdate={setRepo}
+            showTrayIcon={showTrayIconEnabled}
+            onSetShowTrayIcon={(enabled) => {
+              setShowTrayIconEnabled(enabled);
+              setShowTrayIcon(enabled).catch(() => setShowTrayIconEnabled(!enabled));
+            }}
           />
         ) : (
           <>
@@ -1297,6 +1306,8 @@ function SettingsPage({
   availableShells,
   onSetDefaultShell,
   onRepoUpdate,
+  showTrayIcon,
+  onSetShowTrayIcon,
 }: {
   toolStatuses: ToolStatus[];
   logs: TaggedLog[];
@@ -1316,6 +1327,8 @@ function SettingsPage({
   availableShells: ShellInfo[];
   onSetDefaultShell: (shell: string) => void;
   onRepoUpdate: (repo: RepoSnapshot) => void;
+  showTrayIcon: boolean;
+  onSetShowTrayIcon: (enabled: boolean) => void;
 }) {
   const [showConfigEditor, setShowConfigEditor] = useState(false);
 
@@ -1398,6 +1411,22 @@ function SettingsPage({
             </option>
           ))}
         </Select>
+      </section>
+
+      {/* Tray Icon */}
+      <section className="card stack">
+        <div className="section-heading">
+          <span>{t.showTrayIconLabel}</span>
+          <label className="toggle-switch" style={{ marginLeft: "auto" }}>
+            <input
+              type="checkbox"
+              checked={showTrayIcon}
+              onChange={(e) => onSetShowTrayIcon(e.target.checked)}
+            />
+            <span className="toggle-slider" />
+          </label>
+        </div>
+        <p className="empty-copy">{t.showTrayIconDescription}</p>
       </section>
 
       {/* Worktree Directory */}

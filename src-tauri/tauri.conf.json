@@ -14,6 +14,8 @@
       {
         "label": "main",
         "title": "Grove",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
         "width": 1460,
         "height": 960,
         "minWidth": 1200,

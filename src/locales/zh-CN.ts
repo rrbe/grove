@@ -107,7 +107,7 @@ export const zhCN: Translations = {
   heroPoint2: "可通过 Hooks 在创建或启动后自动预热工作树。",
   heroPoint3: "仓库自动化配置只保存在 Grove 本机存储里，不写入仓库。",
   noWorktreeSelected: "未选择工作树",
-  selectWorktreeHint: "从侧边栏选择一个工作树，或创建新的工作树。",
+  selectWorktreeHint: "选择一个工作树，或创建新的工作树。",
   logLoaded: (path) => `已加载 ${path}`,
   logSavedConfig: "已保存本机仓库配置。",
   logSavedHooks: "已保存 Hooks。",
@@ -154,4 +154,6 @@ export const zhCN: Translations = {
   save: "保存",
   showTrayIconLabel: "菜单栏图标",
   showTrayIconDescription: "开启后关闭窗口时 Grove 会留在菜单栏，点击图标可重新打开",
+  tabRepository: "仓库",
+  tabWorktrees: "工作树",
 };

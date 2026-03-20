@@ -152,4 +152,6 @@ export interface Translations {
   save: string;
   showTrayIconLabel: string;
   showTrayIconDescription: string;
+  tabRepository: string;
+  tabWorktrees: string;
 }

@@ -109,7 +109,7 @@ export const en: Translations = {
   heroPoint2: "Hooks can warm up each worktree after creation or launch.",
   heroPoint3: "Repo automation config is stored locally in Grove, not in the repo.",
   noWorktreeSelected: "No worktree selected",
-  selectWorktreeHint: "Select a worktree from the sidebar, or create a new one.",
+  selectWorktreeHint: "Select a worktree, or create a new one.",
   logLoaded: (path) => `Loaded ${path}`,
   logSavedConfig: "Saved local repo config.",
   logSavedHooks: "Saved hooks.",
@@ -156,4 +156,6 @@ export const en: Translations = {
   save: "Save",
   showTrayIconLabel: "Menu Bar Icon",
   showTrayIconDescription: "When enabled, closing the window keeps Grove in the menu bar. Click the icon to reopen.",
+  tabRepository: "Repository",
+  tabWorktrees: "Worktrees",
 };

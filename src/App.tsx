@@ -566,7 +566,7 @@ export default function App() {
   return (
     <div className="shell">
       {/* Top Navigation Bar */}
-      <nav className="topbar">
+      <nav className="topbar" data-tauri-drag-region>
         <div className="topbar-left">
           <div className="topbar-brand">
             <img className="brand-mark" src={groveMark} alt="" aria-hidden="true" />

@@ -537,6 +537,27 @@ pub fn run() {
                 }
 
                 rebuild_tray_menu(app);
+
+                // If a repo window was closed/hidden and no repo windows
+                // remain visible, auto-show the selector (main) window.
+                let closing_label = window.label();
+                if closing_label != "main" {
+                    let registry = state.window_registry.lock().unwrap();
+                    let has_visible = registry.values().any(|lbl| {
+                        lbl != closing_label
+                            && app
+                                .get_webview_window(lbl)
+                                .and_then(|w| w.is_visible().ok())
+                                .unwrap_or(false)
+                    });
+                    if !has_visible {
+                        if let Some(main_win) = app.get_webview_window("main") {
+                            let _ = main_win.show();
+                            let _ = main_win.unminimize();
+                            let _ = main_win.set_focus();
+                        }
+                    }
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![

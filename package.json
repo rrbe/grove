@@ -9,6 +9,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri:dev": "tauri dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "tauri:build": "tauri build --no-bundle",
     "tauri:dist": "tauri build --bundles app,dmg"
   },
@@ -25,6 +27,7 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "^5.0.0",
-    "vite": "^7.0.0"
+    "vite": "^7.0.0",
+    "vitest": "^4.1.0"
   }
 }

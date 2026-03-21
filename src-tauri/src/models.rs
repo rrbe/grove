@@ -80,22 +80,12 @@ pub struct ToolStatus {
     pub kind: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedConfig {
     pub settings: RepoSettings,
     pub launchers: Vec<LauncherProfile>,
     pub hooks: BTreeMap<HookEvent, Vec<HookStep>>,
-}
-
-impl Default for ResolvedConfig {
-    fn default() -> Self {
-        Self {
-            settings: RepoSettings::default(),
-            launchers: Vec::new(),
-            hooks: BTreeMap::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -238,6 +228,7 @@ pub struct CreateWorktreeInput {
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[allow(clippy::enum_variant_names)]
 pub enum CreateMode {
     NewBranch,
     ExistingBranch,

@@ -1074,7 +1074,7 @@ pub fn detect_install_command(dir: &Path) -> Option<String> {
                     .any(|e| {
                         e.path()
                             .extension()
-                            .map_or(false, |ext| ext == "csproj" || ext == "sln")
+                            .is_some_and(|ext| ext == "csproj" || ext == "sln")
                     })
             })
             .unwrap_or(false)

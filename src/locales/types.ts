@@ -154,4 +154,8 @@ export interface Translations {
   showTrayIconDescription: string;
   tabRepository: string;
   tabWorktrees: string;
+  themeLabel: string;
+  themeLight: string;
+  themeDark: string;
+  themeSystem: string;
 }

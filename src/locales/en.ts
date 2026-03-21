@@ -158,4 +158,8 @@ export const en: Translations = {
   showTrayIconDescription: "When enabled, closing the window keeps Grove in the menu bar. Click the icon to reopen.",
   tabRepository: "Repository",
   tabWorktrees: "Worktrees",
+  themeLabel: "Appearance",
+  themeLight: "Light",
+  themeDark: "Dark",
+  themeSystem: "System",
 };

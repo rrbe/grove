@@ -156,4 +156,8 @@ export const zhCN: Translations = {
   showTrayIconDescription: "开启后关闭窗口时 Grove 会留在菜单栏，点击图标可重新打开",
   tabRepository: "仓库",
   tabWorktrees: "工作树",
+  themeLabel: "外观",
+  themeLight: "浅色",
+  themeDark: "深色",
+  themeSystem: "系统",
 };

@@ -1,5 +1,6 @@
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { Input, Textarea, Select } from "./components/FormControls";
@@ -22,6 +23,7 @@ import {
   getFileDiff,
   launchRepoWorktree,
   openRepo,
+  openRepoWindow,
   previewRepoPrune,
   pruneRepoMetadata,
   runRepoHookEvent,
@@ -127,7 +129,7 @@ function buildDeleteFailureSession(
   };
 }
 
-export default function App() {
+export default function App({ repoPath }: { repoPath: string }) {
   const { t, locale, setLocale } = useI18n();
 
   const [bootstrapState, setBootstrapState] = useState<BootstrapResponse>({
@@ -182,15 +184,8 @@ export default function App() {
         getDefaultShell().then(setDefaultShellPath).catch(() => {});
         listAvailableShells().then(setAvailableShells).catch(() => {});
         getShowTrayIcon().then(setShowTrayIconEnabled).catch(() => {});
-        if (data.lastActiveRepo) {
-          setRepoInput(data.lastActiveRepo);
-          await loadRepoInner(data.lastActiveRepo);
-        } else {
-          setView("repository");
-          if (data.recentRepos[0]) {
-            setRepoInput(data.recentRepos[0]);
-          }
-        }
+        setRepoInput(repoPath);
+        await loadRepoInner(repoPath);
       } catch (reason) {
         setError(String(reason));
       }
@@ -273,7 +268,8 @@ export default function App() {
       const snapshot = await openRepo(trimmed);
       setRepo(snapshot);
       setRepoInput(snapshot.repoRoot);
-      setView((v) => v === "repository" ? "worktrees" : v);
+      const repoName = snapshot.repoRoot.split("/").pop() ?? snapshot.repoRoot;
+      void getCurrentWindow().setTitle(`Grove — ${repoName}`);
       appendLogs([{ level: "success", message: t.logLoaded(snapshot.repoRoot) }], snapshot.repoRoot);
     } catch (reason) {
       setError(String(reason));
@@ -282,8 +278,15 @@ export default function App() {
     }
   }
 
-  async function loadRepo(candidate: string) {
-    await loadRepoInner(candidate);
+  async function handleOpenRepoWindow(path: string) {
+    const trimmed = path.trim();
+    if (!trimmed) return;
+    setError(null);
+    try {
+      await openRepoWindow(trimmed);
+    } catch (reason) {
+      setError(String(reason));
+    }
   }
 
   async function browseForRepo() {
@@ -294,7 +297,7 @@ export default function App() {
     });
     if (typeof selected === "string") {
       setRepoInput(selected);
-      await loadRepo(selected);
+      await handleOpenRepoWindow(selected);
     }
   }
 
@@ -665,7 +668,7 @@ export default function App() {
                   value={repoInput}
                   onChange={(e) => setRepoInput(e.target.value)}
                   placeholder={t.repoPlaceholder}
-                  onKeyDown={(e) => e.key === "Enter" && void loadRepo(repoInput)}
+                  onKeyDown={(e) => e.key === "Enter" && void handleOpenRepoWindow(repoInput)}
                   className="repo-picker-input"
                 />
                 <div className="repo-picker-actions">
@@ -678,7 +681,7 @@ export default function App() {
                     repos={bootstrapState.recentRepos}
                     isBusy={isBusy}
                     t={t}
-                    onSelect={(item) => void loadRepo(item)}
+                    onSelect={(item) => void handleOpenRepoWindow(item)}
                   />
                 )}
                 {repo && (
@@ -697,8 +700,7 @@ export default function App() {
             {!repo ? (
               <div className="repo-view">
                 <section className="hero card">
-                  <h2>{t.heroTitle}</h2>
-                  <p>{t.heroDescription}</p>
+                  <h2>{t.loading}</h2>
                 </section>
               </div>
             ) : (

@@ -45,6 +45,7 @@ pub struct AppStore {
 
 pub struct SharedState {
     pub store: Mutex<AppStore>,
+    pub window_registry: Mutex<BTreeMap<String, String>>,
 }
 
 impl SharedState {
@@ -70,6 +71,7 @@ impl SharedState {
         }
         Ok(Self {
             store: Mutex::new(store),
+            window_registry: Mutex::new(BTreeMap::new()),
         })
     }
 }

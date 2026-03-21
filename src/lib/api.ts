@@ -138,3 +138,7 @@ export function getThemeMode() {
 export function setThemeMode(mode: string) {
   return invoke<void>("set_theme_mode", { mode });
 }
+
+export function openRepoWindow(repoPath: string) {
+  return invoke<void>("open_repo_window", { repoPath });
+}

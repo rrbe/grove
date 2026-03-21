@@ -372,6 +372,117 @@ async fn delete_custom_launcher(
     .map_err(|e| e.to_string())?
 }
 
+fn window_label_for_repo(repo_path: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let hash = Sha256::digest(repo_path.as_bytes());
+    let short: String = hash.iter().take(8).map(|b| format!("{b:02x}")).collect();
+    format!("repo-{short}")
+}
+
+#[tauri::command]
+async fn open_repo_window(app: AppHandle, repo_path: String) -> Result<(), String> {
+    let state = app.state::<SharedState>();
+
+    let resolved = git::resolve_repo_root(&repo_path)?;
+    let repo_root = resolved.to_string_lossy().to_string();
+
+    // Check registry for existing window
+    {
+        let mut registry = state.window_registry.lock().unwrap();
+        if let Some(label) = registry.get(&repo_root).cloned() {
+            if let Some(win) = app.get_webview_window(&label) {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+                return Ok(());
+            }
+            // Window destroyed externally — remove stale entry
+            registry.remove(&repo_root);
+        }
+    }
+
+    let window_count = {
+        let registry = state.window_registry.lock().unwrap();
+        registry.len() as f64
+    };
+
+    let label = window_label_for_repo(&repo_root);
+    let encoded = urlencoding::encode(&repo_root);
+    let url_str = format!("index.html?repo={encoded}");
+    let url = tauri::WebviewUrl::App(url_str.into());
+
+    let repo_name = std::path::Path::new(&repo_root)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&repo_root);
+
+    // Offset each new window by 30px so they don't stack on top of each other
+    let offset = window_count * 30.0;
+
+    tauri::WebviewWindowBuilder::new(&app, &label, url)
+        .title(format!("Grove — {repo_name}"))
+        .position(80.0 + offset, 60.0 + offset)
+        .inner_size(1460.0, 960.0)
+        .min_inner_size(1200.0, 780.0)
+        .resizable(true)
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .build()
+        .map_err(|e| format!("failed to create window: {e}"))?;
+
+    {
+        let mut registry = state.window_registry.lock().unwrap();
+        registry.insert(repo_root.clone(), label);
+    }
+
+    {
+        let mut store = state.store.lock().unwrap();
+        push_recent(&mut store, &repo_root);
+        store.last_active_repo = Some(repo_root);
+        let _ = store::persist(&app, &store);
+    }
+
+    rebuild_tray_menu(&app);
+    Ok(())
+}
+
+fn rebuild_tray_menu(app: &AppHandle) {
+    let tray = match app.tray_by_id("grove-tray") {
+        Some(t) => t,
+        None => return,
+    };
+
+    let state = app.state::<SharedState>();
+    let registry = state.window_registry.lock().unwrap();
+
+    let mut builder = MenuBuilder::new(app);
+
+    for (repo_path, label) in registry.iter() {
+        let name = std::path::Path::new(repo_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(repo_path);
+        if let Ok(item) =
+            MenuItemBuilder::with_id(format!("tray-show-{label}"), name).build(app)
+        {
+            builder = builder.item(&item);
+        }
+    }
+    drop(registry);
+
+    builder = builder.separator();
+    if let Ok(open_item) = MenuItemBuilder::with_id("show", "Open Grove").build(app) {
+        builder = builder.item(&open_item);
+    }
+    if let Ok(quit_item) = MenuItemBuilder::with_id("quit", "Quit").build(app) {
+        builder = builder.item(&quit_item);
+    }
+
+    if let Ok(menu) = builder.build() {
+        let _ = tray.set_menu(Some(menu));
+    }
+}
+
 pub fn run() {
     // Fix PATH for packaged macOS apps. Apps launched from Finder/Dock inherit a
     // minimal launchd PATH (/usr/bin:/bin:/usr/sbin:/sbin) that excludes
@@ -411,9 +522,41 @@ pub fn run() {
                     .unwrap()
                     .show_tray_icon
                     .unwrap_or(true);
+
                 if tray_enabled {
                     api.prevent_close();
                     let _ = window.hide();
+                    // Window is still alive (hidden), keep it in registry
+                    // so tray menu can show/focus it and open_repo_window
+                    // won't try to create a duplicate.
+                } else {
+                    // Window is actually closing — remove from registry
+                    let label = window.label().to_string();
+                    let mut registry = state.window_registry.lock().unwrap();
+                    registry.retain(|_, v| v != &label);
+                }
+
+                rebuild_tray_menu(app);
+
+                // If a repo window was closed/hidden and no repo windows
+                // remain visible, auto-show the selector (main) window.
+                let closing_label = window.label();
+                if closing_label != "main" {
+                    let registry = state.window_registry.lock().unwrap();
+                    let has_visible = registry.values().any(|lbl| {
+                        lbl != closing_label
+                            && app
+                                .get_webview_window(lbl)
+                                .and_then(|w| w.is_visible().ok())
+                                .unwrap_or(false)
+                    });
+                    if !has_visible {
+                        if let Some(main_win) = app.get_webview_window("main") {
+                            let _ = main_win.show();
+                            let _ = main_win.unminimize();
+                            let _ = main_win.set_focus();
+                        }
+                    }
                 }
             }
         })
@@ -448,7 +591,8 @@ pub fn run() {
             get_show_tray_icon,
             set_show_tray_icon,
             get_theme_mode,
-            set_theme_mode
+            set_theme_mode,
+            open_repo_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -738,13 +882,15 @@ fn setup_tray(app: &AppHandle) {
     // If tray already exists, just make it visible
     if let Some(existing) = app.tray_by_id("grove-tray") {
         let _ = existing.set_visible(true);
+        rebuild_tray_menu(app);
         return;
     }
 
     let icon = Image::from_bytes(include_bytes!("../icons/tray-icon.png"))
         .expect("failed to load tray icon");
 
-    let show_item = MenuItemBuilder::with_id("show", "Show Grove").build(app).unwrap();
+    // Build a placeholder menu; rebuild_tray_menu will replace it immediately
+    let show_item = MenuItemBuilder::with_id("show", "Open Grove").build(app).unwrap();
     let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app).unwrap();
     let menu = MenuBuilder::new(app)
         .item(&show_item)
@@ -758,18 +904,23 @@ fn setup_tray(app: &AppHandle) {
         .icon_as_template(true)
         .menu(&menu)
         .tooltip("Grove")
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "show" => {
+        .on_menu_event(|app, event| {
+            let id = event.id().0.as_str();
+            if id == "show" {
                 if let Some(win) = app.get_webview_window("main") {
                     let _ = win.show();
                     let _ = win.unminimize();
                     let _ = win.set_focus();
                 }
-            }
-            "quit" => {
+            } else if id == "quit" {
                 app.exit(0);
+            } else if let Some(label) = id.strip_prefix("tray-show-") {
+                if let Some(win) = app.get_webview_window(label) {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
             }
-            _ => {}
         })
         .show_menu_on_left_click(false)
         .on_tray_icon_event(|tray, event| {
@@ -788,6 +939,8 @@ fn setup_tray(app: &AppHandle) {
         })
         .build(app)
         .expect("failed to build tray icon");
+
+    rebuild_tray_menu(app);
 }
 
 fn detect_tools() -> Vec<models::ToolStatus> {

@@ -2,6 +2,7 @@ mod actions;
 mod config;
 mod git;
 mod models;
+mod platform;
 mod store;
 
 use actions::{
@@ -14,7 +15,6 @@ use models::{
     LaunchWorktreeInput, RemoveWorktreeInput, RepoSnapshot, RunHookEventInput, SaveConfigInput,
     SaveCustomLauncherInput, SaveHooksInput, ShellInfo,
 };
-use std::sync::OnceLock;
 use store::{push_recent, SharedState};
 use tauri::{
     image::Image,
@@ -279,39 +279,9 @@ async fn detect_install_command(repo_root: String) -> Result<Option<String>, Str
 
 #[tauri::command]
 async fn list_installed_apps() -> Result<Vec<String>, String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        let output = std::process::Command::new("mdfind")
-            .args([
-                "kMDItemContentType=com.apple.application-bundle",
-                "-onlyin",
-                "/Applications",
-                "-onlyin",
-                &format!(
-                    "{}/Applications",
-                    std::env::var("HOME").unwrap_or_default()
-                ),
-            ])
-            .output()
-            .map_err(|e| format!("failed to run mdfind: {e}"))?;
-        if !output.status.success() {
-            return Ok(Vec::new());
-        }
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut names: Vec<String> = stdout
-            .lines()
-            .filter_map(|line| {
-                let path = std::path::Path::new(line.trim());
-                path.file_stem()
-                    .and_then(|s| s.to_str())
-                    .map(|s| s.to_string())
-            })
-            .collect();
-        names.sort_unstable_by_key(|a| a.to_lowercase());
-        names.dedup();
-        Ok(names)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(platform::list_installed_apps)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -419,14 +389,19 @@ async fn open_repo_window(app: AppHandle, repo_path: String) -> Result<(), Strin
     // Offset each new window by 30px so they don't stack on top of each other
     let offset = window_count * 30.0;
 
-    tauri::WebviewWindowBuilder::new(&app, &label, url)
+    let builder = tauri::WebviewWindowBuilder::new(&app, &label, url)
         .title(format!("Grove — {repo_name}"))
         .position(80.0 + offset, 60.0 + offset)
         .inner_size(1460.0, 960.0)
         .min_inner_size(1200.0, 780.0)
-        .resizable(true)
+        .resizable(true);
+
+    #[cfg(target_os = "macos")]
+    let builder = builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .hidden_title(true)
+        .hidden_title(true);
+
+    builder
         .build()
         .map_err(|e| format!("failed to create window: {e}"))?;
 
@@ -484,14 +459,14 @@ fn rebuild_tray_menu(app: &AppHandle) {
 }
 
 pub fn run() {
-    // Fix PATH for packaged macOS apps. Apps launched from Finder/Dock inherit a
-    // minimal launchd PATH (/usr/bin:/bin:/usr/sbin:/sbin) that excludes
-    // user-installed tools (Homebrew, nvm, pnpm, cargo, etc.). Resolve the full
-    // PATH from the user's login shell and apply it process-wide so ALL child
-    // processes (hooks, install commands, git) inherit it automatically.
+    // Fix PATH for packaged desktop apps. On macOS/Linux, apps launched from
+    // Finder/Dock/desktop inherit a minimal PATH that excludes user-installed
+    // tools (Homebrew, nvm, pnpm, cargo, etc.). Resolve the full PATH from
+    // the user's login shell and apply it process-wide so ALL child processes
+    // (hooks, install commands, git) inherit it automatically.
     #[cfg(not(target_os = "windows"))]
     unsafe {
-        std::env::set_var("PATH", get_user_shell_path());
+        std::env::set_var("PATH", platform::get_user_shell_path());
     }
 
     tauri::Builder::default()
@@ -634,15 +609,28 @@ fn get_default_terminal(state: State<'_, SharedState>) -> String {
     if let Some(ref id) = store.default_terminal {
         return id.clone();
     }
-    // Auto-detect: prefer ghostty > iterm2 > terminal
     drop(store);
     let tools = detect_tools();
-    for id in &["ghostty", "warp", "iterm2", "terminal"] {
+
+    #[cfg(target_os = "macos")]
+    let candidates = &["ghostty", "warp", "iterm2", "terminal"];
+    #[cfg(target_os = "windows")]
+    let candidates = &["windows-terminal", "powershell", "cmd"];
+    #[cfg(target_os = "linux")]
+    let candidates = &["kitty", "alacritty", "gnome-terminal", "terminal"];
+
+    for id in candidates {
         if tools.iter().any(|t| t.id == *id && t.available) {
             return id.to_string();
         }
     }
-    "terminal".into()
+
+    #[cfg(target_os = "macos")]
+    return "terminal".into();
+    #[cfg(target_os = "windows")]
+    return "cmd".into();
+    #[cfg(target_os = "linux")]
+    return "terminal".into();
 }
 
 #[tauri::command]
@@ -707,39 +695,15 @@ fn read_default_shell(state: &SharedState) -> String {
         .unwrap()
         .default_shell
         .clone()
-        .unwrap_or_else(|| "/bin/bash".to_string())
+        .unwrap_or_else(platform::default_shell)
 }
 
 #[tauri::command]
 fn list_available_shells() -> Vec<ShellInfo> {
-    let content = match std::fs::read_to_string("/etc/shells") {
-        Ok(c) => c,
-        Err(_) => return vec![ShellInfo { path: "/bin/bash".into(), label: "bash".into() }],
-    };
-    let mut shells = Vec::new();
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let path = std::path::Path::new(line);
-        if !path.exists() {
-            continue;
-        }
-        let label = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(line)
-            .to_string();
-        shells.push(ShellInfo {
-            path: line.to_string(),
-            label,
-        });
-    }
-    if shells.is_empty() {
-        shells.push(ShellInfo { path: "/bin/bash".into(), label: "bash".into() });
-    }
-    shells
+    platform::available_shells()
+        .into_iter()
+        .map(|(path, label)| ShellInfo { path, label })
+        .collect()
 }
 
 #[tauri::command]
@@ -825,6 +789,7 @@ fn setup_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .accelerator("CmdOrCtrl+,")
         .build(app)?;
 
+    #[cfg(target_os = "macos")]
     let app_submenu = SubmenuBuilder::new(app, "Grove")
         .about(Some(about))
         .separator()
@@ -835,6 +800,15 @@ fn setup_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .hide()
         .hide_others()
         .show_all()
+        .separator()
+        .quit()
+        .build()?;
+
+    #[cfg(not(target_os = "macos"))]
+    let app_submenu = SubmenuBuilder::new(app, "Grove")
+        .about(Some(about))
+        .separator()
+        .item(&settings_item)
         .separator()
         .quit()
         .build()?;
@@ -899,9 +873,8 @@ fn setup_tray(app: &AppHandle) {
         .build()
         .unwrap();
 
-    TrayIconBuilder::with_id("grove-tray")
+    let tray_builder = TrayIconBuilder::with_id("grove-tray")
         .icon(icon)
-        .icon_as_template(true)
         .menu(&menu)
         .tooltip("Grove")
         .on_menu_event(|app, event| {
@@ -922,7 +895,6 @@ fn setup_tray(app: &AppHandle) {
                 }
             }
         })
-        .show_menu_on_left_click(false)
         .on_tray_icon_event(|tray, event| {
             if let tauri::tray::TrayIconEvent::Click {
                 button: tauri::tray::MouseButton::Left,
@@ -936,7 +908,14 @@ fn setup_tray(app: &AppHandle) {
                     let _ = win.set_focus();
                 }
             }
-        })
+        });
+
+    #[cfg(target_os = "macos")]
+    let tray_builder = tray_builder
+        .icon_as_template(true)
+        .show_menu_on_left_click(false);
+
+    tray_builder
         .build(app)
         .expect("failed to build tray icon");
 
@@ -944,17 +923,58 @@ fn setup_tray(app: &AppHandle) {
 }
 
 fn detect_tools() -> Vec<models::ToolStatus> {
-    vec![
-        app_status("vscode", "VS Code", "Visual Studio Code"),
-        app_status("cursor", "Cursor", "Cursor"),
-        tool_status("terminal", "Terminal", true, None, "app"),
-        app_status("ghostty", "Ghostty", "Ghostty"),
-        app_status("iterm2", "iTerm2", "iTerm"),
-        app_status("warp", "Warp", "Warp"),
-        cli_status("claude", "Claude CLI"),
-        cli_status("codex", "Codex CLI"),
-        cli_status("gemini", "Gemini CLI"),
-    ]
+    let mut tools = Vec::new();
+
+    // IDE / editors — detected on all platforms
+    tools.push(app_status("vscode", "VS Code", "Visual Studio Code"));
+    tools.push(app_status("cursor", "Cursor", "Cursor"));
+
+    // Terminal emulators — platform-specific
+    #[cfg(target_os = "macos")]
+    {
+        tools.push(tool_status("terminal", "Terminal", true, None, "app"));
+        tools.push(app_status("ghostty", "Ghostty", "Ghostty"));
+        tools.push(app_status("iterm2", "iTerm2", "iTerm"));
+        tools.push(app_status("warp", "Warp", "Warp"));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        tools.push(tool_status(
+            "windows-terminal",
+            "Windows Terminal",
+            platform::detect_cli("wt.exe").is_some(),
+            None,
+            "app",
+        ));
+        tools.push(tool_status(
+            "powershell",
+            "PowerShell",
+            platform::detect_cli("pwsh.exe").is_some(),
+            None,
+            "app",
+        ));
+        tools.push(tool_status("cmd", "CMD", true, None, "app"));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        tools.push(tool_status("terminal", "Terminal", true, None, "app"));
+        for (id, label) in &[
+            ("kitty", "Kitty"),
+            ("alacritty", "Alacritty"),
+            ("gnome-terminal", "GNOME Terminal"),
+            ("konsole", "Konsole"),
+        ] {
+            let available = platform::detect_cli(id).is_some();
+            tools.push(tool_status(id, label, available, None, "app"));
+        }
+    }
+
+    // CLI tools — detected on all platforms
+    tools.push(cli_status("claude", "Claude CLI"));
+    tools.push(cli_status("codex", "Codex CLI"));
+    tools.push(cli_status("gemini", "Gemini CLI"));
+
+    tools
 }
 
 fn tool_status(
@@ -973,70 +993,18 @@ fn tool_status(
     }
 }
 
-/// Returns the full PATH as seen by the user's login shell.
-///
-/// macOS apps launched from Finder/Dock inherit a minimal PATH from launchd
-/// (`/usr/bin:/bin:/usr/sbin:/sbin`), which doesn't include paths added by
-/// the user's shell profile (e.g. homebrew, nvm, cargo, etc.).
-/// We resolve this once by spawning a login shell and printing $PATH.
-fn get_user_shell_path() -> &'static str {
-    static CACHED: OnceLock<String> = OnceLock::new();
-    CACHED.get_or_init(|| {
-        // Determine user's login shell (defaults to zsh on modern macOS)
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-
-        // -ilc: interactive login shell, then run a command
-        // This sources ~/.zshrc / ~/.bashrc / ~/.profile etc.
-        let output = std::process::Command::new(&shell)
-            .args(["-ilc", "echo __GROVE_PATH__${PATH}__GROVE_PATH__"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output();
-
-        if let Ok(out) = output {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            // Extract PATH between markers to avoid shell greeting noise
-            if let Some(start) = stdout.find("__GROVE_PATH__") {
-                let rest = &stdout[start + 14..];
-                if let Some(end) = rest.find("__GROVE_PATH__") {
-                    let path = rest[..end].trim();
-                    if !path.is_empty() {
-                        return path.to_string();
-                    }
-                }
-            }
-        }
-
-        // Fallback: current process PATH
-        std::env::var("PATH").unwrap_or_default()
-    })
-}
 
 fn cli_status(id: &str, label: &str) -> models::ToolStatus {
-    let output = std::process::Command::new("which")
-        .arg(id)
-        .output();
-    match output {
-        Ok(output) if output.status.success() => tool_status(
-            id,
-            label,
-            true,
-            Some(String::from_utf8_lossy(&output.stdout).trim().into()),
-            "cli",
-        ),
-        _ => tool_status(id, label, false, None, "cli"),
+    match platform::detect_cli(id) {
+        Some(location) => tool_status(id, label, true, Some(location), "cli"),
+        None => tool_status(id, label, false, None, "cli"),
     }
 }
 
 fn app_status(id: &str, label: &str, app_name: &str) -> models::ToolStatus {
-    let output = std::process::Command::new("open")
-        .arg("-Ra")
-        .arg(app_name)
-        .output();
-    match output {
-        Ok(output) if output.status.success() => {
-            tool_status(id, label, true, Some(app_name.into()), "app")
-        }
-        _ => tool_status(id, label, false, None, "app"),
+    if platform::detect_app(app_name) {
+        tool_status(id, label, true, Some(app_name.into()), "app")
+    } else {
+        tool_status(id, label, false, None, "app")
     }
 }

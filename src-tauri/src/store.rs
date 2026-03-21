@@ -77,8 +77,8 @@ impl SharedState {
 }
 
 pub fn grove_home() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
-    Ok(PathBuf::from(home).join(".grove"))
+    let home = crate::platform::home_dir()?;
+    Ok(home.join(".grove"))
 }
 
 pub fn store_path(_app: &AppHandle) -> Result<PathBuf, String> {

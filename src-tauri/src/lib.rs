@@ -663,6 +663,9 @@ fn set_theme_mode(
     state: State<'_, SharedState>,
     mode: String,
 ) -> Result<(), String> {
+    if !matches!(mode.as_str(), "light" | "dark" | "system") {
+        return Err(format!("invalid theme mode: {mode}"));
+    }
     let mut store = state.store.lock().unwrap();
     store.theme_mode = Some(mode);
     store::persist(&app, &store)

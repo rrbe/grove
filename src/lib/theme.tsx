@@ -27,16 +27,22 @@ const ThemeContext = createContext<ThemeContextValue>({
   setMode: () => {},
 });
 
+const VALID_MODES: ThemeMode[] = ["light", "dark", "system"];
+
+function parseMode(raw: string | null): ThemeMode {
+  return raw && VALID_MODES.includes(raw as ThemeMode) ? (raw as ThemeMode) : "system";
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>(() => {
-    return (localStorage.getItem("grove-theme") as ThemeMode) || "system";
+    return parseMode(localStorage.getItem("grove-theme"));
   });
   const [resolved, setResolved] = useState<ResolvedTheme>(() => resolveTheme(mode));
 
   // Load persisted theme from backend on mount
   useEffect(() => {
     getThemeMode().then((stored) => {
-      const m = (stored as ThemeMode) || "system";
+      const m = parseMode(stored);
       setModeState(m);
       localStorage.setItem("grove-theme", m);
       const r = resolveTheme(m);

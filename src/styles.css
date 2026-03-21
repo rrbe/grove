@@ -325,7 +325,7 @@ pre {
   width: 16px;
   height: 16px;
   flex: none;
-  filter: drop-shadow(0 1px 4px var(--border-default));
+  filter: drop-shadow(0 1px 4px var(--border-faint));
 }
 
 /* Sidebar Navigation */
@@ -482,7 +482,7 @@ pre {
   width: 34px;
   height: 34px;
   flex: none;
-  filter: drop-shadow(0 10px 22px var(--shadow-card));
+  filter: drop-shadow(0 10px 22px var(--ink-faint));
 }
 
 /* Worktrees master-detail layout */

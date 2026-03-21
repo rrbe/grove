@@ -1,6 +1,6 @@
 :root {
   color-scheme: light;
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-family: "Avenir Next", "Segoe UI", Roboto, "Noto Sans", Ubuntu, Cantarell, sans-serif;
   line-height: 1.5;
   font-weight: 400;
   font-synthesis: none;
@@ -23,8 +23,11 @@
   --radius-2xl: 24px;
   --radius-full: 999px;
 
+  /* ── Layout ── */
+  --topbar-inset-left: 16px;
+
   /* ── Font stacks ── */
-  --font-mono: "SF Mono", "JetBrains Mono", monospace;
+  --font-mono: "SF Mono", "Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
 
   /* ── Ink (text hierarchy) ── */
   --ink: #10212e;
@@ -291,7 +294,7 @@ pre {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px 0 78px; /* 78px left clears macOS traffic lights */
+  padding: 0 16px 0 var(--topbar-inset-left, 16px);
   background: var(--surface-topbar);
   backdrop-filter: blur(28px);
   -webkit-backdrop-filter: blur(28px);
@@ -565,7 +568,7 @@ pre {
 .hero h2,
 .overview h2 {
   margin: 0;
-  font-family: "Iowan Old Style", "Georgia", serif;
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
   font-weight: 700;
   letter-spacing: -0.03em;
 }
@@ -1241,7 +1244,7 @@ textarea {
 .detail-branch {
   margin: 0;
   min-width: 0;
-  font-family: "Iowan Old Style", "Georgia", serif;
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
   font-weight: 700;
   letter-spacing: -0.03em;
   font-size: 1.3rem;
@@ -2037,7 +2040,7 @@ textarea {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-family: var(--font-mono, "SF Mono", "Menlo", monospace);
+  font-family: var(--font-mono, monospace);
   font-size: var(--text-sm);
 }
 
@@ -2061,7 +2064,7 @@ textarea {
 .file-diff-content {
   margin: 0;
   padding: 8px 0;
-  font-family: var(--font-mono, "SF Mono", "Menlo", monospace);
+  font-family: var(--font-mono, monospace);
   font-size: var(--text-xs);
   line-height: 1.55;
   overflow-x: auto;

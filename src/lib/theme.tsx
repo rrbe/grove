@@ -39,6 +39,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   });
   const [resolved, setResolved] = useState<ResolvedTheme>(() => resolveTheme(mode));
 
+  // Set macOS-specific topbar inset for traffic lights
+  useEffect(() => {
+    const isMacOS =
+      navigator.userAgent.includes("Macintosh") ||
+      navigator.platform.startsWith("Mac");
+    if (isMacOS) {
+      document.documentElement.style.setProperty("--topbar-inset-left", "78px");
+    }
+  }, []);
+
   // Load persisted theme from backend on mount
   useEffect(() => {
     getThemeMode().then((stored) => {

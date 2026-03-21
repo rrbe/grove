@@ -622,7 +622,7 @@ export default function App({ repoPath }: { repoPath: string }) {
             {!repo ? (
               <div className="repo-view">
                 <section className="hero card">
-                  <h2>Loading...</h2>
+                  <h2>{t.loading}</h2>
                 </section>
               </div>
             ) : (

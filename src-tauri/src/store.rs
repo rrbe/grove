@@ -1,7 +1,7 @@
 use crate::models::ConfigFile;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     sync::Mutex,
@@ -45,7 +45,7 @@ pub struct AppStore {
 
 pub struct SharedState {
     pub store: Mutex<AppStore>,
-    pub window_registry: Mutex<HashMap<String, String>>,
+    pub window_registry: Mutex<BTreeMap<String, String>>,
 }
 
 impl SharedState {
@@ -71,7 +71,7 @@ impl SharedState {
         }
         Ok(Self {
             store: Mutex::new(store),
-            window_registry: Mutex::new(HashMap::new()),
+            window_registry: Mutex::new(BTreeMap::new()),
         })
     }
 }

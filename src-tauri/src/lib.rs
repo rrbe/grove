@@ -388,14 +388,16 @@ async fn open_repo_window(app: AppHandle, repo_path: String) -> Result<(), Strin
 
     // Check registry for existing window
     {
-        let registry = state.window_registry.lock().unwrap();
-        if let Some(label) = registry.get(&repo_root) {
-            if let Some(win) = app.get_webview_window(label) {
+        let mut registry = state.window_registry.lock().unwrap();
+        if let Some(label) = registry.get(&repo_root).cloned() {
+            if let Some(win) = app.get_webview_window(&label) {
                 let _ = win.show();
                 let _ = win.unminimize();
                 let _ = win.set_focus();
                 return Ok(());
             }
+            // Window destroyed externally — remove stale entry
+            registry.remove(&repo_root);
         }
     }
 
@@ -512,17 +514,17 @@ pub fn run() {
                     .show_tray_icon
                     .unwrap_or(true);
 
-                let label = window.label().to_string();
-
-                // Remove from registry
-                {
-                    let mut registry = state.window_registry.lock().unwrap();
-                    registry.retain(|_, v| v != &label);
-                }
-
                 if tray_enabled {
                     api.prevent_close();
                     let _ = window.hide();
+                    // Window is still alive (hidden), keep it in registry
+                    // so tray menu can show/focus it and open_repo_window
+                    // won't try to create a duplicate.
+                } else {
+                    // Window is actually closing — remove from registry
+                    let label = window.label().to_string();
+                    let mut registry = state.window_registry.lock().unwrap();
+                    registry.retain(|_, v| v != &label);
                 }
 
                 rebuild_tray_menu(app);

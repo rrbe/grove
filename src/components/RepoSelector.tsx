@@ -1,4 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 import { Input } from "./FormControls";
 import { bootstrap, openRepoWindow } from "../lib/api";
@@ -28,6 +29,7 @@ export default function RepoSelector() {
     setIsBusy(true);
     try {
       await openRepoWindow(trimmed);
+      void getCurrentWindow().hide();
     } catch (reason) {
       setError(String(reason));
     } finally {

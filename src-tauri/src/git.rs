@@ -460,4 +460,73 @@ mod tests {
         );
     }
 
+    #[test]
+    fn parses_porcelain_empty_input() {
+        let parsed = parse_worktree_porcelain(b"").expect("parse");
+        assert!(parsed.is_empty());
+    }
+
+    #[test]
+    fn parses_porcelain_locked_without_reason() {
+        let stdout = b"worktree /tmp/wt\0HEAD aaa\0locked\0\0";
+        let parsed = parse_worktree_porcelain(stdout).expect("parse");
+        assert_eq!(parsed.len(), 1);
+        // "locked" with no trailing text → parse_reason gets "" → None
+        assert!(parsed[0].locked_reason.is_none());
+    }
+
+    #[test]
+    fn parses_porcelain_detached_head() {
+        let stdout = b"worktree /tmp/detached\0HEAD abc123\0detached\0\0";
+        let parsed = parse_worktree_porcelain(stdout).expect("parse");
+        assert_eq!(parsed.len(), 1);
+        assert!(parsed[0].branch.is_none());
+        assert_eq!(parsed[0].head_sha, "abc123");
+    }
+
+    #[test]
+    fn parse_porcelain_status_empty() {
+        let files = parse_porcelain_status("");
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn parse_porcelain_status_modified_and_untracked() {
+        let output = " M src/main.rs\n?? new-file.txt";
+        let files = parse_porcelain_status(output);
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].path, "src/main.rs");
+        assert!(matches!(files[0].status, FileStatus::Modified));
+        assert_eq!(files[1].path, "new-file.txt");
+        assert!(matches!(files[1].status, FileStatus::Untracked));
+    }
+
+    #[test]
+    fn parse_porcelain_status_added_deleted() {
+        let output = "A  staged.rs\n D removed.rs";
+        let files = parse_porcelain_status(output);
+        assert_eq!(files.len(), 2);
+        assert!(matches!(files[0].status, FileStatus::Added));
+        assert!(matches!(files[1].status, FileStatus::Deleted));
+    }
+
+    #[test]
+    fn parse_porcelain_status_rename() {
+        let output = "R  old.rs -> new.rs";
+        let files = parse_porcelain_status(output);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "new.rs");
+        assert!(matches!(files[0].status, FileStatus::Renamed));
+    }
+
+    #[test]
+    fn parse_reason_empty_returns_none() {
+        assert!(parse_reason("").is_none());
+        assert!(parse_reason("  ").is_none());
+    }
+
+    #[test]
+    fn parse_reason_with_value() {
+        assert_eq!(parse_reason(" some reason "), Some("some reason".into()));
+    }
 }

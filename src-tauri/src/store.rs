@@ -115,3 +115,67 @@ pub fn last_opened(store: &AppStore, worktree_path: &Path) -> Option<String> {
     let path = worktree_path.to_string_lossy().to_string();
     store.last_opened.get(&path).cloned()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn push_recent_adds_to_front() {
+        let mut store = AppStore::default();
+        push_recent(&mut store, "/repo/a");
+        push_recent(&mut store, "/repo/b");
+        assert_eq!(store.recent_repos, vec!["/repo/b", "/repo/a"]);
+    }
+
+    #[test]
+    fn push_recent_deduplicates() {
+        let mut store = AppStore::default();
+        push_recent(&mut store, "/repo/a");
+        push_recent(&mut store, "/repo/b");
+        push_recent(&mut store, "/repo/a");
+        assert_eq!(store.recent_repos, vec!["/repo/a", "/repo/b"]);
+    }
+
+    #[test]
+    fn push_recent_truncates_to_eight() {
+        let mut store = AppStore::default();
+        for i in 0..10 {
+            push_recent(&mut store, &format!("/repo/{i}"));
+        }
+        assert_eq!(store.recent_repos.len(), 8);
+        assert_eq!(store.recent_repos[0], "/repo/9");
+    }
+
+    #[test]
+    fn touch_and_last_opened() {
+        let mut store = AppStore::default();
+        let path = Path::new("/tmp/wt");
+        assert!(last_opened(&store, path).is_none());
+        touch_worktree(&mut store, "/tmp/wt", "2025-01-01T00:00:00Z");
+        assert_eq!(
+            last_opened(&store, path),
+            Some("2025-01-01T00:00:00Z".into())
+        );
+    }
+
+    #[test]
+    fn app_store_serde_roundtrip() {
+        let mut store = AppStore::default();
+        push_recent(&mut store, "/repo/test");
+        store.default_terminal = Some("iterm".into());
+        let json = serde_json::to_string(&store).unwrap();
+        let restored: AppStore = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.recent_repos, vec!["/repo/test"]);
+        assert_eq!(restored.default_terminal.as_deref(), Some("iterm"));
+    }
+
+    #[test]
+    fn app_store_deserializes_with_missing_fields() {
+        let json = r#"{"recentRepos": ["/repo/x"]}"#;
+        let store: AppStore = serde_json::from_str(json).unwrap();
+        assert_eq!(store.recent_repos, vec!["/repo/x"]);
+        assert!(store.default_terminal.is_none());
+        assert!(store.pr_cache.is_empty());
+    }
+}

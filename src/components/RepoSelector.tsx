@@ -52,12 +52,7 @@ export default function RepoSelector() {
       <nav className="topbar">
         <div className="topbar-left">
           <div className="topbar-brand">
-            <img
-              className="brand-mark"
-              src={groveMark}
-              alt=""
-              aria-hidden="true"
-            />
+            <img className="brand-mark" src={groveMark} alt="" aria-hidden="true" />
             <span>Git Grove</span>
           </div>
         </div>
@@ -82,70 +77,39 @@ export default function RepoSelector() {
                   value={repoInput}
                   onChange={(e) => setRepoInput(e.target.value)}
                   placeholder={t.repoPlaceholder}
-                  onKeyDown={(e) =>
-                    e.key === "Enter" && void handleOpen(repoInput)
-                  }
+                  onKeyDown={(e) => e.key === "Enter" && void handleOpen(repoInput)}
                   className="repo-picker-input"
                 />
                 <div className="repo-picker-actions">
-                  <button
-                    className="primary-button"
-                    onClick={browseForRepo}
-                    disabled={isBusy}
-                  >
+                  <button className="primary-button" onClick={browseForRepo} disabled={isBusy}>
                     {t.chooseRepo}
                   </button>
                 </div>
                 {recentRepos.length > 0 && (
-                  <RecentReposList
-                    repos={recentRepos}
-                    isBusy={isBusy}
-                    onSelect={(item) => void handleOpen(item)}
-                  />
+                  <div className="recent-repos">
+                    <button className="recent-repos-toggle" onClick={() => {}}>
+                      <span>{t.recentRepos}</span>
+                      <span className="subtle">▾</span>
+                    </button>
+                    <div className="pill-list">
+                      {recentRepos.map((item) => (
+                        <button
+                          key={item}
+                          className="pill"
+                          onClick={() => void handleOpen(item)}
+                          disabled={isBusy}
+                        >
+                          {item.split("/").pop()}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             </section>
           </div>
         </main>
       </div>
-    </div>
-  );
-}
-
-function RecentReposList({
-  repos,
-  isBusy,
-  onSelect,
-}: {
-  repos: string[];
-  isBusy: boolean;
-  onSelect: (repo: string) => void;
-}) {
-  const { t } = useI18n();
-  const [isOpen, setIsOpen] = useState(true);
-  return (
-    <div className="recent-repos">
-      <button
-        className="recent-repos-toggle ghost-button btn-sm"
-        onClick={() => setIsOpen((v) => !v)}
-      >
-        {t.recentRepos} {isOpen ? "\u25BE" : "\u25B8"}
-      </button>
-      {isOpen && (
-        <ul className="recent-repos-list">
-          {repos.map((item) => (
-            <li key={item}>
-              <button
-                className="recent-repo-item"
-                onClick={() => onSelect(item)}
-                disabled={isBusy}
-              >
-                {item}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }

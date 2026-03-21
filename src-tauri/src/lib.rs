@@ -306,7 +306,7 @@ async fn list_installed_apps() -> Result<Vec<String>, String> {
                     .map(|s| s.to_string())
             })
             .collect();
-        names.sort_unstable_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        names.sort_unstable_by_key(|a| a.to_lowercase());
         names.dedup();
         Ok(names)
     })

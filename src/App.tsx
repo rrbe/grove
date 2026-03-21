@@ -1,4 +1,4 @@
-import { ask } from "@tauri-apps/plugin-dialog";
+import { ask, open } from "@tauri-apps/plugin-dialog";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -23,6 +23,7 @@ import {
   getFileDiff,
   launchRepoWorktree,
   openRepo,
+  openRepoWindow,
   previewRepoPrune,
   pruneRepoMetadata,
   runRepoHookEvent,
@@ -148,7 +149,7 @@ export default function App({ repoPath }: { repoPath: string }) {
   const [selectedWorktreeId, setSelectedWorktreeId] = useState<string | null>(null);
   const [deleteExecution, setDeleteExecution] = useState<DeleteExecutionState | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [view, setView] = useState<"worktrees" | "hooks" | "settings">("worktrees");
+  const [view, setView] = useState<"repository" | "worktrees" | "hooks" | "settings">("worktrees");
   const [showActionLog, setShowActionLog] = useState(false);
   const [defaultTerminalId, setDefaultTerminalId] = useState("terminal");
   const [toast, setToast] = useState<{ message: string; level: "success" | "error" } | null>(null);
@@ -274,6 +275,29 @@ export default function App({ repoPath }: { repoPath: string }) {
       setError(String(reason));
     } finally {
       setIsBusy(false);
+    }
+  }
+
+  async function handleOpenRepoWindow(path: string) {
+    const trimmed = path.trim();
+    if (!trimmed) return;
+    setError(null);
+    try {
+      await openRepoWindow(trimmed);
+    } catch (reason) {
+      setError(String(reason));
+    }
+  }
+
+  async function browseForRepo() {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: t.chooseRepo,
+    });
+    if (typeof selected === "string") {
+      setRepoInput(selected);
+      await handleOpenRepoWindow(selected);
     }
   }
 
@@ -579,6 +603,16 @@ export default function App({ repoPath }: { repoPath: string }) {
         {/* Sidebar Navigation */}
         <aside className="sidebar">
           <button
+            className={`sidebar-tab${view === "repository" ? " active" : ""}`}
+            onClick={() => setView("repository")}
+          >
+            <svg className="sidebar-tab-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.3"/>
+              <path d="M5.5 6h5M5.5 8.5h3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+            </svg>
+            <span className="sidebar-tab-label">{t.tabRepository}</span>
+          </button>
+          <button
             className={`sidebar-tab${view === "worktrees" ? " active" : ""}`}
             onClick={() => setView("worktrees")}
             disabled={!repo}
@@ -616,6 +650,50 @@ export default function App({ repoPath }: { repoPath: string }) {
         {/* Main Content */}
         <main className="main">
         {error && <div className="error-banner">{error}</div>}
+
+        {view === "repository" && (
+          <div className="repo-view">
+            <section className="hero card">
+              <h2>{t.heroTitle}</h2>
+              <p>{t.heroDescription}</p>
+              <ul className="hero-points">
+                <li>{t.heroPoint1}</li>
+                <li>{t.heroPoint2}</li>
+                <li>{t.heroPoint3}</li>
+              </ul>
+            </section>
+            <section className="card stack">
+              <div className="repo-picker">
+                <Input
+                  value={repoInput}
+                  onChange={(e) => setRepoInput(e.target.value)}
+                  placeholder={t.repoPlaceholder}
+                  onKeyDown={(e) => e.key === "Enter" && void handleOpenRepoWindow(repoInput)}
+                  className="repo-picker-input"
+                />
+                <div className="repo-picker-actions">
+                  <button className="primary-button" onClick={browseForRepo} disabled={isBusy}>
+                    {t.chooseRepo}
+                  </button>
+                </div>
+                {bootstrapState.recentRepos.length > 0 && (
+                  <RecentRepos
+                    repos={bootstrapState.recentRepos}
+                    isBusy={isBusy}
+                    t={t}
+                    onSelect={(item) => void handleOpenRepoWindow(item)}
+                  />
+                )}
+                {repo && (
+                  <div className="repo-info-line">
+                    {t.worktreeCount(repo.worktrees.length)} · {t.baseBranch}{" "}
+                    <code>{repo.mergedConfig.settings.defaultBaseBranch}</code>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
 
         {view === "worktrees" && (
           <>

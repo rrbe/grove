@@ -64,10 +64,7 @@ export default function RepoSelector() {
         <div className="topbar-right" />
       </nav>
       <div className="body">
-        <main
-          className="main"
-          style={{ display: "flex", justifyContent: "center" }}
-        >
+        <main className="main">
           {error && <div className="error-banner">{error}</div>}
           <div className="repo-view">
             <section className="hero card">

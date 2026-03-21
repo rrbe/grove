@@ -401,6 +401,11 @@ async fn open_repo_window(app: AppHandle, repo_path: String) -> Result<(), Strin
         }
     }
 
+    let window_count = {
+        let registry = state.window_registry.lock().unwrap();
+        registry.len() as f64
+    };
+
     let label = window_label_for_repo(&repo_root);
     let encoded = urlencoding::encode(&repo_root);
     let url_str = format!("index.html?repo={encoded}");
@@ -411,8 +416,12 @@ async fn open_repo_window(app: AppHandle, repo_path: String) -> Result<(), Strin
         .and_then(|n| n.to_str())
         .unwrap_or(&repo_root);
 
+    // Offset each new window by 30px so they don't stack on top of each other
+    let offset = window_count * 30.0;
+
     tauri::WebviewWindowBuilder::new(&app, &label, url)
         .title(format!("Grove — {repo_name}"))
+        .position(80.0 + offset, 60.0 + offset)
         .inner_size(1460.0, 960.0)
         .min_inner_size(1200.0, 780.0)
         .resizable(true)

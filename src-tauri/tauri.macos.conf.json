@@ -1,0 +1,16 @@
+{
+  "app": {
+    "windows": [
+      {
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ]
+  },
+  "bundle": {
+    "targets": ["dmg"],
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}

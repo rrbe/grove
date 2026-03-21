@@ -39,6 +39,7 @@ import {
   setShowTrayIcon,
 } from "./lib/api";
 import { useI18n, type Locale, type Translations } from "./lib/i18n";
+import { useTheme, type ThemeMode } from "./lib/theme";
 import { HooksModal, type HooksMap } from "./components/HooksModal";
 import { CreateWorktreeModal, type CreateFormState } from "./components/CreateWorktreeModal";
 import { DeleteExecutionModal, type DeleteExecutionState, type DeleteExecutionPhase } from "./components/DeleteExecutionModal";
@@ -863,6 +864,35 @@ export default function App() {
   );
 }
 
+/* ─── ThemeSwitcherCard ─── */
+
+function ThemeSwitcherCard({ t }: { t: Translations }) {
+  const { mode, setMode } = useTheme();
+  const options: { value: ThemeMode; label: string }[] = [
+    { value: "light", label: t.themeLight },
+    { value: "dark", label: t.themeDark },
+    { value: "system", label: t.themeSystem },
+  ];
+  return (
+    <section className="card stack">
+      <div className="section-heading">
+        <span>{t.themeLabel}</span>
+        <div className="theme-switcher">
+          {options.map((o) => (
+            <button
+              key={o.value}
+              className={mode === o.value ? "active" : ""}
+              onClick={() => setMode(o.value)}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ─── LanguageSwitcher ─── */
 
 function LanguageSwitcher({
@@ -1449,6 +1479,9 @@ function SettingsPage({
           ))}
         </Select>
       </section>
+
+      {/* Appearance */}
+      <ThemeSwitcherCard t={t} />
 
       {/* Language */}
       <section className="card stack">

@@ -1,6 +1,6 @@
 # Grove Design System
 
-A warm, organic design language for a macOS-native Git worktree manager. Light mode only, glass-morphism cards on a gradient canvas.
+A warm, organic design language for a macOS-native Git worktree manager. Supports light and dark modes with glass-morphism cards on a gradient canvas. All colors are defined as CSS custom properties and themed via `[data-theme="light"|"dark"]`.
 
 ---
 
@@ -401,7 +401,7 @@ Not a primary-button. Uses its own subtle ghost style to match the topbar densit
 1. **Use existing components**: `Input`, `Textarea`, `Select` from `FormControls.tsx`; `ModalShell` for modals; `Alert` for error banners.
 2. **One primary CTA** per visible form section.
 3. **Glass-morphism** (`backdrop-filter: blur(28px)`) only on topbar. Cards use semi-transparent white.
-4. **No dark mode** — light-only, warm-to-cool gradient background.
+4. **Dark mode supported** — Light / Dark / System modes via `[data-theme]` attribute. All colors use CSS custom properties (`var(--token)`). Never hardcode colors — always use existing tokens from `:root`.
 5. **Pill radius** (`999px`) for buttons and badges. `14px` for action-grid buttons and inputs. `20px+` for cards.
 6. **Toast placement**: Always bottom-right, always one at a time.
 7. **Modal dismiss**: Escape key + backdrop click. `canClose` prop controls both.

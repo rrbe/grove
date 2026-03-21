@@ -446,7 +446,9 @@ pub fn run() {
             save_custom_launcher,
             delete_custom_launcher,
             get_show_tray_icon,
-            set_show_tray_icon
+            set_show_tray_icon,
+            get_theme_mode,
+            set_theme_mode
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -642,6 +644,31 @@ fn set_show_tray_icon(
         }
     }
     Ok(())
+}
+
+#[tauri::command]
+fn get_theme_mode(state: State<'_, SharedState>) -> String {
+    state
+        .store
+        .lock()
+        .unwrap()
+        .theme_mode
+        .clone()
+        .unwrap_or_else(|| "system".to_string())
+}
+
+#[tauri::command]
+fn set_theme_mode(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+    mode: String,
+) -> Result<(), String> {
+    if !matches!(mode.as_str(), "light" | "dark" | "system") {
+        return Err(format!("invalid theme mode: {mode}"));
+    }
+    let mut store = state.store.lock().unwrap();
+    store.theme_mode = Some(mode);
+    store::persist(&app, &store)
 }
 
 fn setup_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {

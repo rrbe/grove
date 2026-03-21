@@ -46,7 +46,7 @@ All UI work **must** follow `DESIGN_SYSTEM.md`. Key rules:
 - **Modals**: Use `ModalShell` component. Radius `24px`, warm off-white surface. Dismiss via Escape + backdrop click.
 - **Spacing**: 2px base grid. Common stops: 6, 8, 10, 12, 14, 20, 24px. Follow existing patterns.
 - **Transitions**: Buttons `140ms ease`, list items `100ms ease`, slide-out `180ms ease-out`.
-- **No dark mode**. Light-only with warm-to-cool gradient background.
+- **Dark mode**: Supports Light / Dark / System. All colors use CSS custom properties (`var(--token)`). When adding new UI, always use existing tokens from `:root` — never hardcode colors. Verify new pages/components look correct in both light and dark mode.
 
 ## Notes
 

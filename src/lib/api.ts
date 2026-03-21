@@ -130,3 +130,11 @@ export function getShowTrayIcon() {
 export function setShowTrayIcon(enabled: boolean) {
   return invoke<void>("set_show_tray_icon", { enabled });
 }
+
+export function getThemeMode() {
+  return invoke<string>("get_theme_mode");
+}
+
+export function setThemeMode(mode: string) {
+  return invoke<void>("set_theme_mode", { mode });
+}

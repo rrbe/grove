@@ -460,11 +460,10 @@ fn rebuild_tray_menu(app: &AppHandle) {
 
 pub fn run() {
     // Fix PATH for packaged desktop apps. On macOS/Linux, apps launched from
-    // Finder/Dock/desktop inherit a minimal PATH that excludes user-installed
-    // tools (Homebrew, nvm, pnpm, cargo, etc.). Resolve the full PATH from
-    // the user's login shell and apply it process-wide so ALL child processes
-    // (hooks, install commands, git) inherit it automatically.
-    #[cfg(not(target_os = "windows"))]
+    // macOS/Linux apps launched from Finder/Dock/desktop inherit a minimal
+    // PATH that excludes user-installed tools. Resolve the full PATH from the
+    // user's login shell and apply it process-wide. On Windows this is a no-op
+    // (returns current PATH as-is).
     unsafe {
         std::env::set_var("PATH", platform::get_user_shell_path());
     }

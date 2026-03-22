@@ -56,6 +56,59 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
+      - name: Generate release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        id: notes
+        run: |
+          PREV_TAG=$(git tag --sort=-creatordate | grep '^v' | sed -n '2p')
+          if [ -z "$PREV_TAG" ]; then
+            RANGE=""
+          else
+            RANGE="$PREV_TAG..HEAD"
+          fi
+
+          FEATURES=""
+          FIXES=""
+          OTHER=""
+
+          while IFS= read -r line; do
+            PR_NUM=$(echo "$line" | grep -oE '#[0-9]+' | tail -1)
+            TITLE=$(echo "$line" | sed 's/ (#[0-9]*)$//')
+            ENTRY="* ${TITLE} ${PR_NUM}"
+
+            if echo "$TITLE" | grep -qiE '^feat'; then
+              FEATURES="${FEATURES}\n${ENTRY}"
+            elif echo "$TITLE" | grep -qiE '^fix'; then
+              FIXES="${FIXES}\n${ENTRY}"
+            else
+              OTHER="${OTHER}\n${ENTRY}"
+            fi
+          done < <(git log ${RANGE} --merges --oneline --format="%s" 2>/dev/null | grep '#' || \
+                   git log ${RANGE} --oneline --format="%s" 2>/dev/null | grep '#')
+
+          BODY=""
+          if [ -n "$FEATURES" ]; then
+            BODY="${BODY}## 🚀 Features\n${FEATURES}\n\n"
+          fi
+          if [ -n "$FIXES" ]; then
+            BODY="${BODY}## 🐛 Bug Fixes\n${FIXES}\n\n"
+          fi
+          if [ -n "$OTHER" ]; then
+            BODY="${BODY}## 🔧 Other Changes\n${OTHER}\n\n"
+          fi
+
+          if [ -n "$PREV_TAG" ]; then
+            BODY="${BODY}**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${{ github.ref_name }}"
+          fi
+
+          {
+            echo "body<<NOTES_EOF"
+            echo -e "$BODY"
+            echo "NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -63,7 +116,7 @@ jobs:
         with:
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
           releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Grove {0}', github.ref_name) || '' }}
-          releaseBody: 'See the assets below to download the app.'
+          releaseBody: ${{ steps.notes.outputs.body || 'See the assets below to download the app.' }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

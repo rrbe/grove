@@ -1510,13 +1510,24 @@ mod tests {
     fn run_command_streaming_keeps_successful_stderr_as_info() {
         let mut logs = Vec::new();
         let mut sink = VecLogWriter { logs: &mut logs };
-        let mut command = Command::new("/bin/zsh");
-        command.arg("-lc").arg("printf 'progress\\n' 1>&2");
+
+        #[cfg(not(target_os = "windows"))]
+        let mut command = {
+            let mut cmd = Command::new("sh");
+            cmd.arg("-c").arg("printf 'progress\\n' 1>&2");
+            cmd
+        };
+        #[cfg(target_os = "windows")]
+        let mut command = {
+            let mut cmd = Command::new("cmd");
+            cmd.args(["/C", "echo progress 1>&2"]);
+            cmd
+        };
 
         run_command_streaming(
             &mut sink,
             "test",
-            "printf 'progress\\n' 1>&2",
+            "echo progress 1>&2",
             "failed to run test command",
             command,
         )

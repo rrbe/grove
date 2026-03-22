@@ -10,7 +10,6 @@ use crate::{
     store::{persist, push_recent, touch_worktree, SharedState},
 };
 use chrono::Utc;
-use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs,
@@ -687,11 +686,32 @@ fn plan_launch_action(
         }
     }
     let command_preview = match launcher.kind {
-        LauncherKind::App => format!(
-            "open -a {} {}",
-            launcher.app_or_cmd,
-            rendered_args.join(" ")
-        ),
+        LauncherKind::App => {
+            #[cfg(target_os = "macos")]
+            {
+                format!(
+                    "open -a {} {}",
+                    launcher.app_or_cmd,
+                    rendered_args.join(" ")
+                )
+            }
+            #[cfg(target_os = "windows")]
+            {
+                format!(
+                    "start {} {}",
+                    launcher.app_or_cmd,
+                    rendered_args.join(" ")
+                )
+            }
+            #[cfg(target_os = "linux")]
+            {
+                format!(
+                    "{} {}",
+                    launcher.app_or_cmd,
+                    rendered_args.join(" ")
+                )
+            }
+        }
         LauncherKind::TerminalCli => format!("{} {}", launcher.app_or_cmd, rendered_args.join(" "))
             .trim()
             .to_string(),
@@ -937,24 +957,22 @@ impl ExecutionStep {
                 match launcher.kind {
                     LauncherKind::App => {
                         let app_name = launcher.app_or_cmd.as_str();
-                        if matches!(app_name, "Terminal" | "Ghostty" | "iTerm2" | "Warp") {
+                        // Check if this is a known terminal app
+                        #[cfg(target_os = "macos")]
+                        let is_terminal_app =
+                            matches!(app_name, "Terminal" | "Ghostty" | "iTerm2" | "Warp");
+                        #[cfg(not(target_os = "macos"))]
+                        let is_terminal_app = false;
+
+                        if is_terminal_app {
                             let worktree_path = &context.values["worktree_path"];
-                            open_terminal_app(app_name, worktree_path)?;
+                            crate::platform::open_terminal_app(app_name, worktree_path)?;
                         } else {
-                            let mut command = Command::new("open");
-                            command
-                                .arg("-a")
-                                .arg(&launcher.app_or_cmd)
-                                .args(&rendered_args);
-                            let output = command.current_dir(&cwd).output().map_err(|error| {
-                                format!("failed to launch {}: {error}", launcher.name)
-                            })?;
-                            if !output.status.success() {
-                                return Err(format!(
-                                    "{} failed with status {}",
-                                    launcher.name, output.status
-                                ));
-                            }
+                            crate::platform::open_app(
+                                &launcher.app_or_cmd,
+                                &rendered_args,
+                                &cwd,
+                            )?;
                         }
                     }
                     LauncherKind::TerminalCli => {
@@ -968,8 +986,14 @@ impl ExecutionStep {
                         open_terminal_at(term, &cwd, &rendered_cmd, &context)?;
                     }
                     LauncherKind::AppleScript => {
+                        if !crate::platform::supports_applescript() {
+                            return Err(
+                                "AppleScript launchers are only supported on macOS".into(),
+                            );
+                        }
                         let rendered_script = render_template(&launcher.app_or_cmd, &context);
-                        let osascript_cmd = format!("osascript -e {}", shell_quote(&rendered_script));
+                        let osascript_cmd =
+                            format!("osascript -e {}", shell_quote(&rendered_script));
                         let term = terminal_id.as_deref().unwrap_or("terminal");
                         open_terminal_at(term, &cwd, &osascript_cmd, &context)?;
                     }
@@ -1350,196 +1374,7 @@ fn open_terminal_at(
         script = format!("{env_exports}; {script}");
     }
 
-    match terminal_id {
-        "iterm2" => run_script_in_iterm2(&script),
-        "ghostty" => run_script_in_ghostty(&script),
-        "warp" => run_script_in_warp(&script),
-        _ => run_script_in_terminal_app(&script),
-    }
-}
-
-fn run_script_in_terminal_app(script: &str) -> Result<(), String> {
-    let output = Command::new("osascript")
-        .args([
-            "-e",
-            &format!(
-                "tell application \"Terminal\" to do script {}",
-                apple_quote(script)
-            ),
-            "-e",
-            "tell application \"Terminal\" to activate",
-        ])
-        .output()
-        .map_err(|error| format!("failed to open Terminal.app: {error}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "failed to open Terminal.app, osascript exited with {}",
-            output.status
-        ));
-    }
-    Ok(())
-}
-
-fn run_script_in_iterm2(script: &str) -> Result<(), String> {
-    let applescript = format!(
-        "tell application \"iTerm2\"\nactivate\nset newWindow to (create window with default profile)\ntell current session of newWindow\nwrite text {}\nend tell\nend tell",
-        apple_quote(script)
-    );
-    let output = Command::new("osascript")
-        .arg("-e")
-        .arg(&applescript)
-        .output()
-        .map_err(|e| format!("failed to open iTerm2: {e}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "iTerm2 osascript failed with status {}",
-            output.status
-        ));
-    }
-    Ok(())
-}
-
-fn run_script_in_ghostty(script: &str) -> Result<(), String> {
-    // Write script to temp file to avoid fragile keystroke simulation for long commands
-    use std::io::Write;
-    let hash = {
-        let mut hasher = Sha256::new();
-        hasher.update(script.as_bytes());
-        format!("{:x}", hasher.finalize())
-    };
-    let tmp_path = format!("/tmp/grove-{}.sh", &hash[..12]);
-    {
-        let mut file = fs::File::create(&tmp_path)
-            .map_err(|e| format!("failed to create temp script: {e}"))?;
-        file.write_all(script.as_bytes())
-            .map_err(|e| format!("failed to write temp script: {e}"))?;
-    }
-
-    let invoke_cmd = format!(
-        "bash {} ; rm -f {}",
-        shell_quote(&tmp_path),
-        shell_quote(&tmp_path)
-    );
-    let applescript = format!(
-        "tell application \"Ghostty\"\nactivate\ndelay 0.5\ntell application \"System Events\" to tell process \"Ghostty\" to keystroke \"t\" using command down\ndelay 0.3\ntell application \"System Events\" to tell process \"Ghostty\" to keystroke {}\nend tell",
-        apple_quote(&format!("{invoke_cmd}\n"))
-    );
-    let output = Command::new("osascript")
-        .arg("-e")
-        .arg(&applescript)
-        .output();
-    match output {
-        Ok(out) if out.status.success() => Ok(()),
-        Ok(out) => Err(format!(
-            "Ghostty osascript failed with status {}",
-            out.status
-        )),
-        Err(e) => Err(format!("failed to open Ghostty: {e}")),
-    }
-}
-
-fn run_script_in_warp(script: &str) -> Result<(), String> {
-    use std::io::Write;
-    let hash = {
-        let mut hasher = Sha256::new();
-        hasher.update(script.as_bytes());
-        format!("{:x}", hasher.finalize())
-    };
-    let tmp_path = format!("/tmp/grove-{}.sh", &hash[..12]);
-    {
-        let mut file = fs::File::create(&tmp_path)
-            .map_err(|e| format!("failed to create temp script: {e}"))?;
-        file.write_all(script.as_bytes())
-            .map_err(|e| format!("failed to write temp script: {e}"))?;
-    }
-
-    let invoke_cmd = format!(
-        "bash {} ; rm -f {}",
-        shell_quote(&tmp_path),
-        shell_quote(&tmp_path)
-    );
-    let applescript = format!(
-        "tell application \"Warp\"\nactivate\ndelay 0.5\ntell application \"System Events\" to tell process \"Warp\" to keystroke \"t\" using command down\ndelay 0.3\ntell application \"System Events\" to tell process \"Warp\" to keystroke {}\nend tell",
-        apple_quote(&format!("{invoke_cmd}\n"))
-    );
-    let output = Command::new("osascript")
-        .arg("-e")
-        .arg(&applescript)
-        .output();
-    match output {
-        Ok(out) if out.status.success() => Ok(()),
-        Ok(out) => Err(format!(
-            "Warp osascript failed with status {}",
-            out.status
-        )),
-        Err(e) => Err(format!("failed to open Warp: {e}")),
-    }
-}
-
-fn open_terminal_app(app_name: &str, cwd: &str) -> Result<(), String> {
-    let script = match app_name {
-        "Terminal" => {
-            format!(
-                "tell application \"Terminal\" to do script {}\ntell application \"Terminal\" to activate",
-                apple_quote(&format!("cd {}", shell_quote(cwd)))
-            )
-        }
-        "Ghostty" => {
-            // Try AppleScript first, fallback to open -a
-            let applescript = format!(
-                "tell application \"Ghostty\"\nactivate\ndelay 0.5\ntell application \"System Events\" to tell process \"Ghostty\" to keystroke \"t\" using command down\ndelay 0.3\ntell application \"System Events\" to tell process \"Ghostty\" to keystroke \"cd {} && clear\\n\"\nend tell",
-                shell_quote(cwd).replace('\'', "")
-            );
-            let output = Command::new("osascript")
-                .arg("-e")
-                .arg(&applescript)
-                .output();
-            match output {
-                Ok(out) if out.status.success() => return Ok(()),
-                _ => {
-                    // Fallback: open -a Ghostty
-                    let output = Command::new("open")
-                        .arg("-a")
-                        .arg("Ghostty")
-                        .arg(cwd)
-                        .output()
-                        .map_err(|e| format!("failed to open Ghostty: {e}"))?;
-                    if !output.status.success() {
-                        return Err(format!("Ghostty failed with status {}", output.status));
-                    }
-                    return Ok(());
-                }
-            }
-        }
-        "iTerm2" => {
-            format!(
-                "tell application \"iTerm2\"\nactivate\nset newWindow to (create window with default profile)\ntell current session of newWindow\nwrite text {}\nend tell\nend tell",
-                apple_quote(&format!("cd {}", shell_quote(cwd)))
-            )
-        }
-        "Warp" => {
-            let output = Command::new("open")
-                .arg("-a").arg("Warp").arg(cwd)
-                .output().map_err(|e| format!("failed to open Warp: {e}"))?;
-            if !output.status.success() {
-                return Err(format!("Warp failed with status {}", output.status));
-            }
-            return Ok(());
-        }
-        _ => return Err(format!("unsupported terminal app: {app_name}")),
-    };
-    let output = Command::new("osascript")
-        .arg("-e")
-        .arg(&script)
-        .output()
-        .map_err(|e| format!("failed to open {app_name}: {e}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "{app_name} osascript failed with status {}",
-            output.status
-        ));
-    }
-    Ok(())
+    crate::platform::open_terminal_at(terminal_id, cwd, &script)
 }
 
 fn build_envs(context: &TemplateContext) -> BTreeMap<String, String> {
@@ -1629,10 +1464,6 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
-fn apple_quote(value: &str) -> String {
-    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
-}
-
 fn info(message: String) -> RunLog {
     RunLog {
         level: LogLevel::Info,
@@ -1679,13 +1510,24 @@ mod tests {
     fn run_command_streaming_keeps_successful_stderr_as_info() {
         let mut logs = Vec::new();
         let mut sink = VecLogWriter { logs: &mut logs };
-        let mut command = Command::new("/bin/zsh");
-        command.arg("-lc").arg("printf 'progress\\n' 1>&2");
+
+        #[cfg(not(target_os = "windows"))]
+        let mut command = {
+            let mut cmd = Command::new("sh");
+            cmd.arg("-c").arg("printf 'progress\\n' 1>&2");
+            cmd
+        };
+        #[cfg(target_os = "windows")]
+        let mut command = {
+            let mut cmd = Command::new("cmd");
+            cmd.args(["/C", "echo progress 1>&2"]);
+            cmd
+        };
 
         run_command_streaming(
             &mut sink,
             "test",
-            "printf 'progress\\n' 1>&2",
+            "echo progress 1>&2",
             "failed to run test command",
             command,
         )

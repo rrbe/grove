@@ -90,9 +90,24 @@ Scripts also receive uppercase environment variables: `$REPO_ROOT`, `$WORKTREE_P
 
 Manually trigger any configured hook event from the "Re-run Hooks" section in the worktree detail panel.
 
+### CLI
+
+Grove provides a `grove` CLI command (like VS Code's `code`), following the `<noun> <verb>` pattern:
+
+```bash
+grove .                          # Open current repo in Grove GUI
+grove open [path]                # Open a repository in the GUI
+grove hook run <event>           # Run hooks for a given event
+grove hook list                  # List configured hooks
+grove worktree list              # List worktrees
+```
+
+Install the CLI via **Settings → CLI Command → Install CLI**, which creates a symlink at `/usr/local/bin/grove`. The `hook run` command auto-detects the repo root and worktree from the current directory.
+
 ### Other
 
 - **GitHub PR integration** — Auto-queries and caches associated Pull Requests via `gh` CLI
+- **Single instance** — Multiple `grove open` calls reuse the running app instance
 - **i18n** — Chinese (default) and English
 
 ## Stack

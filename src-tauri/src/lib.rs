@@ -1,4 +1,5 @@
 mod actions;
+pub mod cli;
 mod config;
 mod git;
 mod models;
@@ -44,7 +45,7 @@ async fn open_repo(app: AppHandle, repo_root: String) -> Result<RepoSnapshot, St
 }
 
 pub fn load_repo_snapshot(
-    app: &AppHandle,
+    _app: &AppHandle,
     state: &SharedState,
     repo_root: String,
 ) -> Result<RepoSnapshot, String> {
@@ -54,7 +55,7 @@ pub fn load_repo_snapshot(
     let stored_config = store.repo_configs.get(&repo_root_str).cloned();
     push_recent(&mut store, &repo_root_str);
     store.last_active_repo = Some(repo_root_str.clone());
-    store::persist(app, &store)?;
+    store::persist(&store)?;
     let loaded = config::load(&repo_root, stored_config.as_ref(), &store.custom_launchers);
     let worktrees = git::scan_worktrees(&repo_root, &store)?;
 
@@ -73,7 +74,7 @@ pub fn load_repo_snapshot(
             );
         }
     }
-    let _ = store::persist(app, &store);
+    let _ = store::persist(&store);
 
     let main_worktree_path = worktrees
         .iter()
@@ -109,7 +110,7 @@ async fn save_repo_config(
             } else {
                 store.repo_configs.remove(&repo_root_str);
             }
-            store::persist(&app, &store)?;
+            store::persist(&store)?;
         }
         load_repo_snapshot(&app, &state, repo_root_str)
     })
@@ -135,7 +136,7 @@ async fn save_repo_hooks(
             } else {
                 store.repo_configs.insert(repo_root_str.clone(), parsed);
             }
-            store::persist(&app, &store)?;
+            store::persist(&store)?;
         }
         load_repo_snapshot(&app, &state, repo_root_str)
     })
@@ -224,7 +225,7 @@ async fn launch_repo_worktree(
                 dt.as_deref(),
                 &ds,
             )?;
-            let _ = mark_worktree_opened(&app, &state, &input.worktree_path);
+            let _ = mark_worktree_opened(&state, &input.worktree_path);
             return Ok(response);
         }
         launch_worktree(&app, &state, input, dt.as_deref(), &ds)
@@ -304,7 +305,7 @@ async fn save_custom_launcher(
                 store.custom_launchers.push(launcher);
             }
         }
-        store::persist(&app, &store)?;
+        store::persist(&store)?;
         let repo_root_str = input.repo_root.unwrap_or_else(|| {
             store.last_active_repo.clone().unwrap_or_default()
         });
@@ -331,7 +332,7 @@ async fn delete_custom_launcher(
                 config.launchers.retain(|l| l.id != input.launcher_id);
             }
         }
-        store::persist(&app, &store)?;
+        store::persist(&store)?;
         let repo_root_str = input.repo_root.unwrap_or_else(|| {
             store.last_active_repo.clone().unwrap_or_default()
         });
@@ -406,7 +407,7 @@ async fn open_repo_window(app: AppHandle, repo_path: String) -> Result<(), Strin
         let mut store = state.store.lock().unwrap();
         push_recent(&mut store, &repo_root);
         store.last_active_repo = Some(repo_root);
-        let _ = store::persist(&app, &store);
+        let _ = store::persist(&store);
     }
 
     rebuild_tray_menu(&app);
@@ -450,6 +451,30 @@ fn rebuild_tray_menu(app: &AppHandle) {
     }
 }
 
+fn handle_open_repo_args(app: &AppHandle, args: &[String]) {
+    if let Some(pos) = args.iter().position(|a| a == "--open-repo") {
+        if let Some(repo_path) = args.get(pos + 1).cloned() {
+            let handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = open_repo_window(handle, repo_path).await;
+            });
+        }
+    }
+}
+
+pub fn should_run_cli() -> bool {
+    cli::should_run_cli()
+}
+
+pub fn cli_main() {
+    // Fix PATH for CLI mode too — the CLI binary may be a symlink to the app
+    // bundle which inherits minimal PATH.
+    unsafe {
+        std::env::set_var("PATH", platform::get_user_shell_path());
+    }
+    cli::main();
+}
+
 pub fn run() {
     // Fix PATH for packaged desktop apps. On macOS/Linux, apps launched from
     // macOS/Linux apps launched from Finder/Dock/desktop inherit a minimal
@@ -463,8 +488,21 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // A second instance was launched — handle its args in the running instance.
+            handle_open_repo_args(app, &args);
+
+            // Also bring the main window to front if no --open-repo arg was found.
+            if !args.iter().any(|a| a == "--open-repo") {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
+            }
+        }))
         .setup(|app| {
-            let state = SharedState::load(app.handle())?;
+            let state = SharedState::load()?;
             let tray_enabled = state
                 .store
                 .lock()
@@ -476,6 +514,11 @@ pub fn run() {
                 setup_tray(app.handle());
             }
             setup_menu(app.handle())?;
+
+            // Handle --open-repo <path> argument on first launch
+            let args: Vec<String> = std::env::args().collect();
+            handle_open_repo_args(app.handle(), &args);
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -558,7 +601,10 @@ pub fn run() {
             set_show_tray_icon,
             get_theme_mode,
             set_theme_mode,
-            open_repo_window
+            open_repo_window,
+            check_grove_cli_installed,
+            install_grove_cli,
+            uninstall_grove_cli
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -626,13 +672,12 @@ fn get_default_terminal(state: State<'_, SharedState>) -> String {
 
 #[tauri::command]
 fn set_default_terminal(
-    app: AppHandle,
     state: State<'_, SharedState>,
     terminal_id: String,
 ) -> Result<(), String> {
     let mut store = state.store.lock().unwrap();
     store.default_terminal = Some(terminal_id);
-    store::persist(&app, &store)
+    store::persist(&store)
 }
 
 #[tauri::command]
@@ -654,7 +699,7 @@ async fn set_repo_worktree_root(
             } else {
                 config.settings.worktree_root = Some(worktree_root);
             }
-            store::persist(&app, &store)?;
+            store::persist(&store)?;
         }
         load_repo_snapshot(&app, &state, repo_root_str)
     })
@@ -704,13 +749,12 @@ fn get_default_shell(state: State<'_, SharedState>) -> String {
 
 #[tauri::command]
 fn set_default_shell(
-    app: AppHandle,
     state: State<'_, SharedState>,
     shell: String,
 ) -> Result<(), String> {
     let mut store = state.store.lock().unwrap();
     store.default_shell = Some(shell);
-    store::persist(&app, &store)
+    store::persist(&store)
 }
 
 #[tauri::command]
@@ -732,7 +776,7 @@ fn set_show_tray_icon(
     {
         let mut store = state.store.lock().unwrap();
         store.show_tray_icon = Some(enabled);
-        store::persist(&app, &store)?;
+        store::persist(&store)?;
     }
     if enabled {
         setup_tray(&app);
@@ -758,7 +802,6 @@ fn get_theme_mode(state: State<'_, SharedState>) -> String {
 
 #[tauri::command]
 fn set_theme_mode(
-    app: AppHandle,
     state: State<'_, SharedState>,
     mode: String,
 ) -> Result<(), String> {
@@ -767,7 +810,23 @@ fn set_theme_mode(
     }
     let mut store = state.store.lock().unwrap();
     store.theme_mode = Some(mode);
-    store::persist(&app, &store)
+    store::persist(&store)
+}
+
+#[tauri::command]
+fn check_grove_cli_installed() -> bool {
+    let target = std::path::Path::new("/usr/local/bin/grove");
+    target.exists() && std::fs::read_link(target).is_ok()
+}
+
+#[tauri::command]
+fn install_grove_cli() -> Result<String, String> {
+    cli::cmd_install_cli_inner()
+}
+
+#[tauri::command]
+fn uninstall_grove_cli() -> Result<String, String> {
+    cli::cmd_uninstall_cli_inner()
 }
 
 fn setup_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {

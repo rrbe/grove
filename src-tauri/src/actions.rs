@@ -25,12 +25,12 @@ use std::{
 use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Clone)]
-struct TemplateContext {
-    values: BTreeMap<String, String>,
+pub struct TemplateContext {
+    pub values: BTreeMap<String, String>,
 }
 
 #[derive(Clone)]
-enum ExecutionStep {
+pub enum ExecutionStep {
     GitCreate {
         repo_root: PathBuf,
         mode: CreateMode,
@@ -247,6 +247,72 @@ pub fn run_hook_event(
     )
 }
 
+/// Run hooks for a given event without GUI dependencies.
+/// Used by the CLI to execute hooks directly, writing output to the provided sink.
+pub fn run_hooks_cli(
+    repo_root: &str,
+    event: HookEvent,
+    worktree_path: Option<&str>,
+    sink: &mut impl LogWriter,
+) -> Result<(), String> {
+    let repo_root = git::resolve_repo_root(repo_root)?;
+    let store = crate::store::load_store()?;
+    let state = SharedState {
+        store: std::sync::Mutex::new(store),
+        window_registry: std::sync::Mutex::new(BTreeMap::new()),
+    };
+    let loaded = load_repo_config(&state, &repo_root);
+    let default_shell = state
+        .store
+        .lock()
+        .unwrap()
+        .default_shell
+        .clone()
+        .unwrap_or_else(crate::platform::default_shell);
+    let default_terminal = state.store.lock().unwrap().default_terminal.clone();
+
+    let context = if let Some(wt_path) = worktree_path {
+        let store_guard = state.store.lock().unwrap();
+        let worktrees = git::scan_worktrees(&repo_root, &store_guard)?;
+        let worktree = find_worktree(&worktrees, wt_path)?.clone();
+        drop(store_guard);
+        build_context_from_worktree(&repo_root, &loaded, &worktree, false)
+    } else {
+        build_context(
+            &repo_root,
+            &repo_root,
+            None,
+            Some(loaded.merged.settings.default_base_branch.clone()),
+            git::resolve_head_sha(&repo_root, "HEAD")?,
+            true,
+            git::detect_default_remote(&repo_root).unwrap_or_else(|| "origin".into()),
+        )
+    };
+
+    let event_label = event.label().to_string();
+    let steps = plan_hooks(
+        &repo_root,
+        &loaded,
+        event,
+        &context,
+        default_terminal.as_deref(),
+        &default_shell,
+    )?;
+
+    if steps.is_empty() {
+        sink.push(RunLog {
+            level: LogLevel::Info,
+            message: format!("No hooks configured for event: {event_label}"),
+        });
+        return Ok(());
+    }
+
+    for step in steps {
+        step.run(sink)?;
+    }
+    Ok(())
+}
+
 pub fn launch_worktree(
     app: &AppHandle,
     state: &SharedState,
@@ -456,7 +522,7 @@ fn run_session_execution(
         let state = app.state::<SharedState>();
         let mut store = state.store.lock().unwrap();
         push_recent(&mut store, &repo_root.to_string_lossy());
-        persist(app, &store)?;
+        persist(&store)?;
     }
     let repo = {
         let state = app.state::<SharedState>();
@@ -519,7 +585,7 @@ fn fail_session(app: &AppHandle, session_id: &str, error: String) -> Result<(), 
     )
 }
 
-fn find_worktree<'a>(
+pub fn find_worktree<'a>(
     worktrees: &'a [WorktreeRecord],
     path: &str,
 ) -> Result<&'a WorktreeRecord, String> {
@@ -560,7 +626,7 @@ fn sanitize_branch(branch: &str) -> String {
         .collect()
 }
 
-fn load_repo_config(state: &SharedState, repo_root: &Path) -> LoadedConfig {
+pub fn load_repo_config(state: &SharedState, repo_root: &Path) -> LoadedConfig {
     let repo_root_key = repo_root.to_string_lossy().to_string();
     let store = state.store.lock().unwrap();
     let stored_config = store.repo_configs.get(&repo_root_key).cloned();
@@ -569,7 +635,7 @@ fn load_repo_config(state: &SharedState, repo_root: &Path) -> LoadedConfig {
     config::load(repo_root, stored_config.as_ref(), &custom_launchers)
 }
 
-fn plan_hooks(
+pub fn plan_hooks(
     repo_root: &Path,
     loaded: &LoadedConfig,
     event: HookEvent,
@@ -734,12 +800,12 @@ fn plan_launch_action(
     }])
 }
 
-trait LogWriter {
+pub trait LogWriter {
     fn push(&mut self, log: RunLog);
 }
 
-struct VecLogWriter<'a> {
-    logs: &'a mut Vec<RunLog>,
+pub struct VecLogWriter<'a> {
+    pub logs: &'a mut Vec<RunLog>,
 }
 
 impl LogWriter for VecLogWriter<'_> {
@@ -790,7 +856,7 @@ fn execute(
     {
         let mut store = state.store.lock().unwrap();
         push_recent(&mut store, &repo_root.to_string_lossy());
-        persist(app, &store)?;
+        persist(&store)?;
     }
     let repo = Some(crate::load_repo_snapshot(
         app,
@@ -805,7 +871,7 @@ fn execute(
 }
 
 impl ExecutionStep {
-    fn run(self, sink: &mut impl LogWriter) -> Result<(), String> {
+    pub fn run(self, sink: &mut impl LogWriter) -> Result<(), String> {
         match self {
             ExecutionStep::GitCreate {
                 repo_root,
@@ -1433,7 +1499,7 @@ fn render_template(template: &str, context: &TemplateContext) -> String {
     rendered
 }
 
-fn build_context(
+pub fn build_context(
     repo_root: &Path,
     worktree_path: &Path,
     branch: Option<String>,
@@ -1456,7 +1522,7 @@ fn build_context(
     TemplateContext { values }
 }
 
-fn build_context_from_worktree(
+pub fn build_context_from_worktree(
     repo_root: &Path,
     loaded: &LoadedConfig,
     worktree: &WorktreeRecord,
@@ -1489,13 +1555,12 @@ fn info(message: String) -> RunLog {
 }
 
 pub fn mark_worktree_opened(
-    app: &AppHandle,
     state: &SharedState,
     worktree_path: &str,
 ) -> Result<(), String> {
     let mut store = state.store.lock().unwrap();
     touch_worktree(&mut store, worktree_path, &Utc::now().to_rfc3339());
-    persist(app, &store)
+    persist(&store)
 }
 
 #[cfg(test)]

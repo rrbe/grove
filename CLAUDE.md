@@ -28,14 +28,17 @@ cd src-tauri && cargo clippy # lint Rust code
 - `config.rs` — parses/renders TOML config text for the in-app editor, merges config layers. Imports `git::detect_default_branch` for the base branch fallback.
 - `models.rs` — all serde structs shared between commands; camelCase-renamed for the JS bridge
 - `actions.rs` — create/remove/start/launch worktrees, run hooks, prune. Streams stdout/stderr as logs; stderr is logged as info unless the process exits non-zero.
-- `store.rs` — persists recent repos, PR cache, per-repo config and worktree root overrides, and default terminal as JSON to `~/.grove/store.json`
+- `store.rs` — persists recent repos, PR cache, per-repo config and worktree root overrides, and default terminal as JSON to `~/.grove/store.json`. All functions (`persist`, `load_store`, `store_path`) are Tauri-independent — no `AppHandle` required.
+- `cli.rs` — clap-based CLI (`grove open`, `grove hook run/list`, `grove worktree list`). The binary is dual-mode: CLI args → terminal mode, no args → GUI. Detected in `main.rs` before Tauri init.
 - `platform/` — cross-platform terminal launch abstraction (`open_terminal_at`, `open_terminal_app`) with per-OS implementations (macOS/Windows/Linux)
 
 **IPC pattern**: Rust structs use `#[serde(rename_all = "camelCase")]`. The frontend calls `invoke<T>("command_name", { input })` and receives camelCase JSON. When adding a new command: register in `lib.rs` `invoke_handler` macro → add TS wrapper in `api.ts` → add type in `types.ts`.
 
+**CLI pattern**: The single binary serves both GUI and CLI. `main.rs` checks `should_run_cli()` before initializing Tauri. CLI commands read `~/.grove/store.json` directly and reuse `git.rs`/`config.rs`/`actions.rs` logic. `grove open` forwards to the running instance via `tauri-plugin-single-instance`.
+
 **Config merging**: `builtin_config()` → auto-detect default branch from git → apply per-repo config from app store → apply per-repo worktree root from app store. Each layer overrides the previous. All config is stored in `~/.grove/store.json`, not in repo-level files.
 
-**Storage**: App data lives at `~/.grove/store.json`, NOT in Tauri's default app data dir. Per-repo worktree root settings are stored here too, keyed by repo path.
+**Storage**: App data lives at `~/.grove/store.json`, NOT in Tauri's default app data dir. Per-repo worktree root settings are stored here too, keyed by repo path. Storage functions are Tauri-independent so both GUI and CLI can use them.
 
 ## Design System
 

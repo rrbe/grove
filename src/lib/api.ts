@@ -142,3 +142,15 @@ export function setThemeMode(mode: string) {
 export function openRepoWindow(repoPath: string) {
   return invoke<void>("open_repo_window", { repoPath });
 }
+
+export function checkGroveCliInstalled() {
+  return invoke<boolean>("check_grove_cli_installed");
+}
+
+export function installGroveCli() {
+  return invoke<string>("install_grove_cli");
+}
+
+export function uninstallGroveCli() {
+  return invoke<string>("uninstall_grove_cli");
+}

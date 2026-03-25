@@ -43,6 +43,9 @@ import {
   setWorktreeRoot,
   getShowTrayIcon,
   setShowTrayIcon,
+  checkGroveCliInstalled,
+  installGroveCli,
+  uninstallGroveCli,
 } from "./lib/api";
 import { useI18n, type Locale, type Translations } from "./lib/i18n";
 import { useTheme, type ThemeMode } from "./lib/theme";
@@ -1408,6 +1411,36 @@ function SettingsPage({
   setLocale: (l: Locale) => void;
 }) {
   const [showConfigEditor, setShowConfigEditor] = useState(false);
+  const [cliInstalled, setCliInstalled] = useState(false);
+  const [cliLoading, setCliLoading] = useState(false);
+
+  useEffect(() => {
+    checkGroveCliInstalled().then(setCliInstalled).catch(() => {});
+  }, []);
+
+  const handleInstallCli = async () => {
+    setCliLoading(true);
+    try {
+      await installGroveCli();
+      setCliInstalled(true);
+    } catch {
+      // Error shown via toast or ignored
+    } finally {
+      setCliLoading(false);
+    }
+  };
+
+  const handleUninstallCli = async () => {
+    setCliLoading(true);
+    try {
+      await uninstallGroveCli();
+      setCliInstalled(false);
+    } catch {
+      // Error shown via toast or ignored
+    } finally {
+      setCliLoading(false);
+    }
+  };
 
   return (
     <div className="settings-view">
@@ -1515,6 +1548,33 @@ function SettingsPage({
           </label>
         </div>
         <p className="empty-copy">{t.showTrayIconDescription}</p>
+      </section>
+
+      {/* CLI Command */}
+      <section className="card stack">
+        <div className="section-heading">
+          <span>{t.cliCommandLabel}</span>
+          {cliInstalled ? (
+            <button
+              className="ghost-button"
+              onClick={() => void handleUninstallCli()}
+              disabled={cliLoading}
+              style={{ marginLeft: "auto" }}
+            >
+              {t.cliUninstall}
+            </button>
+          ) : (
+            <button
+              className="primary-button"
+              onClick={() => void handleInstallCli()}
+              disabled={cliLoading}
+              style={{ marginLeft: "auto" }}
+            >
+              {t.cliInstall}
+            </button>
+          )}
+        </div>
+        <p className="empty-copy">{t.cliDescription}</p>
       </section>
 
       {/* Worktree Directory */}

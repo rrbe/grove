@@ -69,6 +69,29 @@ pub fn builtin_config() -> ResolvedConfig {
 
 fn builtin_launchers() -> Vec<LauncherProfile> {
     vec![
+        // ── Editors ──
+        LauncherProfile {
+            id: "vscode".into(),
+            name: "VS Code".into(),
+            kind: LauncherKind::App,
+            app_or_cmd: "Visual Studio Code".into(),
+            args_template: vec!["{worktree_path}".into()],
+            open_in_terminal: false,
+            prompt_template: None,
+            is_custom: false,
+            icon_char: None,
+        },
+        LauncherProfile {
+            id: "cursor".into(),
+            name: "Cursor".into(),
+            kind: LauncherKind::App,
+            app_or_cmd: "Cursor".into(),
+            args_template: vec!["{worktree_path}".into()],
+            open_in_terminal: false,
+            prompt_template: None,
+            is_custom: false,
+            icon_char: None,
+        },
         // ── Terminals ──
         LauncherProfile {
             id: "terminal".into(),
@@ -141,29 +164,6 @@ fn builtin_launchers() -> Vec<LauncherProfile> {
             name: "Kitty".into(),
             kind: LauncherKind::App,
             app_or_cmd: "kitty".into(),
-            args_template: vec!["{worktree_path}".into()],
-            open_in_terminal: false,
-            prompt_template: None,
-            is_custom: false,
-            icon_char: None,
-        },
-        // ── Editors ──
-        LauncherProfile {
-            id: "vscode".into(),
-            name: "VS Code".into(),
-            kind: LauncherKind::App,
-            app_or_cmd: "Visual Studio Code".into(),
-            args_template: vec!["{worktree_path}".into()],
-            open_in_terminal: false,
-            prompt_template: None,
-            is_custom: false,
-            icon_char: None,
-        },
-        LauncherProfile {
-            id: "cursor".into(),
-            name: "Cursor".into(),
-            kind: LauncherKind::App,
-            app_or_cmd: "Cursor".into(),
             args_template: vec!["{worktree_path}".into()],
             open_in_terminal: false,
             prompt_template: None,

@@ -20,6 +20,30 @@ pub fn open_terminal_at(terminal_id: &str, _cwd: &Path, script: &str) -> Result<
         "iterm2" => run_script_in_iterm2(script),
         "ghostty" => run_script_via_keystroke("Ghostty", script),
         "warp" => run_script_via_keystroke("Warp", script),
+        "wezterm" => {
+            Command::new("wezterm")
+                .env("PATH", get_user_shell_path())
+                .args(["start", "--cwd", &_cwd.to_string_lossy(), "--", "bash", "-c", script])
+                .spawn()
+                .map_err(|e| format!("failed to open WezTerm: {e}"))?;
+            Ok(())
+        }
+        "alacritty" => {
+            Command::new("alacritty")
+                .env("PATH", get_user_shell_path())
+                .args(["--working-directory", &_cwd.to_string_lossy(), "-e", "bash", "-c", script])
+                .spawn()
+                .map_err(|e| format!("failed to open Alacritty: {e}"))?;
+            Ok(())
+        }
+        "kitty" => {
+            Command::new("kitty")
+                .env("PATH", get_user_shell_path())
+                .args(["--directory", &_cwd.to_string_lossy(), "bash", "-c", script])
+                .spawn()
+                .map_err(|e| format!("failed to open Kitty: {e}"))?;
+            Ok(())
+        }
         _ => run_script_in_terminal_app(script),
     }
 }
@@ -154,6 +178,30 @@ pub fn open_terminal_app(app_name: &str, cwd: &str) -> Result<(), String> {
             if !output.status.success() {
                 return Err(format!("Warp failed with status {}", output.status));
             }
+            return Ok(());
+        }
+        "WezTerm" => {
+            Command::new("wezterm")
+                .env("PATH", get_user_shell_path())
+                .args(["start", "--cwd", cwd])
+                .spawn()
+                .map_err(|e| format!("failed to open WezTerm: {e}"))?;
+            return Ok(());
+        }
+        "Alacritty" => {
+            Command::new("alacritty")
+                .env("PATH", get_user_shell_path())
+                .args(["--working-directory", cwd])
+                .spawn()
+                .map_err(|e| format!("failed to open Alacritty: {e}"))?;
+            return Ok(());
+        }
+        "kitty" => {
+            Command::new("kitty")
+                .env("PATH", get_user_shell_path())
+                .args(["--directory", cwd])
+                .spawn()
+                .map_err(|e| format!("failed to open kitty: {e}"))?;
             return Ok(());
         }
         _ => return Err(format!("unsupported terminal app: {app_name}")),

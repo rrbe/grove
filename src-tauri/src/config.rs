@@ -69,6 +69,7 @@ pub fn builtin_config() -> ResolvedConfig {
 
 fn builtin_launchers() -> Vec<LauncherProfile> {
     vec![
+        // ── Editors ──
         LauncherProfile {
             id: "vscode".into(),
             name: "VS Code".into(),
@@ -91,6 +92,7 @@ fn builtin_launchers() -> Vec<LauncherProfile> {
             is_custom: false,
             icon_char: None,
         },
+        // ── Terminals ──
         LauncherProfile {
             id: "terminal".into(),
             name: "Terminal".into(),
@@ -136,6 +138,40 @@ fn builtin_launchers() -> Vec<LauncherProfile> {
             icon_char: None,
         },
         LauncherProfile {
+            id: "wezterm".into(),
+            name: "WezTerm".into(),
+            kind: LauncherKind::App,
+            app_or_cmd: "WezTerm".into(),
+            args_template: vec!["{worktree_path}".into()],
+            open_in_terminal: false,
+            prompt_template: None,
+            is_custom: false,
+            icon_char: None,
+        },
+        LauncherProfile {
+            id: "alacritty".into(),
+            name: "Alacritty".into(),
+            kind: LauncherKind::App,
+            app_or_cmd: "Alacritty".into(),
+            args_template: vec!["{worktree_path}".into()],
+            open_in_terminal: false,
+            prompt_template: None,
+            is_custom: false,
+            icon_char: None,
+        },
+        LauncherProfile {
+            id: "kitty".into(),
+            name: "Kitty".into(),
+            kind: LauncherKind::App,
+            app_or_cmd: "kitty".into(),
+            args_template: vec!["{worktree_path}".into()],
+            open_in_terminal: false,
+            prompt_template: None,
+            is_custom: false,
+            icon_char: None,
+        },
+        // ── CLI agents ──
+        LauncherProfile {
             id: "claude".into(),
             name: "Claude CLI".into(),
             kind: LauncherKind::TerminalCli,
@@ -162,6 +198,17 @@ fn builtin_launchers() -> Vec<LauncherProfile> {
             name: "Gemini CLI".into(),
             kind: LauncherKind::TerminalCli,
             app_or_cmd: "gemini".into(),
+            args_template: vec![],
+            open_in_terminal: true,
+            prompt_template: None,
+            is_custom: false,
+            icon_char: None,
+        },
+        LauncherProfile {
+            id: "opencode".into(),
+            name: "OpenCode".into(),
+            kind: LauncherKind::TerminalCli,
+            app_or_cmd: "opencode".into(),
             args_template: vec![],
             open_in_terminal: true,
             prompt_template: None,

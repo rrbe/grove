@@ -1117,6 +1117,23 @@ textarea {
   border-color: rgba(1, 164, 199, 0.28);
 }
 
+.launcher-icon-shell[data-launcher-id="wezterm"] {
+  background: rgba(78, 62, 200, 0.12);
+}
+
+.launcher-icon-shell[data-launcher-id="alacritty"] {
+  background: rgba(244, 109, 1, 0.12);
+}
+
+.launcher-icon-shell[data-launcher-id="kitty"] {
+  background: rgba(120, 68, 33, 0.12);
+}
+
+.launcher-icon-shell[data-launcher-id="opencode"] {
+  background: #131010;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
 .launcher-icon {
   width: 20px;
   height: 20px;
@@ -1144,6 +1161,7 @@ textarea {
 .launcher-icon-shell[data-launcher-id="warp"] .launcher-icon {
   filter: brightness(0) invert(1);
 }
+
 
 .iterm2-glyph {
   display: inline-flex;

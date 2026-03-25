@@ -31,6 +31,20 @@ pub fn open_terminal_at(terminal_id: &str, cwd: &Path, script: &str) -> Result<(
                 .map_err(|e| format!("failed to open CMD: {e}"))?;
             Ok(())
         }
+        "wezterm" => {
+            Command::new("wezterm")
+                .args(["start", "--cwd", &cwd_str, "--", "cmd", "/K", script])
+                .spawn()
+                .map_err(|e| format!("failed to open WezTerm: {e}"))?;
+            Ok(())
+        }
+        "alacritty" => {
+            Command::new("alacritty")
+                .args(["--working-directory", &cwd_str, "-e", "cmd", "/K", script])
+                .spawn()
+                .map_err(|e| format!("failed to open Alacritty: {e}"))?;
+            Ok(())
+        }
         // "windows-terminal" or any other id defaults to Windows Terminal
         _ => {
             Command::new("wt.exe")
@@ -63,6 +77,20 @@ pub fn open_terminal_app(app_name: &str, cwd: &str) -> Result<(), String> {
                 .args(["/K", &format!("cd /d \"{cwd}\"")])
                 .spawn()
                 .map_err(|e| format!("failed to open CMD: {e}"))?;
+            Ok(())
+        }
+        "WezTerm" => {
+            Command::new("wezterm")
+                .args(["start", "--cwd", cwd])
+                .spawn()
+                .map_err(|e| format!("failed to open WezTerm: {e}"))?;
+            Ok(())
+        }
+        "Alacritty" => {
+            Command::new("alacritty")
+                .args(["--working-directory", cwd])
+                .spawn()
+                .map_err(|e| format!("failed to open Alacritty: {e}"))?;
             Ok(())
         }
         _ => Err(format!("unsupported terminal app on Windows: {app_name}")),

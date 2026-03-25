@@ -959,10 +959,27 @@ impl ExecutionStep {
                         let app_name = launcher.app_or_cmd.as_str();
                         // Check if this is a known terminal app
                         #[cfg(target_os = "macos")]
+                        let is_terminal_app = matches!(
+                            app_name,
+                            "Terminal"
+                                | "Ghostty"
+                                | "iTerm2"
+                                | "Warp"
+                                | "WezTerm"
+                                | "Alacritty"
+                                | "kitty"
+                        );
+                        #[cfg(target_os = "windows")]
                         let is_terminal_app =
-                            matches!(app_name, "Terminal" | "Ghostty" | "iTerm2" | "Warp");
-                        #[cfg(not(target_os = "macos"))]
-                        let is_terminal_app = false;
+                            matches!(app_name, "WezTerm" | "Alacritty");
+                        #[cfg(target_os = "linux")]
+                        let is_terminal_app = matches!(
+                            app_name,
+                            "Terminal"
+                                | "WezTerm"
+                                | "Alacritty"
+                                | "kitty"
+                        );
 
                         if is_terminal_app {
                             let worktree_path = &context.values["worktree_path"];

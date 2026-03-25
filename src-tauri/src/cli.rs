@@ -1,6 +1,6 @@
 use crate::{
     actions::{self, LogWriter},
-    git,
+    config, git,
     models::{HookEvent, LogLevel, RunLog},
     store,
 };
@@ -32,6 +32,20 @@ enum Commands {
         #[arg(default_value = ".")]
         path: String,
     },
+    /// Manage hooks
+    Hook {
+        #[command(subcommand)]
+        command: HookCommands,
+    },
+    /// Manage worktrees
+    Worktree {
+        #[command(subcommand)]
+        command: WorktreeCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum HookCommands {
     /// Run hooks for a given event
     Run {
         /// Hook event (pre-create, post-create, pre-launch, post-launch, pre-remove, post-remove)
@@ -40,6 +54,12 @@ enum Commands {
         #[arg(long)]
         worktree: Option<String>,
     },
+    /// List configured hooks for the current repository
+    List,
+}
+
+#[derive(Subcommand)]
+enum WorktreeCommands {
     /// List worktrees for the current repository
     List,
 }
@@ -57,8 +77,8 @@ impl LogWriter for StdioLogWriter {
 
 const CLI_SUBCOMMANDS: &[&str] = &[
     "open",
-    "run",
-    "list",
+    "hook",
+    "worktree",
     "help",
     "--help",
     "-h",
@@ -92,8 +112,13 @@ pub fn main() {
 
     let result = match cli.command {
         Some(Commands::Open { path }) => cmd_open(&path),
-        Some(Commands::Run { event, worktree }) => cmd_run(event, worktree.as_deref()),
-        Some(Commands::List) => cmd_list(),
+        Some(Commands::Hook { command }) => match command {
+            HookCommands::Run { event, worktree } => cmd_hook_run(event, worktree.as_deref()),
+            HookCommands::List => cmd_hook_list(),
+        },
+        Some(Commands::Worktree { command }) => match command {
+            WorktreeCommands::List => cmd_worktree_list(),
+        },
         None => {
             if let Some(path) = cli.path {
                 cmd_open(&path)
@@ -186,7 +211,7 @@ fn cmd_open(path: &str) -> Result<(), String> {
     }
 }
 
-fn cmd_run(event: HookEvent, worktree: Option<&str>) -> Result<(), String> {
+fn cmd_hook_run(event: HookEvent, worktree: Option<&str>) -> Result<(), String> {
     // Auto-detect repo root and worktree from cwd
     let cwd = std::env::current_dir()
         .map_err(|e| format!("cannot determine current directory: {e}"))?;
@@ -218,7 +243,49 @@ fn cmd_run(event: HookEvent, worktree: Option<&str>) -> Result<(), String> {
     )
 }
 
-fn cmd_list() -> Result<(), String> {
+fn cmd_hook_list() -> Result<(), String> {
+    let cwd = std::env::current_dir()
+        .map_err(|e| format!("cannot determine current directory: {e}"))?;
+    let cwd_str = cwd.to_string_lossy().to_string();
+    let repo_root = git::resolve_repo_root(&cwd_str)?;
+
+    let app_store = store::load_store()?;
+    let repo_root_str = repo_root.to_string_lossy().to_string();
+    let stored_config = app_store.repo_configs.get(&repo_root_str).cloned();
+    let loaded = config::load(&repo_root, stored_config.as_ref(), &app_store.custom_launchers);
+
+    let mut found = false;
+    for event in HookEvent::ALL {
+        if let Some(steps) = loaded.merged.hooks.get(event) {
+            if !steps.is_empty() {
+                found = true;
+                println!("{}:", event.label());
+                for (i, step) in steps.iter().enumerate() {
+                    let desc = match step.step_type {
+                        crate::models::HookStepType::Script => {
+                            step.run.as_deref().unwrap_or("(no command)")
+                        }
+                        crate::models::HookStepType::Install => {
+                            step.run.as_deref().unwrap_or("(auto-detect)")
+                        }
+                        crate::models::HookStepType::Launch => {
+                            step.launcher_id.as_deref().unwrap_or("(no launcher)")
+                        }
+                        crate::models::HookStepType::CopyFiles => "(copy files)",
+                    };
+                    println!("  {}. [{}] {}", i + 1, step.step_type.label(), desc);
+                }
+            }
+        }
+    }
+
+    if !found {
+        println!("No hooks configured for this repository.");
+    }
+    Ok(())
+}
+
+fn cmd_worktree_list() -> Result<(), String> {
     let cwd = std::env::current_dir()
         .map_err(|e| format!("cannot determine current directory: {e}"))?;
     let cwd_str = cwd.to_string_lossy().to_string();
@@ -260,7 +327,7 @@ pub fn cmd_install_cli_inner() -> Result<String, String> {
         }
         std::fs::remove_file(target).map_err(|e| {
             format!(
-                "cannot update existing symlink at {}: {e}\nTry: sudo grove install-cli",
+                "cannot update existing symlink at {}: {e}",
                 target.display()
             )
         })?;

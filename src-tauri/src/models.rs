@@ -197,6 +197,17 @@ pub enum HookStepType {
     CopyFiles,
 }
 
+impl HookStepType {
+    pub fn label(&self) -> &'static str {
+        match self {
+            HookStepType::Script => "script",
+            HookStepType::Launch => "launch",
+            HookStepType::Install => "install",
+            HookStepType::CopyFiles => "copy-files",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HookStep {

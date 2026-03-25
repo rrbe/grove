@@ -451,6 +451,17 @@ fn rebuild_tray_menu(app: &AppHandle) {
     }
 }
 
+fn handle_open_repo_args(app: &AppHandle, args: &[String]) {
+    if let Some(pos) = args.iter().position(|a| a == "--open-repo") {
+        if let Some(repo_path) = args.get(pos + 1).cloned() {
+            let handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = open_repo_window(handle, repo_path).await;
+            });
+        }
+    }
+}
+
 pub fn should_run_cli() -> bool {
     cli::should_run_cli()
 }
@@ -477,6 +488,19 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // A second instance was launched — handle its args in the running instance.
+            handle_open_repo_args(app, &args);
+
+            // Also bring the main window to front if no --open-repo arg was found.
+            if !args.iter().any(|a| a == "--open-repo") {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
+            }
+        }))
         .setup(|app| {
             let state = SharedState::load()?;
             let tray_enabled = state
@@ -491,16 +515,9 @@ pub fn run() {
             }
             setup_menu(app.handle())?;
 
-            // Handle --open-repo <path> argument from CLI's `grove open`
+            // Handle --open-repo <path> argument on first launch
             let args: Vec<String> = std::env::args().collect();
-            if let Some(pos) = args.iter().position(|a| a == "--open-repo") {
-                if let Some(repo_path) = args.get(pos + 1).cloned() {
-                    let handle = app.handle().clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _ = open_repo_window(handle, repo_path).await;
-                    });
-                }
-            }
+            handle_open_repo_args(app.handle(), &args);
 
             Ok(())
         })

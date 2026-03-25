@@ -1546,28 +1546,25 @@ function SettingsPage({
       <section className="card stack">
         <div className="section-heading">
           <span>{t.cliCommandLabel}</span>
-          <div className="overview-actions">
-            {cliInstalled ? (
-              <>
-                <span style={{ fontSize: 13, opacity: 0.6 }}>{t.cliInstalled}</span>
-                <button
-                  className="ghost-button"
-                  onClick={() => void handleUninstallCli()}
-                  disabled={cliLoading}
-                >
-                  {t.cliUninstall}
-                </button>
-              </>
-            ) : (
-              <button
-                className="primary-button"
-                onClick={() => void handleInstallCli()}
-                disabled={cliLoading}
-              >
-                {t.cliInstall}
-              </button>
-            )}
-          </div>
+          {cliInstalled ? (
+            <button
+              className="ghost-button"
+              onClick={() => void handleUninstallCli()}
+              disabled={cliLoading}
+              style={{ marginLeft: "auto" }}
+            >
+              {t.cliUninstall}
+            </button>
+          ) : (
+            <button
+              className="primary-button"
+              onClick={() => void handleInstallCli()}
+              disabled={cliLoading}
+              style={{ marginLeft: "auto" }}
+            >
+              {t.cliInstall}
+            </button>
+          )}
         </div>
         <p className="empty-copy">{t.cliDescription}</p>
       </section>

@@ -502,7 +502,9 @@ pre {
   border-right: 1px solid var(--border-default);
   border-radius: var(--radius-lg) 0 0 var(--radius-lg);
   padding: 12px 10px;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .worktrees-detail {

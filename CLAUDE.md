@@ -12,13 +12,16 @@ Grove — a macOS-first Tauri 2 desktop app for managing Git worktrees. React 19
 pnpm install              # install frontend deps
 pnpm tauri:dev            # run the full app (frontend + Rust backend)
 pnpm build                # frontend-only type-check + vite build
+pnpm test                 # run frontend tests (vitest)
+pnpm tauri:build          # build desktop app (no bundle)
+pnpm tauri:dist           # build + bundle (app + dmg)
 cd src-tauri && cargo test # run Rust backend tests
 cd src-tauri && cargo clippy # lint Rust code
 ```
 
 ## Architecture
 
-**Frontend** (`src/`): Single-page React app. All state lives in `App.tsx` — no router, no state library. `src/lib/api.ts` wraps every `@tauri-apps/api/core` `invoke()` call; `src/lib/types.ts` has the shared TypeScript types that mirror the Rust models. Translations in `src/locales/`.
+**Frontend** (`src/`): Single-page React app. All state lives in `App.tsx` — no router, no state library. `src/lib/api.ts` wraps every `@tauri-apps/api/core` `invoke()` call; `src/lib/types.ts` has the shared TypeScript types that mirror the Rust models. `src/lib/theme.tsx` provides ThemeProvider (light/dark/system); `src/lib/i18n.tsx` provides I18nProvider; `src/lib/branch-name-gen.ts` generates random branch name suggestions. Translations in `src/locales/`.
 
 **Backend** (`src-tauri/src/`): All Tauri commands are async (`spawn_blocking`) to keep the UI responsive. Key modules:
 - `git.rs` — shells out to `git worktree list --porcelain`, `git status`, `git branch`, `git fetch`, `git rev-list`, etc. Auto-detects default branch via `origin/HEAD`.
@@ -26,6 +29,7 @@ cd src-tauri && cargo clippy # lint Rust code
 - `models.rs` — all serde structs shared between commands; camelCase-renamed for the JS bridge
 - `actions.rs` — create/remove/start/launch worktrees, run hooks, prune. Streams stdout/stderr as logs; stderr is logged as info unless the process exits non-zero.
 - `store.rs` — persists recent repos, PR cache, per-repo config and worktree root overrides, and default terminal as JSON to `~/.grove/store.json`
+- `platform/` — cross-platform terminal launch abstraction (`open_terminal_at`, `open_terminal_app`) with per-OS implementations (macOS/Windows/Linux)
 
 **IPC pattern**: Rust structs use `#[serde(rename_all = "camelCase")]`. The frontend calls `invoke<T>("command_name", { input })` and receives camelCase JSON. When adding a new command: register in `lib.rs` `invoke_handler` macro → add TS wrapper in `api.ts` → add type in `types.ts`.
 

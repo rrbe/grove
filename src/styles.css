@@ -500,7 +500,6 @@ pre {
 .worktrees-panel {
   background: var(--surface-warm);
   border-right: 1px solid var(--border-default);
-  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
   padding: 12px 10px;
   display: flex;
   flex-direction: column;
@@ -795,7 +794,7 @@ textarea {
 
 .worktree-list-item {
   padding: 10px 12px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   border: 1px solid transparent;
   transition: background 100ms ease, border-color 100ms ease;

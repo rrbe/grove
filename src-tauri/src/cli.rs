@@ -42,10 +42,6 @@ enum Commands {
     },
     /// List worktrees for the current repository
     List,
-    /// Install the `grove` CLI command in PATH
-    InstallCli,
-    /// Remove the `grove` CLI command from PATH
-    UninstallCli,
 }
 
 pub struct StdioLogWriter;
@@ -63,8 +59,6 @@ const CLI_SUBCOMMANDS: &[&str] = &[
     "open",
     "run",
     "list",
-    "install-cli",
-    "uninstall-cli",
     "help",
     "--help",
     "-h",
@@ -100,8 +94,6 @@ pub fn main() {
         Some(Commands::Open { path }) => cmd_open(&path),
         Some(Commands::Run { event, worktree }) => cmd_run(event, worktree.as_deref()),
         Some(Commands::List) => cmd_list(),
-        Some(Commands::InstallCli) => cmd_install_cli(),
-        Some(Commands::UninstallCli) => cmd_uninstall_cli(),
         None => {
             if let Some(path) = cli.path {
                 cmd_open(&path)
@@ -256,19 +248,7 @@ fn cmd_list() -> Result<(), String> {
     Ok(())
 }
 
-fn cmd_install_cli() -> Result<(), String> {
-    let msg = cmd_install_cli_inner()?;
-    println!("{msg}");
-    Ok(())
-}
-
-fn cmd_uninstall_cli() -> Result<(), String> {
-    let msg = cmd_uninstall_cli_inner()?;
-    println!("{msg}");
-    Ok(())
-}
-
-/// Install CLI — returns a message string (used by both CLI and Tauri command).
+/// Install CLI — returns a message string (used by the Tauri GUI command).
 pub fn cmd_install_cli_inner() -> Result<String, String> {
     let target = Path::new("/usr/local/bin/grove");
     let source = std::env::current_exe()

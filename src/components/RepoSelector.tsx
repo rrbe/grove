@@ -89,10 +89,7 @@ export default function RepoSelector() {
                 </div>
                 {recentRepos.length > 0 && (
                   <div className="recent-repos">
-                    <button className="recent-repos-toggle" onClick={() => {}}>
-                      <span>{t.recentRepos}</span>
-                      <span className="subtle">▾</span>
-                    </button>
+                    <span className="recent-repos-toggle">{t.recentRepos}</span>
                     <div className="pill-list">
                       {recentRepos.map((item) => (
                         <button

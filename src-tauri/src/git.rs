@@ -35,7 +35,8 @@ pub fn scan_worktrees(
     repo_root: &Path,
     store: &AppStore,
 ) -> Result<Vec<WorktreeRecord>, String> {
-    let output = run_git_bytes(repo_root, ["worktree", "list", "--porcelain", "-z"])?;
+    let output = run_git(repo_root, ["worktree", "list", "--porcelain", "-z"])
+        .map(|o| o.stdout)?;
     let parsed = parse_worktree_porcelain(&output)?;
     let main_root = canonicalize(repo_root)?;
 
@@ -195,7 +196,7 @@ pub fn recent_commits(worktree_path: &Path, count: usize) -> Vec<CommitSummary> 
         "--format=%H\t%s\t%aI\t%an".to_string(),
         "HEAD".to_string(),
     ];
-    match run_git_owned(worktree_path, &args) {
+    match run_git_text(worktree_path, &args) {
         Ok(output) => output
             .lines()
             .filter(|l| !l.is_empty())
@@ -236,7 +237,7 @@ pub fn list_remote_branches(repo_root: &Path) -> Result<Vec<String>, String> {
 pub fn fetch_remote(repo_root: &Path) -> Result<String, String> {
     let remote = detect_default_remote(repo_root).unwrap_or_else(|| "origin".into());
     let args = vec!["fetch".to_string(), remote.clone(), "--prune".to_string()];
-    run_git_owned(repo_root, &args).map(|_| format!("Fetched from {remote}"))
+    run_git_text(repo_root, &args).map(|_| format!("Fetched from {remote}"))
 }
 
 pub fn list_prune_candidates(repo_root: &Path) -> Result<Vec<String>, String> {
@@ -253,7 +254,11 @@ pub fn canonicalize(path: &Path) -> Result<PathBuf, String> {
     fs::canonicalize(path).map_err(|error| format!("failed to resolve {}: {error}", path.display()))
 }
 
-pub fn run_git_text<const N: usize>(repo_root: &Path, args: [&str; N]) -> Result<String, String> {
+/// Core git runner — all git helpers build on this.
+fn run_git(
+    repo_root: &Path,
+    args: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>,
+) -> Result<std::process::Output, String> {
     let output = Command::new("git")
         .arg("-C")
         .arg(repo_root)
@@ -264,35 +269,14 @@ pub fn run_git_text<const N: usize>(repo_root: &Path, args: [&str; N]) -> Result
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(stderr.trim().to_string());
     }
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    Ok(output)
 }
 
-pub fn run_git_owned(repo_root: &Path, args: &[String]) -> Result<String, String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(repo_root)
-        .args(args)
-        .output()
-        .map_err(|error| format!("failed to run git: {error}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(stderr.trim().to_string());
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-}
-
-fn run_git_bytes<const N: usize>(repo_root: &Path, args: [&str; N]) -> Result<Vec<u8>, String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(repo_root)
-        .args(args)
-        .output()
-        .map_err(|error| format!("failed to run git: {error}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(stderr.trim().to_string());
-    }
-    Ok(output.stdout)
+pub fn run_git_text(
+    repo_root: &Path,
+    args: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>,
+) -> Result<String, String> {
+    run_git(repo_root, args).map(|o| String::from_utf8_lossy(&o.stdout).to_string())
 }
 
 pub fn git_status_details(worktree_path: &Path) -> Result<(bool, u32, u32, Vec<FileChange>), String> {

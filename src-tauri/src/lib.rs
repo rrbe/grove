@@ -356,8 +356,8 @@ async fn open_repo_window(app: AppHandle, repo_path: String) -> Result<(), Strin
     let resolved = git::resolve_repo_root(&repo_path)?;
     let repo_root = resolved.to_string_lossy().to_string();
 
-    // Check registry for existing window
-    {
+    // Single lock acquisition for all registry operations
+    let (label, offset) = {
         let mut registry = state.window_registry.lock().unwrap();
         if let Some(label) = registry.get(&repo_root).cloned() {
             if let Some(win) = app.get_webview_window(&label) {
@@ -366,17 +366,14 @@ async fn open_repo_window(app: AppHandle, repo_path: String) -> Result<(), Strin
                 let _ = win.set_focus();
                 return Ok(());
             }
-            // Window destroyed externally — remove stale entry
             registry.remove(&repo_root);
         }
-    }
-
-    let window_count = {
-        let registry = state.window_registry.lock().unwrap();
-        registry.len() as f64
+        let offset = registry.len() as f64 * 30.0;
+        let label = window_label_for_repo(&repo_root);
+        registry.insert(repo_root.clone(), label.clone());
+        (label, offset)
     };
 
-    let label = window_label_for_repo(&repo_root);
     let encoded = urlencoding::encode(&repo_root);
     let url_str = format!("index.html?repo={encoded}");
     let url = tauri::WebviewUrl::App(url_str.into());
@@ -385,9 +382,6 @@ async fn open_repo_window(app: AppHandle, repo_path: String) -> Result<(), Strin
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(&repo_root);
-
-    // Offset each new window by 30px so they don't stack on top of each other
-    let offset = window_count * 30.0;
 
     let builder = tauri::WebviewWindowBuilder::new(&app, &label, url)
         .title(format!("Grove — {repo_name}"))
@@ -401,13 +395,11 @@ async fn open_repo_window(app: AppHandle, repo_path: String) -> Result<(), Strin
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true);
 
-    builder
-        .build()
-        .map_err(|e| format!("failed to create window: {e}"))?;
-
-    {
+    if let Err(e) = builder.build() {
+        // Roll back registry entry on failure
         let mut registry = state.window_registry.lock().unwrap();
-        registry.insert(repo_root.clone(), label);
+        registry.remove(&repo_root);
+        return Err(format!("failed to create window: {e}"));
     }
 
     {

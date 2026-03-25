@@ -1512,13 +1512,13 @@ mod tests {
         let mut sink = VecLogWriter { logs: &mut logs };
 
         #[cfg(not(target_os = "windows"))]
-        let mut command = {
+        let command = {
             let mut cmd = Command::new("sh");
             cmd.arg("-c").arg("printf 'progress\\n' 1>&2");
             cmd
         };
         #[cfg(target_os = "windows")]
-        let mut command = {
+        let command = {
             let mut cmd = Command::new("cmd");
             cmd.args(["/C", "echo progress 1>&2"]);
             cmd

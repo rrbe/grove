@@ -1,7 +1,18 @@
 use std::{
     path::{Path, PathBuf},
     process::Command,
+    sync::OnceLock,
 };
+
+fn is_pwsh_available() -> bool {
+    static CACHED: OnceLock<bool> = OnceLock::new();
+    *CACHED.get_or_init(|| {
+        Command::new("where.exe")
+            .arg("pwsh.exe")
+            .output()
+            .is_ok_and(|o| o.status.success())
+    })
+}
 
 pub fn open_terminal_at(terminal_id: &str, cwd: &Path, script: &str) -> Result<(), String> {
     let cwd_str = cwd.to_string_lossy();
@@ -98,25 +109,15 @@ pub fn open_app(app: &str, args: &[String], cwd: &Path) -> Result<(), String> {
 
 pub fn available_shells() -> Vec<(String, String)> {
     let mut shells = Vec::new();
-    // Check if PowerShell Core (pwsh.exe) is available
-    if Command::new("where.exe")
-        .arg("pwsh.exe")
-        .output()
-        .is_ok_and(|o| o.status.success())
-    {
+    if is_pwsh_available() {
         shells.push(("pwsh.exe".into(), "PowerShell".into()));
     }
-    // CMD is always available
     shells.push(("cmd.exe".into(), "CMD".into()));
     shells
 }
 
 pub fn default_shell() -> String {
-    if Command::new("where.exe")
-        .arg("pwsh.exe")
-        .output()
-        .is_ok_and(|o| o.status.success())
-    {
+    if is_pwsh_available() {
         "pwsh.exe".into()
     } else {
         "cmd.exe".into()

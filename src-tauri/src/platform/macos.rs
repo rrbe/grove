@@ -1,9 +1,8 @@
 use sha2::{Digest, Sha256};
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::Path,
     process::Command,
-    sync::OnceLock,
 };
 
 /// Escape a string for use inside an AppleScript double-quoted string.
@@ -19,8 +18,8 @@ fn shell_quote(value: &str) -> String {
 pub fn open_terminal_at(terminal_id: &str, _cwd: &Path, script: &str) -> Result<(), String> {
     match terminal_id {
         "iterm2" => run_script_in_iterm2(script),
-        "ghostty" => run_script_in_ghostty(script),
-        "warp" => run_script_in_warp(script),
+        "ghostty" => run_script_via_keystroke("Ghostty", script),
+        "warp" => run_script_via_keystroke("Warp", script),
         _ => run_script_in_terminal_app(script),
     }
 }
@@ -66,7 +65,9 @@ fn run_script_in_iterm2(script: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn run_script_in_ghostty(script: &str) -> Result<(), String> {
+/// Run a script in a terminal that only supports keystroke injection (Ghostty, Warp).
+/// Writes the script to a temp file, then uses AppleScript to open a new tab and type the command.
+fn run_script_via_keystroke(app_name: &str, script: &str) -> Result<(), String> {
     use std::io::Write;
     let hash = {
         let mut hasher = Sha256::new();
@@ -87,7 +88,7 @@ fn run_script_in_ghostty(script: &str) -> Result<(), String> {
         shell_quote(&tmp_path)
     );
     let applescript = format!(
-        "tell application \"Ghostty\"\nactivate\ndelay 0.5\ntell application \"System Events\" to tell process \"Ghostty\" to keystroke \"t\" using command down\ndelay 0.3\ntell application \"System Events\" to tell process \"Ghostty\" to keystroke {}\nend tell",
+        "tell application \"{app_name}\"\nactivate\ndelay 0.5\ntell application \"System Events\" to tell process \"{app_name}\" to keystroke \"t\" using command down\ndelay 0.3\ntell application \"System Events\" to tell process \"{app_name}\" to keystroke {}\nend tell",
         apple_quote(&format!("{invoke_cmd}\n"))
     );
     let output = Command::new("osascript")
@@ -97,48 +98,10 @@ fn run_script_in_ghostty(script: &str) -> Result<(), String> {
     match output {
         Ok(out) if out.status.success() => Ok(()),
         Ok(out) => Err(format!(
-            "Ghostty osascript failed with status {}",
+            "{app_name} osascript failed with status {}",
             out.status
         )),
-        Err(e) => Err(format!("failed to open Ghostty: {e}")),
-    }
-}
-
-fn run_script_in_warp(script: &str) -> Result<(), String> {
-    use std::io::Write;
-    let hash = {
-        let mut hasher = Sha256::new();
-        hasher.update(script.as_bytes());
-        format!("{:x}", hasher.finalize())
-    };
-    let tmp_path = format!("/tmp/grove-{}.sh", &hash[..12]);
-    {
-        let mut file = fs::File::create(&tmp_path)
-            .map_err(|e| format!("failed to create temp script: {e}"))?;
-        file.write_all(script.as_bytes())
-            .map_err(|e| format!("failed to write temp script: {e}"))?;
-    }
-
-    let invoke_cmd = format!(
-        "bash {} ; rm -f {}",
-        shell_quote(&tmp_path),
-        shell_quote(&tmp_path)
-    );
-    let applescript = format!(
-        "tell application \"Warp\"\nactivate\ndelay 0.5\ntell application \"System Events\" to tell process \"Warp\" to keystroke \"t\" using command down\ndelay 0.3\ntell application \"System Events\" to tell process \"Warp\" to keystroke {}\nend tell",
-        apple_quote(&format!("{invoke_cmd}\n"))
-    );
-    let output = Command::new("osascript")
-        .arg("-e")
-        .arg(&applescript)
-        .output();
-    match output {
-        Ok(out) if out.status.success() => Ok(()),
-        Ok(out) => Err(format!(
-            "Warp osascript failed with status {}",
-            out.status
-        )),
-        Err(e) => Err(format!("failed to open Warp: {e}")),
+        Err(e) => Err(format!("failed to open {app_name}: {e}")),
     }
 }
 
@@ -249,14 +212,7 @@ pub fn detect_app(app_name: &str) -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
-pub fn detect_cli(id: &str) -> Option<String> {
-    let output = Command::new("which").arg(id).output().ok()?;
-    if output.status.success() {
-        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        None
-    }
-}
+pub use super::posix::{available_shells, detect_cli, home_dir};
 
 pub fn open_app(app: &str, args: &[String], cwd: &Path) -> Result<(), String> {
     let mut command = Command::new("open");
@@ -270,67 +226,10 @@ pub fn open_app(app: &str, args: &[String], cwd: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn available_shells() -> Vec<(String, String)> {
-    let content = match std::fs::read_to_string("/etc/shells") {
-        Ok(c) => c,
-        Err(_) => return vec![("/bin/bash".into(), "bash".into())],
-    };
-    let mut shells = Vec::new();
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let path = Path::new(line);
-        if !path.exists() {
-            continue;
-        }
-        let label = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(line)
-            .to_string();
-        shells.push((line.to_string(), label));
-    }
-    if shells.is_empty() {
-        shells.push(("/bin/bash".into(), "bash".into()));
-    }
-    shells
-}
-
 pub fn default_shell() -> String {
     "/bin/zsh".into()
 }
 
 pub fn get_user_shell_path() -> &'static str {
-    static CACHED: OnceLock<String> = OnceLock::new();
-    CACHED.get_or_init(|| {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-        let output = Command::new(&shell)
-            .args(["-ilc", "echo __GROVE_PATH__${PATH}__GROVE_PATH__"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output();
-
-        if let Ok(out) = output {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            if let Some(start) = stdout.find("__GROVE_PATH__") {
-                let rest = &stdout[start + 14..];
-                if let Some(end) = rest.find("__GROVE_PATH__") {
-                    let path = rest[..end].trim();
-                    if !path.is_empty() {
-                        return path.to_string();
-                    }
-                }
-            }
-        }
-
-        std::env::var("PATH").unwrap_or_default()
-    })
-}
-
-pub fn home_dir() -> Result<PathBuf, String> {
-    std::env::var("HOME")
-        .map(PathBuf::from)
-        .map_err(|_| "HOME not set".to_string())
+    super::posix::get_user_shell_path("/bin/zsh")
 }

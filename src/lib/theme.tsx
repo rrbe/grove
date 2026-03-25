@@ -29,6 +29,15 @@ const ThemeContext = createContext<ThemeContextValue>({
 
 const VALID_MODES: ThemeMode[] = ["light", "dark", "system"];
 
+const IS_MACOS =
+  navigator.userAgent.includes("Macintosh") ||
+  navigator.platform.startsWith("Mac");
+
+// Set macOS-specific topbar inset for traffic lights once at load time
+if (IS_MACOS) {
+  document.documentElement.style.setProperty("--topbar-inset-left", "78px");
+}
+
 function parseMode(raw: string | null): ThemeMode {
   return raw && VALID_MODES.includes(raw as ThemeMode) ? (raw as ThemeMode) : "system";
 }
@@ -38,16 +47,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return parseMode(localStorage.getItem("grove-theme"));
   });
   const [resolved, setResolved] = useState<ResolvedTheme>(() => resolveTheme(mode));
-
-  // Set macOS-specific topbar inset for traffic lights
-  useEffect(() => {
-    const isMacOS =
-      navigator.userAgent.includes("Macintosh") ||
-      navigator.platform.startsWith("Mac");
-    if (isMacOS) {
-      document.documentElement.style.setProperty("--topbar-inset-left", "78px");
-    }
-  }, []);
 
   // Load persisted theme from backend on mount
   useEffect(() => {

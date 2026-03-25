@@ -1131,7 +1131,8 @@ textarea {
 }
 
 .launcher-icon-shell[data-launcher-id="opencode"] {
-  background: rgba(90, 88, 86, 0.12);
+  background: #131010;
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .launcher-icon {

@@ -152,6 +152,11 @@ export interface Translations {
   save: string;
   showTrayIconLabel: string;
   showTrayIconDescription: string;
+  cliCommandLabel: string;
+  cliInstall: string;
+  cliInstalled: string;
+  cliUninstall: string;
+  cliDescription: string;
   tabRepository: string;
   tabWorktrees: string;
   themeLabel: string;

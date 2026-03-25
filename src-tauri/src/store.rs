@@ -6,7 +6,6 @@ use std::{
     path::{Path, PathBuf},
     sync::Mutex,
 };
-use tauri::AppHandle;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,26 +48,8 @@ pub struct SharedState {
 }
 
 impl SharedState {
-    pub fn load(app: &AppHandle) -> Result<Self, String> {
-        let path = store_path(app)?;
-        let mut store = if path.exists() {
-            let raw = fs::read_to_string(&path).map_err(|error| {
-                format!("failed to read app store at {}: {error}", path.display())
-            })?;
-            serde_json::from_str::<AppStore>(&raw).unwrap_or_default()
-        } else {
-            AppStore::default()
-        };
-        if !store.repo_worktree_roots.is_empty() {
-            for (repo_root, worktree_root) in std::mem::take(&mut store.repo_worktree_roots) {
-                store
-                    .repo_configs
-                    .entry(repo_root)
-                    .or_default()
-                    .settings
-                    .worktree_root = Some(worktree_root);
-            }
-        }
+    pub fn load() -> Result<Self, String> {
+        let store = load_store()?;
         Ok(Self {
             store: Mutex::new(store),
             window_registry: Mutex::new(BTreeMap::new()),
@@ -81,12 +62,35 @@ pub fn grove_home() -> Result<PathBuf, String> {
     Ok(home.join(".grove"))
 }
 
-pub fn store_path(_app: &AppHandle) -> Result<PathBuf, String> {
+pub fn store_path() -> Result<PathBuf, String> {
     Ok(grove_home()?.join("store.json"))
 }
 
-pub fn persist(app: &AppHandle, store: &AppStore) -> Result<(), String> {
-    let path = store_path(app)?;
+pub fn load_store() -> Result<AppStore, String> {
+    let path = store_path()?;
+    let mut store = if path.exists() {
+        let raw = fs::read_to_string(&path).map_err(|error| {
+            format!("failed to read app store at {}: {error}", path.display())
+        })?;
+        serde_json::from_str::<AppStore>(&raw).unwrap_or_default()
+    } else {
+        AppStore::default()
+    };
+    if !store.repo_worktree_roots.is_empty() {
+        for (repo_root, worktree_root) in std::mem::take(&mut store.repo_worktree_roots) {
+            store
+                .repo_configs
+                .entry(repo_root)
+                .or_default()
+                .settings
+                .worktree_root = Some(worktree_root);
+        }
+    }
+    Ok(store)
+}
+
+pub fn persist(store: &AppStore) -> Result<(), String> {
+    let path = store_path()?;
     let dir = path
         .parent()
         .ok_or_else(|| "failed to resolve parent directory for app store".to_string())?;

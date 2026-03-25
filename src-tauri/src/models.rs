@@ -153,6 +153,39 @@ impl HookEvent {
             HookEvent::PostRemove => "post-remove",
         }
     }
+
+    pub const ALL: &'static [HookEvent] = &[
+        HookEvent::PreCreate,
+        HookEvent::PostCreate,
+        HookEvent::PreLaunch,
+        HookEvent::PostLaunch,
+        HookEvent::PreRemove,
+        HookEvent::PostRemove,
+    ];
+}
+
+impl std::fmt::Display for HookEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
+impl std::str::FromStr for HookEvent {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pre-create" => Ok(HookEvent::PreCreate),
+            "post-create" => Ok(HookEvent::PostCreate),
+            "pre-launch" => Ok(HookEvent::PreLaunch),
+            "post-launch" => Ok(HookEvent::PostLaunch),
+            "pre-remove" => Ok(HookEvent::PreRemove),
+            "post-remove" => Ok(HookEvent::PostRemove),
+            _ => Err(format!(
+                "unknown hook event: {s}\nvalid events: pre-create, post-create, pre-launch, post-launch, pre-remove, post-remove"
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -5,13 +5,17 @@ import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { Input, Textarea, Select } from "./components/FormControls";
 import groveMark from "./assets/grove-mark.svg";
+import alacrittyIcon from "./assets/launcher-icons/alacritty.svg";
 import claudeIcon from "./assets/launcher-icons/claude.svg";
 import codexIcon from "./assets/launcher-icons/codex.svg";
 import cursorIcon from "./assets/launcher-icons/cursor.svg";
 import geminiIcon from "./assets/launcher-icons/gemini.svg";
 import ghosttyIcon from "./assets/launcher-icons/ghostty.svg";
+import kittyIcon from "./assets/launcher-icons/kitty.svg";
+import opencodeIcon from "./assets/launcher-icons/opencode.svg";
 import terminalIcon from "./assets/launcher-icons/terminal.svg";
 import warpIcon from "./assets/launcher-icons/warp.svg";
+import weztermIcon from "./assets/launcher-icons/wezterm.svg";
 import vscodeIcon from "./assets/launcher-icons/vscode.svg";
 import {
   bootstrap,
@@ -76,14 +80,18 @@ const HOOK_EVENTS: HookEvent[] = [
   "post-remove",
 ];
 const LAUNCHER_ICONS: Record<string, string> = {
+  alacritty: alacrittyIcon,
   claude: claudeIcon,
   codex: codexIcon,
   cursor: cursorIcon,
   gemini: geminiIcon,
   ghostty: ghosttyIcon,
+  kitty: kittyIcon,
+  opencode: opencodeIcon,
   terminal: terminalIcon,
   vscode: vscodeIcon,
   warp: warpIcon,
+  wezterm: weztermIcon,
 };
 
 const createInitialForm = (repo?: RepoSnapshot): CreateFormState => ({

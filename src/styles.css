@@ -1118,6 +1118,31 @@ textarea {
   border-color: rgba(1, 164, 199, 0.28);
 }
 
+.launcher-icon-shell[data-launcher-id="wezterm"] {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.14), transparent 34%),
+    linear-gradient(180deg, #3b2f5e 0%, #2a1f47 100%);
+  border-color: rgba(90, 70, 140, 0.28);
+}
+
+.launcher-icon-shell[data-launcher-id="alacritty"] {
+  background:
+    radial-gradient(circle at top left, rgba(255, 200, 80, 0.18), transparent 42%),
+    linear-gradient(180deg, #2a1c0a 0%, #1a1108 100%);
+  border-color: rgba(230, 140, 40, 0.22);
+}
+
+.launcher-icon-shell[data-launcher-id="kitty"] {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.12), transparent 34%),
+    linear-gradient(180deg, #3a2818 0%, #251a10 100%);
+  border-color: rgba(120, 68, 33, 0.28);
+}
+
+.launcher-icon-shell[data-launcher-id="opencode"] {
+  background: rgba(90, 88, 86, 0.14);
+}
+
 .launcher-icon {
   width: 20px;
   height: 20px;
@@ -1143,6 +1168,18 @@ textarea {
 }
 
 .launcher-icon-shell[data-launcher-id="warp"] .launcher-icon {
+  filter: brightness(0) invert(1);
+}
+
+.launcher-icon-shell[data-launcher-id="wezterm"] .launcher-icon {
+  filter: brightness(0) invert(1);
+}
+
+.launcher-icon-shell[data-launcher-id="alacritty"] .launcher-icon {
+  filter: brightness(0) invert(1);
+}
+
+.launcher-icon-shell[data-launcher-id="kitty"] .launcher-icon {
   filter: brightness(0) invert(1);
 }
 

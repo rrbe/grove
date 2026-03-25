@@ -13,7 +13,7 @@ fn detect_terminal() -> &'static str {
             return TERM_ENV.get_or_init(|| term);
         }
     }
-    for candidate in &["kitty", "alacritty", "gnome-terminal", "konsole", "xterm"] {
+    for candidate in &["wezterm", "kitty", "alacritty", "gnome-terminal", "konsole", "xterm"] {
         if Command::new("which")
             .arg(candidate)
             .output()
@@ -26,10 +26,11 @@ fn detect_terminal() -> &'static str {
 }
 
 fn resolve_terminal(id: &str) -> &str {
-    if id == "terminal" || id.is_empty() {
-        detect_terminal()
-    } else {
-        id
+    match id {
+        "terminal" | "" | "Terminal" => detect_terminal(),
+        "Alacritty" => "alacritty",
+        "WezTerm" => "wezterm",
+        _ => id,
     }
 }
 
@@ -56,6 +57,15 @@ pub fn open_terminal_at(terminal_id: &str, cwd: &Path, script: &str) -> Result<(
     let cwd_str = cwd.to_string_lossy();
     let terminal = resolve_terminal(terminal_id);
 
+    // WezTerm has a unique CLI syntax: `wezterm start --cwd <dir> -- <cmd>`
+    if terminal == "wezterm" {
+        Command::new("wezterm")
+            .args(["start", "--cwd", &cwd_str, "--", "bash", "-c", script])
+            .spawn()
+            .map_err(|e| format!("failed to open WezTerm: {e}"))?;
+        return Ok(());
+    }
+
     if let Some((flag, _)) = cwd_args(terminal) {
         let sep = exec_separator(terminal);
         Command::new(terminal)
@@ -73,6 +83,15 @@ pub fn open_terminal_at(terminal_id: &str, cwd: &Path, script: &str) -> Result<(
 
 pub fn open_terminal_app(app_name: &str, cwd: &str) -> Result<(), String> {
     let terminal = resolve_terminal(app_name);
+
+    // WezTerm has a unique CLI syntax: `wezterm start --cwd <dir>`
+    if terminal == "wezterm" {
+        Command::new("wezterm")
+            .args(["start", "--cwd", cwd])
+            .spawn()
+            .map_err(|e| format!("failed to open WezTerm: {e}"))?;
+        return Ok(());
+    }
 
     if let Some((flag, _)) = cwd_args(terminal) {
         Command::new(terminal)

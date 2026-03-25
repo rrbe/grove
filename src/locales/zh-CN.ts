@@ -130,7 +130,7 @@ export const zhCN: Translations = {
   fileStatusRenamed: "重命名",
   fileStatusUntracked: "未跟踪",
   defaultTerminalLabel: "默认终端",
-  defaultTerminalDescription: "Claude、Codex、Gemini 等 CLI 工具将在此终端中打开",
+  defaultTerminalDescription: "Claude、Codex、Gemini、OpenCode 等 CLI 工具将在此终端中打开",
   defaultShellLabel: "默认 Shell",
   defaultShellDescription: "用于执行 Hooks 和安装命令的 Shell",
   inUse: "已占用",

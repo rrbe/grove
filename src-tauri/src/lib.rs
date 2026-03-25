@@ -927,6 +927,9 @@ fn detect_tools() -> Vec<models::ToolStatus> {
         tools.push(app_status("ghostty", "Ghostty", "Ghostty"));
         tools.push(app_status("iterm2", "iTerm2", "iTerm"));
         tools.push(app_status("warp", "Warp", "Warp"));
+        tools.push(app_status("wezterm", "WezTerm", "WezTerm"));
+        tools.push(app_status("alacritty", "Alacritty", "Alacritty"));
+        tools.push(app_status("kitty", "Kitty", "kitty"));
     }
     #[cfg(target_os = "windows")]
     {
@@ -945,11 +948,26 @@ fn detect_tools() -> Vec<models::ToolStatus> {
             "app",
         ));
         tools.push(tool_status("cmd", "CMD", true, None, "app"));
+        tools.push(tool_status(
+            "wezterm",
+            "WezTerm",
+            platform::detect_cli("wezterm").is_some(),
+            None,
+            "app",
+        ));
+        tools.push(tool_status(
+            "alacritty",
+            "Alacritty",
+            platform::detect_cli("alacritty").is_some(),
+            None,
+            "app",
+        ));
     }
     #[cfg(target_os = "linux")]
     {
         tools.push(tool_status("terminal", "Terminal", true, None, "app"));
         for (id, label) in &[
+            ("wezterm", "WezTerm"),
             ("kitty", "Kitty"),
             ("alacritty", "Alacritty"),
             ("gnome-terminal", "GNOME Terminal"),
@@ -964,6 +982,7 @@ fn detect_tools() -> Vec<models::ToolStatus> {
     tools.push(cli_status("claude", "Claude CLI"));
     tools.push(cli_status("codex", "Codex CLI"));
     tools.push(cli_status("gemini", "Gemini CLI"));
+    tools.push(cli_status("opencode", "OpenCode"));
 
     tools
 }

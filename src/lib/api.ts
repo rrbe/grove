@@ -15,6 +15,10 @@ import type {
   ShellInfo,
 } from "./types";
 
+export function getAppVersion() {
+  return invoke<string>("get_app_version");
+}
+
 export function bootstrap() {
   return invoke<BootstrapResponse>("bootstrap");
 }

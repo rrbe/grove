@@ -2,7 +2,7 @@
   "name": "grove",
   "private": true,
   "packageManager": "pnpm@10.28.0",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "type": "module",
   "scripts": {
     "dev": "vite --port 1420",

@@ -23,6 +23,7 @@ use tauri::{
     tray::TrayIconBuilder,
     AppHandle, Emitter, Manager, State,
 };
+use tauri_plugin_updater::UpdaterExt;
 
 #[tauri::command]
 fn bootstrap(state: State<'_, SharedState>) -> BootstrapResponse {
@@ -475,6 +476,31 @@ pub fn cli_main() {
     cli::main();
 }
 
+async fn check_for_update_background(app: &AppHandle) {
+    match app.updater() {
+        Ok(updater) => match updater.check().await {
+            Ok(Some(update)) => {
+                let _ = app.emit(
+                    "update-available",
+                    serde_json::json!({
+                        "version": update.version,
+                        "body": update.body,
+                        "date": update.date.map(|d| d.to_string()),
+                        "currentVersion": update.current_version,
+                    }),
+                );
+            }
+            Ok(None) => {}
+            Err(e) => {
+                eprintln!("update check failed: {e}");
+            }
+        },
+        Err(e) => {
+            eprintln!("failed to create updater: {e}");
+        }
+    }
+}
+
 pub fn run() {
     // Fix PATH for packaged desktop apps. On macOS/Linux, apps launched from
     // macOS/Linux apps launched from Finder/Dock/desktop inherit a minimal
@@ -488,6 +514,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             // A second instance was launched — handle its args in the running instance.
             handle_open_repo_args(app, &args);
@@ -518,6 +546,26 @@ pub fn run() {
             // Handle --open-repo <path> argument on first launch
             let args: Vec<String> = std::env::args().collect();
             handle_open_repo_args(app.handle(), &args);
+
+            // Spawn background update checker
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // Delay initial check to let the UI settle
+                let delay = std::time::Duration::from_secs(5);
+                tauri::async_runtime::spawn_blocking(move || std::thread::sleep(delay))
+                    .await
+                    .ok();
+                check_for_update_background(&handle).await;
+
+                // Then check every 24 hours
+                loop {
+                    let interval = std::time::Duration::from_secs(86400);
+                    tauri::async_runtime::spawn_blocking(move || std::thread::sleep(interval))
+                        .await
+                        .ok();
+                    check_for_update_background(&handle).await;
+                }
+            });
 
             Ok(())
         })

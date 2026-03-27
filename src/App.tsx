@@ -47,7 +47,6 @@ import {
   checkGroveCliInstalled,
   installGroveCli,
   uninstallGroveCli,
-  getAppVersion,
 } from "./lib/api";
 import { useI18n, type Locale, type Translations } from "./lib/i18n";
 import {
@@ -1494,11 +1493,9 @@ function SettingsPage({
   const [showConfigEditor, setShowConfigEditor] = useState(false);
   const [cliInstalled, setCliInstalled] = useState(false);
   const [cliLoading, setCliLoading] = useState(false);
-  const [appVersion, setAppVersion] = useState("");
 
   useEffect(() => {
     checkGroveCliInstalled().then(setCliInstalled).catch(() => {});
-    getAppVersion().then(setAppVersion).catch(() => {});
   }, []);
 
   const handleInstallCli = async () => {

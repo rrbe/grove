@@ -24,6 +24,17 @@ use tauri::{
     AppHandle, Emitter, Manager, State,
 };
 
+/// Build a version string like "0.10.0-d146a32" (or just "0.10.0" if no hash).
+pub fn full_version() -> String {
+    let base = env!("CARGO_PKG_VERSION");
+    let hash = env!("GROVE_COMMIT_HASH");
+    if hash.is_empty() {
+        base.to_string()
+    } else {
+        format!("{base}-{hash}")
+    }
+}
+
 #[tauri::command]
 fn bootstrap(state: State<'_, SharedState>) -> BootstrapResponse {
     let store = state.store.lock().unwrap();
@@ -604,7 +615,8 @@ pub fn run() {
             open_repo_window,
             check_grove_cli_installed,
             install_grove_cli,
-            uninstall_grove_cli
+            uninstall_grove_cli,
+            get_app_version
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -820,6 +832,11 @@ fn check_grove_cli_installed() -> bool {
 }
 
 #[tauri::command]
+fn get_app_version() -> String {
+    full_version()
+}
+
+#[tauri::command]
 fn install_grove_cli() -> Result<String, String> {
     cli::cmd_install_cli_inner()
 }
@@ -832,7 +849,7 @@ fn uninstall_grove_cli() -> Result<String, String> {
 fn setup_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let about = AboutMetadataBuilder::new()
         .name(Some("Grove"))
-        .version(Some(env!("CARGO_PKG_VERSION")))
+        .version(Some(full_version()))
         .build();
 
     let settings_item = MenuItemBuilder::with_id("settings", "Settings…")

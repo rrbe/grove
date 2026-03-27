@@ -11,7 +11,7 @@ use std::process;
 #[derive(Parser)]
 #[command(
     name = "grove",
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION"), "-", env!("GROVE_COMMIT_HASH")),
     about = "Grove — Git worktree manager",
     arg_required_else_help = true
 )]

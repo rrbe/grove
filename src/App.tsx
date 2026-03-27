@@ -777,6 +777,29 @@ export default function App({ repoPath }: { repoPath: string }) {
                       <p className="empty-copy">{t.noWorktrees}</p>
                     )}
                   </div>
+                  <div className="prune-section">
+                    <div className="section-heading">
+                      <span>{t.prune}</span>
+                      <div className="overview-actions">
+                        <button className="ghost-button" onClick={() => void handlePreviewPrune()} disabled={isBusy}>
+                          {t.previewPrune}
+                        </button>
+                        <button className="primary-button" onClick={() => void handlePrune()} disabled={isBusy}>
+                          {t.prune}
+                        </button>
+                      </div>
+                    </div>
+                    {prunePreview.length > 0 && (
+                      <div className="prune-preview">
+                        <h3>{t.prunePreview}</h3>
+                        <ul>
+                          {prunePreview.map((line) => (
+                            <li key={line}>{line}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="worktrees-detail">
                   {!selectedWorktree ? (
@@ -849,9 +872,6 @@ export default function App({ repoPath }: { repoPath: string }) {
             configText={configText}
             onConfigChange={setConfigText}
             onSaveConfig={() => void handleSaveConfig()}
-            prunePreview={prunePreview}
-            onPreviewPrune={() => void handlePreviewPrune()}
-            onPrune={() => void handlePrune()}
             isBusy={isBusy}
             t={t}
             defaultTerminal={defaultTerminalId}
@@ -1437,9 +1457,6 @@ function SettingsPage({
   configText,
   onConfigChange,
   onSaveConfig,
-  prunePreview,
-  onPreviewPrune,
-  onPrune,
   isBusy,
   t,
   defaultTerminal,
@@ -1467,9 +1484,6 @@ function SettingsPage({
   configText: string;
   onConfigChange: (v: string) => void;
   onSaveConfig: () => void;
-  prunePreview: string[];
-  onPreviewPrune: () => void;
-  onPrune: () => void;
   isBusy: boolean;
   t: Translations;
   defaultTerminal: string;
@@ -1586,40 +1600,6 @@ function SettingsPage({
           <p className="empty-copy">{t.currentVersion}: v{appVersion}</p>
         )}
       </section>
-
-      {/* Maintenance */}
-      {repo && (
-        <section className="card stack">
-          <div className="section-heading">
-            <span>{t.prune}</span>
-            <div className="overview-actions">
-              <button className="ghost-button" onClick={onPreviewPrune} disabled={isBusy}>
-                {t.previewPrune}
-              </button>
-              <button className="primary-button" onClick={onPrune} disabled={isBusy}>
-                {t.prune}
-              </button>
-            </div>
-          </div>
-          {repo.configErrors.length > 0 && (
-            <div className="warning-panel">
-              {repo.configErrors.map((msg) => (
-                <p key={msg}>{msg}</p>
-              ))}
-            </div>
-          )}
-          {prunePreview.length > 0 && (
-            <div className="prune-preview">
-              <h3>{t.prunePreview}</h3>
-              <ul>
-                {prunePreview.map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </section>
-      )}
 
       {/* Default Terminal */}
       <section className="card stack">

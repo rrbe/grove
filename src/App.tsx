@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
+import { FishingHook, FolderTree, Settings, Warehouse } from "lucide-react";
 import { Input, Textarea, Select } from "./components/FormControls";
 import groveMark from "./assets/grove-mark.svg";
 import alacrittyIcon from "./assets/launcher-icons/alacritty.svg";
@@ -636,10 +637,7 @@ export default function App({ repoPath }: { repoPath: string }) {
             className={`sidebar-tab${view === "repository" ? " active" : ""}`}
             onClick={() => setView("repository")}
           >
-            <svg className="sidebar-tab-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.3"/>
-              <path d="M5.5 6h5M5.5 8.5h3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-            </svg>
+            <Warehouse className="sidebar-tab-icon" size={16} />
             <span className="sidebar-tab-label">{t.tabRepository}</span>
           </button>
           <button
@@ -647,9 +645,7 @@ export default function App({ repoPath }: { repoPath: string }) {
             onClick={() => setView("worktrees")}
             disabled={!repo}
           >
-            <svg className="sidebar-tab-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M8 2v12M8 5l-4 3M8 5l4 3M8 9l-3 2.5M8 9l3 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+            <FolderTree className="sidebar-tab-icon" size={16} />
             <span className="sidebar-tab-label">{t.tabWorktrees}</span>
             {repo && <span className="sidebar-tab-badge">{repo.worktrees.length}</span>}
           </button>
@@ -658,10 +654,7 @@ export default function App({ repoPath }: { repoPath: string }) {
             onClick={() => setView("hooks")}
             disabled={!repo}
           >
-            <svg className="sidebar-tab-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M6 2v7a3 3 0 0 0 6 0V7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-              <path d="M12 8.5V7.5a1.5 1.5 0 0 0-3 0v1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-            </svg>
+            <FishingHook className="sidebar-tab-icon" size={16} />
             <span className="sidebar-tab-label">{t.hooks}</span>
             {hookCount > 0 && <span className="sidebar-tab-badge">{hookCount}</span>}
           </button>
@@ -669,10 +662,7 @@ export default function App({ repoPath }: { repoPath: string }) {
             className={`sidebar-tab${view === "settings" ? " active" : ""}`}
             onClick={() => setView("settings")}
           >
-            <svg className="sidebar-tab-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M6.2 1.2L9.8 1.2 9.3 3.2 11.5 4.5 13 3.1 14.8 6.2 12.8 6.7 12.8 9.3 14.8 9.8 13 12.9 11.5 11.5 9.3 12.8 9.8 14.8 6.2 14.8 6.7 12.8 4.5 11.5 3.1 12.9 1.2 9.8 3.2 9.3 3.2 6.7 1.2 6.2 3.1 3.1 4.5 4.5 6.7 3.2Z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round"/>
-              <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.1"/>
-            </svg>
+            <Settings className="sidebar-tab-icon" size={16} />
             <span className="sidebar-tab-label">{t.settings}</span>
             {updateInfo && <span className="sidebar-tab-badge" />}
           </button>

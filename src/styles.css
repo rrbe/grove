@@ -27,7 +27,9 @@
   --topbar-inset-left: 16px;
 
   /* ── Font stacks ── */
-  --font-mono: "SF Mono", "Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+  --font-mono:
+    "SF Mono", "Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, "Liberation Mono",
+    monospace;
 
   /* ── Ink (text hierarchy) ── */
   --ink: #10212e;
@@ -39,12 +41,12 @@
 
   /* ── Teal accent ── */
   --teal: #2e6b63;
-  --teal-bg: rgba(46, 107, 99, 0.10);
+  --teal-bg: rgba(46, 107, 99, 0.1);
   --teal-bg-strong: rgba(46, 107, 99, 0.16);
   --teal-border: rgba(46, 107, 99, 0.25);
-  --teal-focus: rgba(46, 107, 99, 0.70);
+  --teal-focus: rgba(46, 107, 99, 0.7);
   --teal-muted: rgba(46, 107, 99, 0.75);
-  --teal-hover: rgba(46, 107, 99, 0.90);
+  --teal-hover: rgba(46, 107, 99, 0.9);
 
   /* ── Surfaces ── */
   --surface-card: rgba(255, 255, 255, 0.74);
@@ -53,7 +55,7 @@
   --surface-modal: rgba(254, 251, 246, 0.98);
   --surface-input: rgba(250, 252, 255, 0.88);
   --surface-warm: rgba(255, 248, 238, 0.62);
-  --surface-raised: rgba(255, 255, 255, 0.70);
+  --surface-raised: rgba(255, 255, 255, 0.7);
   --surface-hover: rgba(16, 33, 46, 0.05);
   --surface-subtle: rgba(16, 33, 46, 0.03);
   --surface-muted: rgba(16, 33, 46, 0.06);
@@ -62,7 +64,7 @@
 
   /* ── Borders ── */
   --border-faint: rgba(16, 33, 46, 0.06);
-  --border-default: rgba(16, 33, 46, 0.10);
+  --border-default: rgba(16, 33, 46, 0.1);
   --border-strong: rgba(16, 33, 46, 0.12);
 
   /* ── Shadows ── */
@@ -92,7 +94,7 @@
   --danger: #8e2319;
   --danger-bg: rgba(197, 61, 46, 0.12);
   --danger-bg-subtle: rgba(197, 61, 46, 0.06);
-  --danger-border: rgba(197, 61, 46, 0.20);
+  --danger-border: rgba(197, 61, 46, 0.2);
 
   /* ── Warning ── */
   --warning: #8a5400;
@@ -106,7 +108,7 @@
   --purple: #5842ba;
   --purple-bg: rgba(88, 66, 186, 0.12);
   --purple-bg-hover: rgba(88, 66, 186, 0.22);
-  --purple-muted: rgba(88, 66, 186, 0.70);
+  --purple-muted: rgba(88, 66, 186, 0.7);
 
   /* ── Diff ── */
   --diff-add-bg: rgba(26, 127, 55, 0.1);
@@ -122,7 +124,7 @@
   --file-renamed: #6639ba;
 
   /* ── Toggle ── */
-  --toggle-off: rgba(16, 33, 46, 0.20);
+  --toggle-off: rgba(16, 33, 46, 0.2);
   --toggle-on: #34a853;
   --toggle-thumb: #ffffff;
 
@@ -146,21 +148,21 @@
   --ink: #e8e0d8;
   --ink-strong: rgba(232, 224, 216, 0.92);
   --ink-secondary: rgba(232, 224, 216, 0.72);
-  --ink-tertiary: rgba(232, 224, 216, 0.50);
+  --ink-tertiary: rgba(232, 224, 216, 0.5);
   --ink-ghost: rgba(232, 224, 216, 0.38);
   --ink-faint: rgba(232, 224, 216, 0.22);
 
   --teal: #4eada2;
   --teal-bg: rgba(78, 173, 162, 0.14);
   --teal-bg-strong: rgba(78, 173, 162, 0.22);
-  --teal-border: rgba(78, 173, 162, 0.30);
+  --teal-border: rgba(78, 173, 162, 0.3);
   --teal-focus: rgba(78, 173, 162, 0.65);
-  --teal-muted: rgba(78, 173, 162, 0.70);
+  --teal-muted: rgba(78, 173, 162, 0.7);
   --teal-hover: rgba(78, 173, 162, 0.85);
 
   --surface-card: rgba(255, 255, 255, 0.06);
   --surface-topbar: rgba(28, 24, 20, 0.85);
-  --surface-sidebar: rgba(28, 24, 20, 0.50);
+  --surface-sidebar: rgba(28, 24, 20, 0.5);
   --surface-modal: rgba(32, 28, 24, 0.98);
   --surface-input: rgba(255, 255, 255, 0.06);
   --surface-warm: rgba(255, 248, 238, 0.04);
@@ -172,12 +174,12 @@
   --surface-stronger: rgba(255, 255, 255, 0.12);
 
   --border-faint: rgba(255, 255, 255, 0.06);
-  --border-default: rgba(255, 255, 255, 0.10);
+  --border-default: rgba(255, 255, 255, 0.1);
   --border-strong: rgba(255, 255, 255, 0.14);
 
   --shadow-card: 0 24px 60px rgba(0, 0, 0, 0.25);
-  --shadow-modal: 0 32px 90px rgba(0, 0, 0, 0.50);
-  --shadow-menu: 0 8px 24px rgba(0, 0, 0, 0.40);
+  --shadow-modal: 0 32px 90px rgba(0, 0, 0, 0.5);
+  --shadow-menu: 0 8px 24px rgba(0, 0, 0, 0.4);
   --shadow-panel: -8px 0 40px rgba(0, 0, 0, 0.35);
 
   --backdrop: rgba(0, 0, 0, 0.55);
@@ -202,7 +204,7 @@
   --warning: #f0c050;
   --warning-bg: rgba(240, 192, 80, 0.14);
   --warning-border: rgba(240, 192, 80, 0.22);
-  --warning-badge-bg: rgba(240, 192, 80, 0.20);
+  --warning-badge-bg: rgba(240, 192, 80, 0.2);
   --amber-bg: rgba(240, 192, 80, 0.14);
   --amber-text: #f0c050;
 
@@ -358,7 +360,9 @@ pre {
   white-space: nowrap;
   border: none;
   cursor: pointer;
-  transition: color 140ms ease, background 140ms ease;
+  transition:
+    color 140ms ease,
+    background 140ms ease;
   position: relative;
 }
 
@@ -423,10 +427,10 @@ pre {
   padding: 3px 10px;
   border-radius: 999px;
   background: var(--surface-subtle);
-  border: 1px solid var(--border-faint);
+  border: 1px solid var(--border-default);
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--ink-tertiary);
+  color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -445,7 +449,6 @@ pre {
   gap: 8px;
   -webkit-app-region: no-drag;
 }
-
 
 .main {
   flex: 1;
@@ -491,8 +494,15 @@ pre {
   display: flex;
   gap: 8px;
   padding-bottom: 10px;
+}
+
+.repo-name-label {
+  padding: 4px 4px 10px;
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--ink);
   border-bottom: 1px solid var(--border-default);
-  margin-bottom: 4px;
+  margin-bottom: 10px;
 }
 
 .worktrees-detail {
@@ -766,7 +776,6 @@ textarea {
   margin: 0;
 }
 
-
 .form-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -808,7 +817,9 @@ textarea {
   border-radius: var(--radius-sm);
   cursor: pointer;
   border: 1px solid transparent;
-  transition: background 100ms ease, border-color 100ms ease;
+  transition:
+    background 100ms ease,
+    border-color 100ms ease;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1170,7 +1181,6 @@ textarea {
 .launcher-icon-shell[data-launcher-id="warp"] .launcher-icon {
   filter: brightness(0) invert(1);
 }
-
 
 .iterm2-glyph {
   display: inline-flex;
@@ -1696,8 +1706,6 @@ textarea {
   margin-top: 18px;
 }
 
-
-
 /* Create Worktree modal (right slide-out) */
 .create-modal-panel {
   position: fixed;
@@ -2050,11 +2058,21 @@ textarea {
   text-align: center;
 }
 
-.file-status-modified { color: var(--file-modified); }
-.file-status-added { color: var(--file-added); }
-.file-status-deleted { color: var(--file-deleted); }
-.file-status-renamed { color: var(--file-renamed); }
-.file-status-untracked { color: var(--ink-tertiary); }
+.file-status-modified {
+  color: var(--file-modified);
+}
+.file-status-added {
+  color: var(--file-added);
+}
+.file-status-deleted {
+  color: var(--file-deleted);
+}
+.file-status-renamed {
+  color: var(--file-renamed);
+}
+.file-status-untracked {
+  color: var(--ink-tertiary);
+}
 
 .file-path {
   flex: 1;
@@ -2189,7 +2207,9 @@ textarea {
 }
 
 @keyframes mini-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ─── Custom Launcher ─── */
@@ -2360,7 +2380,9 @@ textarea {
   font-weight: 400;
   cursor: pointer;
   z-index: 9999;
-  animation: toast-in 200ms ease, toast-out 300ms ease 2.7s forwards;
+  animation:
+    toast-in 200ms ease,
+    toast-out 300ms ease 2.7s forwards;
 }
 
 .toast-success {
@@ -2376,13 +2398,23 @@ textarea {
 }
 
 @keyframes toast-in {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes toast-out {
-  from { opacity: 1; }
-  to   { opacity: 0; }
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
 }
 
 /* ─── Theme Switcher ─── */

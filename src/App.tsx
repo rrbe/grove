@@ -737,6 +737,7 @@ export default function App({ repoPath }: { repoPath: string }) {
             ) : (
               <div className="worktrees-layout">
                 <div className="worktrees-panel">
+                  <div className="repo-name-label">{repo.repoRoot.split("/").pop()}</div>
                   <div className="worktree-toolbar">
                     <button
                       className="primary-button btn-sm"

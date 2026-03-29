@@ -87,6 +87,7 @@ export const en: Translations = {
   worktreeCount: (n) => `${n} worktrees`,
   baseBranch: "base",
   prune: "Prune",
+  refresh: "Refresh",
   pruneConfirmTitle: "Prune Worktrees",
   pruneDescription: "Prune removes stale worktree metadata — entries left behind when a worktree directory was deleted manually without using git worktree remove.",
   pruneNoCandidates: "No stale worktree metadata found. Everything is clean.",

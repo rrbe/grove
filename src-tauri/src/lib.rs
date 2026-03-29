@@ -5,6 +5,7 @@ mod git;
 mod models;
 mod platform;
 mod store;
+mod watcher;
 
 use actions::{
     create_worktree, dispose_execution_session, get_execution_session, launch_worktree,
@@ -48,12 +49,21 @@ fn bootstrap(state: State<'_, SharedState>) -> BootstrapResponse {
 
 #[tauri::command]
 async fn open_repo(app: AppHandle, repo_root: String) -> Result<RepoSnapshot, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<SharedState>();
-        load_repo_snapshot(&app, &state, repo_root)
+    let snapshot = tauri::async_runtime::spawn_blocking({
+        let app = app.clone();
+        move || {
+            let state = app.state::<SharedState>();
+            load_repo_snapshot(&app, &state, repo_root)
+        }
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+
+    // Start watching this repo's .git/worktrees/ for external changes
+    let watcher_state = app.state::<watcher::WatcherState>();
+    watcher_state.start(&app, &snapshot.repo_root);
+
+    Ok(snapshot)
 }
 
 pub fn load_repo_snapshot(
@@ -549,6 +559,7 @@ pub fn run() {
                 .show_tray_icon
                 .unwrap_or(true);
             app.manage(state);
+            app.manage(watcher::WatcherState::new());
             if tray_enabled {
                 setup_tray(app.handle());
             }

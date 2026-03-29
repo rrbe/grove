@@ -85,6 +85,7 @@ export interface Translations {
   worktreeCount: (n: number) => string;
   baseBranch: string;
   prune: string;
+  refresh: string;
   pruneConfirmTitle: string;
   pruneDescription: string;
   pruneNoCandidates: string;

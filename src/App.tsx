@@ -777,7 +777,7 @@ export default function App({ repoPath }: { repoPath: string }) {
                       disabled={isBusy}
                       title={t.refresh}
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg className={isBusy ? "spin" : ""} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M21.5 2v6h-6" />
                         <path d="M2.5 22v-6h6" />
                         <path d="M2.5 11.5a10 10 0 0 1 18.17-4.5" />

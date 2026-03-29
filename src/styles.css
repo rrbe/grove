@@ -497,8 +497,19 @@ pre {
   align-items: center;
 }
 
-.refresh-button {
+.ghost-button.refresh-button {
   margin-left: auto;
+  background: none;
+  padding: 6px;
+}
+
+.refresh-button .spin {
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .repo-name-label {

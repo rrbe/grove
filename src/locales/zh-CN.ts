@@ -87,6 +87,7 @@ export const zhCN: Translations = {
   worktreeCount: (n) => `${n} 个 Worktree`,
   baseBranch: "基础分支",
   prune: "Prune",
+  refresh: "刷新",
   pruneConfirmTitle: "Prune Worktree",
   pruneDescription: "Prune 会移除过期的 Worktree 元数据记录——当 Worktree 目录被手动删除（未使用 git worktree remove）时残留的条目。",
   pruneNoCandidates: "没有发现过期的 Worktree 元数据，一切正常。",

@@ -61,6 +61,7 @@ import { useTheme, type ThemeMode } from "./lib/theme";
 import { HooksModal, type HooksMap } from "./components/HooksModal";
 import { CreateWorktreeModal, type CreateFormState } from "./components/CreateWorktreeModal";
 import { DeleteExecutionModal, type DeleteExecutionState, type DeleteExecutionPhase } from "./components/DeleteExecutionModal";
+import { ModalShell } from "./components/ModalShell";
 import type {
   ActionResponse,
   BootstrapResponse,
@@ -162,12 +163,12 @@ export default function App({ repoPath }: { repoPath: string }) {
   const [configText, setConfigText] = useState("");
   const [createForm, setCreateForm] = useState<CreateFormState>(createInitialForm());
   const [logs, setLogs] = useState<TaggedLog[]>([]);
-  const [prunePreview, setPrunePreview] = useState<string[]>([]);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [selectedWorktreeId, setSelectedWorktreeId] = useState<string | null>(null);
   const [deleteExecution, setDeleteExecution] = useState<DeleteExecutionState | null>(null);
+  const [pruneModal, setPruneModal] = useState<{ candidates: string[]; loading: boolean } | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [view, setView] = useState<"repository" | "worktrees" | "hooks" | "settings">("worktrees");
   const [showActionLog, setShowActionLog] = useState(false);
@@ -549,29 +550,6 @@ export default function App({ repoPath }: { repoPath: string }) {
     }
   }
 
-  async function handlePreviewPrune() {
-    if (!repo) return;
-    setIsBusy(true);
-    setError(null);
-    try {
-      const preview = await previewRepoPrune(repo.repoRoot);
-      setPrunePreview(preview);
-      appendLogs([
-        {
-          level: preview.length > 0 ? "info" : "success",
-          message:
-            preview.length > 0
-              ? t.logPruneCandidates(preview.length)
-              : t.logNoPruneCandidates,
-        },
-      ]);
-    } catch (reason) {
-      setError(String(reason));
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
   async function handleSetDefaultTerminal(terminalId: string) {
     setDefaultTerminalId(terminalId);
     await setDefaultTerminal(terminalId);
@@ -582,10 +560,21 @@ export default function App({ repoPath }: { repoPath: string }) {
     await setDefaultShell(shell);
   }
 
-  async function handlePrune() {
+  async function handlePrunePreview() {
     if (!repo) return;
+    setPruneModal({ candidates: [], loading: true });
+    try {
+      const candidates = await previewRepoPrune(repo.repoRoot);
+      setPruneModal({ candidates, loading: false });
+    } catch {
+      setPruneModal(null);
+    }
+  }
+
+  async function handlePruneConfirm() {
+    if (!repo) return;
+    setPruneModal(null);
     await runAction(() => pruneRepoMetadata(repo.repoRoot));
-    setPrunePreview([]);
   }
 
   async function handleSaveCustomLauncher(input: SaveCustomLauncherInput) {
@@ -637,18 +626,7 @@ export default function App({ repoPath }: { repoPath: string }) {
             <span className="topbar-path-text">{repo.repoRoot}</span>
           </div>
         )}
-        <div className="topbar-right">
-          <button
-            className="topbar-new-btn"
-            onClick={() => {
-              setCreateForm(createInitialForm(repo ?? undefined));
-              setShowCreateModal(true);
-            }}
-            disabled={!repo || isBusy}
-          >
-            + {t.newWorktree}
-          </button>
-        </div>
+        <div className="topbar-right" />
       </nav>
 
       <div className="body">
@@ -759,6 +737,25 @@ export default function App({ repoPath }: { repoPath: string }) {
             ) : (
               <div className="worktrees-layout">
                 <div className="worktrees-panel">
+                  <div className="worktree-toolbar">
+                    <button
+                      className="primary-button btn-sm"
+                      onClick={() => {
+                        setCreateForm(createInitialForm(repo));
+                        setShowCreateModal(true);
+                      }}
+                      disabled={isBusy}
+                    >
+                      + {t.newWorktree}
+                    </button>
+                    <button
+                      className="ghost-button btn-sm"
+                      onClick={() => void handlePrunePreview()}
+                      disabled={isBusy}
+                    >
+                      {t.prune}
+                    </button>
+                  </div>
                   <div className="worktree-list">
                     {repo.worktrees.map((wt) => (
                       <WorktreeListItem
@@ -775,29 +772,6 @@ export default function App({ repoPath }: { repoPath: string }) {
                     ))}
                     {repo.worktrees.length === 0 && (
                       <p className="empty-copy">{t.noWorktrees}</p>
-                    )}
-                  </div>
-                  <div className="prune-section">
-                    <div className="section-heading">
-                      <span>{t.prune}</span>
-                      <div className="overview-actions">
-                        <button className="ghost-button" onClick={() => void handlePreviewPrune()} disabled={isBusy}>
-                          {t.previewPrune}
-                        </button>
-                        <button className="primary-button" onClick={() => void handlePrune()} disabled={isBusy}>
-                          {t.prune}
-                        </button>
-                      </div>
-                    </div>
-                    {prunePreview.length > 0 && (
-                      <div className="prune-preview">
-                        <h3>{t.prunePreview}</h3>
-                        <ul>
-                          {prunePreview.map((line) => (
-                            <li key={line}>{line}</li>
-                          ))}
-                        </ul>
-                      </div>
                     )}
                   </div>
                 </div>
@@ -923,6 +897,43 @@ export default function App({ repoPath }: { repoPath: string }) {
           onClose={handleCloseDeleteExecution}
           onConfirm={() => void confirmDeleteExecution()}
         />
+      )}
+
+      {/* Prune Confirmation Modal */}
+      {pruneModal && (
+        <ModalShell
+          title={t.pruneConfirmTitle}
+          onClose={() => setPruneModal(null)}
+          className="prune-confirm-modal"
+        >
+          <p className="prune-description">{t.pruneDescription}</p>
+          {pruneModal.loading ? (
+            <p className="subtle">{t.loading}</p>
+          ) : pruneModal.candidates.length === 0 ? (
+            <div className="prune-preview">
+              <p>{t.pruneNoCandidates}</p>
+            </div>
+          ) : (
+            <div className="prune-preview">
+              <p>{t.pruneCandidatesFound(pruneModal.candidates.length)}</p>
+              <ul>
+                {pruneModal.candidates.map((c) => (
+                  <li key={c}><code>{c}</code></li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="modal-actions">
+            <button className="ghost-button" onClick={() => setPruneModal(null)}>
+              {pruneModal.candidates.length > 0 ? t.cancel : t.close}
+            </button>
+            {pruneModal.candidates.length > 0 && !pruneModal.loading && (
+              <button className="danger-button" onClick={() => void handlePruneConfirm()}>
+                {t.pruneConfirmAction}
+              </button>
+            )}
+          </div>
+        </ModalShell>
       )}
 
       {/* Create Worktree Modal */}

@@ -84,9 +84,12 @@ export interface Translations {
   allLogs: string;
   worktreeCount: (n: number) => string;
   baseBranch: string;
-  previewPrune: string;
   prune: string;
-  prunePreview: string;
+  pruneConfirmTitle: string;
+  pruneDescription: string;
+  pruneNoCandidates: string;
+  pruneConfirmAction: string;
+  pruneCandidatesFound: (n: number) => string;
   tooling: string;
   logs: string;
   clear: string;
@@ -109,8 +112,6 @@ export interface Translations {
   logLoaded: (path: string) => string;
   logSavedConfig: string;
   logSavedHooks: string;
-  logPruneCandidates: (n: number) => string;
-  logNoPruneCandidates: string;
   openInFinder: string;
   lastCommit: string;
   branchLabel: string;

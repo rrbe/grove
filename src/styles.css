@@ -260,18 +260,12 @@ button {
   border-radius: var(--radius-full);
   cursor: pointer;
   transition:
-    transform 140ms ease,
     background 140ms ease,
     opacity 140ms ease;
 }
 
-button:hover {
-  transform: translateY(-1px);
-}
-
 button:disabled {
   cursor: not-allowed;
-  transform: none;
   opacity: 0.55;
 }
 
@@ -355,8 +349,8 @@ pre {
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  padding: 8px 4px 6px;
-  border-radius: 8px;
+  padding: 8px 8px 6px;
+  border-radius: 10px;
   background: transparent;
   color: var(--ink-ghost);
   font-size: 9px;
@@ -452,19 +446,6 @@ pre {
   -webkit-app-region: no-drag;
 }
 
-.topbar-new-btn {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  padding: 5px 12px;
-  background: var(--surface-strong);
-  color: var(--ink-secondary);
-  border-radius: 6px;
-}
-
-.topbar-new-btn:hover {
-  background: var(--surface-stronger);
-  color: var(--ink);
-}
 
 .main {
   flex: 1;
@@ -506,14 +487,12 @@ pre {
   overflow: hidden;
 }
 
-.prune-section {
-  margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-default);
-}
-
-.prune-section .section-heading {
-  font-size: 12px;
+.worktree-toolbar {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-default);
+  margin-bottom: 4px;
 }
 
 .worktrees-detail {
@@ -766,6 +745,28 @@ textarea {
   padding-left: 20px;
 }
 
+.prune-preview li {
+  margin-top: 4px;
+}
+
+.prune-preview code {
+  font-size: var(--text-xs);
+  word-break: break-all;
+}
+
+.prune-confirm-modal {
+  width: min(480px, 90vw);
+  padding: 24px 26px;
+}
+
+.prune-description {
+  font-size: var(--text-sm);
+  color: var(--ink-tertiary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+
 .form-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -948,7 +949,6 @@ textarea {
 .worktree-menu-trigger:hover {
   background: var(--border-default);
   color: var(--ink-secondary);
-  transform: none;
 }
 
 .worktree-menu-popup {
@@ -981,7 +981,6 @@ textarea {
 
 .worktree-menu-item:hover {
   background: var(--btn-ghost-bg);
-  transform: none;
 }
 
 .worktree-menu-item-danger {
@@ -1565,7 +1564,6 @@ textarea {
 .modal-shell-close:hover {
   background: var(--surface-strong);
   color: var(--ink-secondary);
-  transform: none;
 }
 
 .alert-banner {
@@ -1600,7 +1598,6 @@ textarea {
 
 .alert-dismiss:hover {
   background: var(--danger-bg);
-  transform: none;
 }
 
 .delete-execution-modal {
@@ -1839,7 +1836,6 @@ textarea {
 
 .hook-group-remove:hover {
   background: var(--danger-bg);
-  transform: none;
 }
 
 .hook-group-body {
@@ -1916,7 +1912,6 @@ textarea {
 .hook-step-remove:hover {
   background: var(--danger-bg);
   color: var(--danger);
-  transform: none;
 }
 
 .hook-step-config .field-label {
@@ -1944,7 +1939,6 @@ textarea {
 
 .hook-add-step:hover {
   background: var(--surface-strong);
-  transform: none;
 }
 
 .hooks-empty {
@@ -1993,7 +1987,6 @@ textarea {
 
 .recent-repos-toggle:hover {
   color: var(--teal);
-  transform: none;
 }
 
 .repo-info-line {
@@ -2409,10 +2402,6 @@ textarea {
   font-weight: 500;
   background: transparent;
   color: var(--ink-tertiary);
-}
-
-.theme-switcher button:hover {
-  transform: none;
 }
 
 .theme-switcher button.active {

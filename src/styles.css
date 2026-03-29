@@ -438,6 +438,11 @@ pre {
   -webkit-app-region: drag;
 }
 
+.topbar-path-icon {
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
 .topbar-path-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1802,8 +1807,6 @@ textarea {
 
 .hook-group-chevron {
   flex-shrink: 0;
-  width: 16px;
-  height: 16px;
   color: var(--ink-ghost);
   transition: transform 160ms ease;
 }

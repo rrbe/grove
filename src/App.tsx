@@ -4,7 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
-import { FishingHook, FolderTree, Settings, Warehouse } from "lucide-react";
+import { Copy, FishingHook, Folder, FolderTree, GitBranch, HousePlus, Settings } from "lucide-react";
 import { Input, Textarea, Select } from "./components/FormControls";
 import groveMark from "./assets/grove-mark.svg";
 import alacrittyIcon from "./assets/launcher-icons/alacritty.svg";
@@ -117,12 +117,7 @@ const createInitialForm = (repo?: RepoSnapshot): CreateFormState => ({
   autoStartLaunchers: [],
 });
 
-const copySvg = (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-  </svg>
-);
+const copySvg = <Copy size={14} />;
 
 function relativeTime(iso: string, t: Translations): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -621,9 +616,7 @@ export default function App({ repoPath }: { repoPath: string }) {
         </div>
         {repo && (
           <div className="topbar-path" title={repo.repoRoot}>
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, opacity: 0.55 }}>
-              <path d="M1.5 2.5h4.8l1.6 2H14.5v9h-13z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
-            </svg>
+            <Folder className="topbar-path-icon" size={11} />
             <span className="topbar-path-text">{repo.repoRoot}</span>
           </div>
         )}
@@ -637,7 +630,7 @@ export default function App({ repoPath }: { repoPath: string }) {
             className={`sidebar-tab${view === "repository" ? " active" : ""}`}
             onClick={() => setView("repository")}
           >
-            <Warehouse className="sidebar-tab-icon" size={16} />
+            <HousePlus className="sidebar-tab-icon" size={16} />
             <span className="sidebar-tab-label">{t.tabRepository}</span>
           </button>
           <button
@@ -1089,12 +1082,7 @@ function WorktreeListItem({
     >
       <div className="worktree-list-item-info">
         <div className="worktree-list-item-branch" title={worktree.branch ?? t.detachedShort}>
-          <svg className="worktree-icon" width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <circle cx="5" cy="4" r="1.6" stroke="currentColor" strokeWidth="1.3"/>
-            <circle cx="5" cy="12" r="1.6" stroke="currentColor" strokeWidth="1.3"/>
-            <circle cx="11.5" cy="7" r="1.6" stroke="currentColor" strokeWidth="1.3"/>
-            <path d="M5 5.6v4.8M5 7.5c0-1.2.8-2.1 2-2.1h2.9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-          </svg>
+          <GitBranch className="worktree-icon" size={14} />
           {worktree.branch ?? t.detachedShort}
         </div>
         <div

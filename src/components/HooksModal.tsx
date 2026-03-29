@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { Textarea, Select } from "./FormControls";
 import { ModalShell } from "./ModalShell";
 import { Alert } from "./Alert";
@@ -211,9 +212,7 @@ export function HooksModal({
           return (
             <section key={event} className="hook-group">
               <div className="hook-group-header" onClick={() => toggleExpand(event)}>
-                <svg className={`hook-group-chevron${isOpen ? " expanded" : ""}`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M6 4l4 4-4 4" />
-                </svg>
+                <ChevronRight className={`hook-group-chevron${isOpen ? " expanded" : ""}`} size={16} />
                 <span className="hook-group-event">{event}</span>
                 <span className="hook-group-count">
                   {steps.length} {steps.length === 1 ? "step" : "steps"}

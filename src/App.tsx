@@ -617,7 +617,6 @@ export default function App({ repoPath }: { repoPath: string }) {
 
   const launchers = repo?.mergedConfig.launchers ?? [];
   const hooksMap: HooksMap = repo?.mergedConfig.hooks ?? {};
-  const hookCount = Object.keys(hooksMap).filter((e) => (hooksMap[e as HookEvent]?.length ?? 0) > 0).length;
 
   return (
     <div className="shell">
@@ -644,35 +643,32 @@ export default function App({ repoPath }: { repoPath: string }) {
           <button
             className={`sidebar-tab${view === "repository" ? " active" : ""}`}
             onClick={() => setView("repository")}
+            title={t.tabRepository}
           >
-            <HousePlus className="sidebar-tab-icon" size={16} />
-            <span className="sidebar-tab-label">{t.tabRepository}</span>
+            <HousePlus className="sidebar-tab-icon" size={22} strokeWidth={2.25} />
           </button>
           <button
             className={`sidebar-tab${view === "worktrees" ? " active" : ""}`}
             onClick={() => setView("worktrees")}
             disabled={!repo}
+            title={t.tabWorktrees}
           >
-            <FolderTree className="sidebar-tab-icon" size={16} />
-            <span className="sidebar-tab-label">{t.tabWorktrees}</span>
-            {repo && <span className="sidebar-tab-badge">{repo.worktrees.length}</span>}
+            <FolderTree className="sidebar-tab-icon" size={22} strokeWidth={2.25} />
           </button>
           <button
             className={`sidebar-tab${view === "hooks" ? " active" : ""}`}
             onClick={() => setView("hooks")}
             disabled={!repo}
+            title={t.hooks}
           >
-            <FishingHook className="sidebar-tab-icon" size={16} />
-            <span className="sidebar-tab-label">{t.hooks}</span>
-            {hookCount > 0 && <span className="sidebar-tab-badge">{hookCount}</span>}
+            <FishingHook className="sidebar-tab-icon" size={22} strokeWidth={2.25} />
           </button>
           <button
             className={`sidebar-tab${view === "settings" ? " active" : ""}`}
             onClick={() => setView("settings")}
+            title={t.settings}
           >
-            <Settings className="sidebar-tab-icon" size={16} />
-            <span className="sidebar-tab-label">{t.settings}</span>
-            {updateInfo && <span className="sidebar-tab-badge" />}
+            <Settings className="sidebar-tab-icon" size={22} strokeWidth={2.25} />
           </button>
         </aside>
 
@@ -682,6 +678,7 @@ export default function App({ repoPath }: { repoPath: string }) {
 
         {view === "repository" && (
           <div className="repo-view">
+            <h1 className="view-title">{t.tabRepository}</h1>
             <section className="hero card">
               <h2>{t.heroTitle}</h2>
               <p>{t.heroDescription}</p>
@@ -726,6 +723,7 @@ export default function App({ repoPath }: { repoPath: string }) {
 
         {view === "worktrees" && (
           <>
+            <h1 className="view-title">{t.tabWorktrees}</h1>
             {!repo ? (
               <div className="repo-view">
                 <section className="hero card">
@@ -825,6 +823,7 @@ export default function App({ repoPath }: { repoPath: string }) {
 
         {view === "hooks" && (
           <div className="hooks-view">
+            <h1 className="view-title">{t.hooks}</h1>
             {!repo ? (
               <section className="hero card">
                 <h2>{t.hooks}</h2>
@@ -850,7 +849,9 @@ export default function App({ repoPath }: { repoPath: string }) {
         )}
 
         {view === "settings" && (
-          <SettingsPage
+          <>
+            <h1 className="view-title">{t.settings}</h1>
+            <SettingsPage
             toolStatuses={repo?.toolStatuses ?? bootstrapState.toolStatuses}
             logs={logs}
             onClearLogs={() => setLogs([])}
@@ -898,6 +899,7 @@ export default function App({ repoPath }: { repoPath: string }) {
             }}
             onRetryDownload={() => setDownloadProgress(INITIAL_PROGRESS)}
           />
+          </>
         )}
       </main>
       </div>

@@ -677,8 +677,9 @@ export default function App({ repoPath }: { repoPath: string }) {
         {error && <div className="error-banner">{error}</div>}
 
         {view === "repository" && (
+          <>
+          <h1 className="view-title">{t.tabRepository}</h1>
           <div className="repo-view">
-            <h1 className="view-title">{t.tabRepository}</h1>
             <section className="hero card">
               <h2>{t.heroTitle}</h2>
               <p>{t.heroDescription}</p>
@@ -719,6 +720,7 @@ export default function App({ repoPath }: { repoPath: string }) {
               </div>
             </section>
           </div>
+          </>
         )}
 
         {view === "worktrees" && (
@@ -822,8 +824,9 @@ export default function App({ repoPath }: { repoPath: string }) {
         )}
 
         {view === "hooks" && (
+          <>
+          <h1 className="view-title">{t.hooks}</h1>
           <div className="hooks-view">
-            <h1 className="view-title">{t.hooks}</h1>
             {!repo ? (
               <section className="hero card">
                 <h2>{t.hooks}</h2>
@@ -846,6 +849,7 @@ export default function App({ repoPath }: { repoPath: string }) {
               />
             )}
           </div>
+          </>
         )}
 
         {view === "settings" && (

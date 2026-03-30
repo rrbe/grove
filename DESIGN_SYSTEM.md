@@ -1,6 +1,6 @@
 # Grove Design System
 
-A minimalist design language for a macOS-native Git worktree manager. Near-monochrome palette with a single muted teal accent, flat surfaces, and precise typography. Supports light and dark modes via `[data-theme="light"|"dark"]`. No gradients, no glass-morphism, no decorative shadows.
+A minimalist design language for a macOS-native Git worktree manager. Warm ink tones with a single teal accent, flat surfaces, and precise typography. Supports light and dark modes via `[data-theme="light"|"dark"]`. No gradients, no glass-morphism, no decorative shadows.
 
 ---
 
@@ -201,7 +201,7 @@ Always use `<Input>`, `<Textarea>`, `<Select>` from `src/components/FormControls
 All launcher icons use a simple, uniform background:
 
 - **Default**: `var(--surface-muted)` with `var(--border-default)` border
-- **Dark-themed launchers** (cursor, terminal, ghostty, iterm2, warp, opencode): `#1a1a1a` background
+- **Dark-themed launchers** (cursor, terminal, ghostty, iterm2, warp, opencode): `#1c1917` background
 
 No per-launcher gradients. No decorative shadows or glows.
 
@@ -217,6 +217,69 @@ No per-launcher gradients. No decorative shadows or glows.
 | Left padding (macOS) | `78px` |
 
 **No backdrop-filter.** No glass-morphism.
+
+---
+
+## Typography
+
+### Font Weights
+
+| Weight | Usage |
+|---|---|
+| `400` | Body text |
+| `500` | Primary button text |
+| `600` | Labels, buttons, emphasis |
+| `700` | Headings, badges, branch names |
+
+### Line Height
+
+| Value | Usage |
+|---|---|
+| `1.5` | Global default |
+| `1.55` | Mono blocks |
+
+---
+
+## Spacing
+
+2px base grid. Common stops: 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28px.
+
+---
+
+## Transitions
+
+| Target | Duration | Easing |
+|---|---|---|
+| Button hover/bg/opacity | `140ms` | `ease` |
+| List item hover/border | `100ms` | `ease` |
+| Slide-out panel | `180ms` | `ease-out` |
+| Toggle switch | `200ms` | — |
+| Toast enter | `200ms` | `ease` |
+| Toast exit | `300ms` | `ease` |
+
+---
+
+## Toast
+
+- Fixed position: `bottom: 24px; right: 24px`
+- Auto-dismiss after 3 seconds
+- One toast at a time
+- Two variants: `toast-success` / `toast-error`
+- Prefix with checkmark (success) or cross (error)
+
+---
+
+## Layout Constants
+
+| Property | Value |
+|---|---|
+| Topbar height | `38px` |
+| Topbar left padding (macOS) | `78px` |
+| Sidebar width (worktrees) | `280px` |
+| Max content width | `640-680px` |
+| Slide-out panel width | `min(480px, calc(100vw - 60px))` |
+| Modal max width | `min(900px, 100%)` |
+| Min app width | `860px` |
 
 ---
 

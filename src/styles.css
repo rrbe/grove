@@ -435,7 +435,7 @@ pre {
 .main {
   flex: 1;
   min-width: 0;
-  padding: 24px 28px;
+  padding: 18px 18px 24px;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -446,10 +446,6 @@ pre {
   padding: 0;
   overflow: hidden;
   gap: 0;
-}
-
-.main:has(.worktrees-layout) > .view-title {
-  padding: 14px 14px 8px;
 }
 
 .view-title {
@@ -471,9 +467,18 @@ pre {
 .worktrees-layout {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 0;
   flex: 1;
   min-height: 0;
+}
+
+.worktrees-title-panel {
+  display: flex;
+  align-items: flex-start;
+  padding: 18px 18px 6px;
+  background: var(--surface-warm);
+  border-right: 1px solid var(--border-default);
 }
 
 .worktrees-panel {
@@ -483,6 +488,7 @@ pre {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
 }
 
 .worktree-toolbar {
@@ -517,6 +523,7 @@ pre {
 }
 
 .worktrees-detail {
+  min-height: 0;
   padding: 24px 28px;
   overflow-y: auto;
   display: flex;

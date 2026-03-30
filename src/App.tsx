@@ -725,15 +725,21 @@ export default function App({ repoPath }: { repoPath: string }) {
 
         {view === "worktrees" && (
           <>
-            <h1 className="view-title">{t.tabWorktrees}</h1>
             {!repo ? (
-              <div className="repo-view">
-                <section className="hero card">
-                  <h2>{t.loading}</h2>
-                </section>
-              </div>
+              <>
+                <h1 className="view-title">{t.tabWorktrees}</h1>
+                <div className="repo-view">
+                  <section className="hero card">
+                    <h2>{t.loading}</h2>
+                  </section>
+                </div>
+              </>
             ) : (
               <div className="worktrees-layout">
+                <div className="worktrees-title-panel">
+                  <h1 className="view-title">{t.tabWorktrees}</h1>
+                </div>
+                <div className="worktrees-title-spacer" aria-hidden="true" />
                 <div className="worktrees-panel">
                   <div className="repo-name-label">{repo.repoRoot.split("/").pop()}</div>
                   <div className="worktree-toolbar">

@@ -58,21 +58,24 @@ Standalone sizes outside the scale: `0.92rem` (sidebar branch name), `1.2rem` (d
 
 | Token | Value | Usage |
 |---|---|---|
-| `--ink` | `#1a1a1a` | Primary text |
-| `--ink-strong` | `rgba(26, 26, 26, 0.9)` | Emphasis |
-| `--ink-secondary` | `rgba(26, 26, 26, 0.6)` | Body copy, descriptions |
-| `--ink-tertiary` | `rgba(26, 26, 26, 0.4)` | Muted labels, placeholders |
-| `--ink-ghost` | `rgba(26, 26, 26, 0.3)` | Ghost elements |
-| `--ink-faint` | `rgba(26, 26, 26, 0.15)` | Disabled text |
+| `--ink` | `#1c1917` | Primary text |
+| `--ink-strong` | `rgba(28, 25, 23, 0.9)` | Emphasis |
+| `--ink-secondary` | `rgba(28, 25, 23, 0.6)` | Body copy, descriptions |
+| `--ink-tertiary` | `rgba(28, 25, 23, 0.46)` | Muted labels, placeholders |
+| `--ink-ghost` | `rgba(28, 25, 23, 0.3)` | Ghost elements |
+| `--ink-faint` | `rgba(28, 25, 23, 0.15)` | Disabled text |
 
 ### Accent Color
 
 | Token | Value | Usage |
 |---|---|---|
-| `--teal` | `#3d7a73` | Primary accent — focus rings, active states |
-| `--teal-bg` | `rgba(61, 122, 115, 0.08)` | Active selection background |
-| `--teal-border` | `rgba(61, 122, 115, 0.2)` | Active item border |
-| `--teal-focus` | `rgba(61, 122, 115, 0.5)` | Input focus border |
+| `--teal` | `#2e7a6e` | Primary accent — focus rings, active states |
+| `--teal-bg` | `rgba(46, 122, 110, 0.08)` | Active selection background |
+| `--teal-bg-strong` | `rgba(46, 122, 110, 0.15)` | Strong selection background |
+| `--teal-border` | `rgba(46, 122, 110, 0.22)` | Active item border |
+| `--teal-focus` | `rgba(46, 122, 110, 0.5)` | Input focus border |
+| `--teal-muted` | `rgba(46, 122, 110, 0.6)` | Muted teal text |
+| `--teal-hover` | `rgba(46, 122, 110, 0.82)` | Hover state |
 
 Use teal **sparingly** — only for interactive states, active indicators, and focus rings.
 
@@ -80,31 +83,36 @@ Use teal **sparingly** — only for interactive states, active indicators, and f
 
 | Token | Value | Usage |
 |---|---|---|
-| `--success` | `#2d7a5f` | Success text |
-| `--danger` | `#b33a30` | Error/danger text |
-| `--warning` | `#8a6d2b` | Warning text |
-| `--purple` | `#6b5cae` | PR badges |
+| `--success` | `#28735a` | Success text |
+| `--danger` | `#a63828` | Error/danger text |
+| `--warning` | `#7d6328` | Warning text |
+| `--purple` | `#6258a0` | PR badges |
 
 ### Surfaces (Light)
 
 | Token | Value | Usage |
 |---|---|---|
-| Page background | `#fafafa` | Solid flat background |
-| `--surface-card` | `#ffffff` | Card backgrounds |
-| `--surface-topbar` | `#fafafa` | Topbar |
-| `--surface-sidebar` | `#f5f5f5` | Sidebar, worktrees panel |
-| `--surface-modal` | `#ffffff` | Modals |
-| `--surface-hover` | `rgba(0, 0, 0, 0.04)` | Hover states |
-| `--surface-subtle` | `rgba(0, 0, 0, 0.02)` | Subtle backgrounds |
-| `--surface-muted` | `rgba(0, 0, 0, 0.04)` | Muted backgrounds |
+| Page background | `#f8f6f3` | Solid warm background |
+| `--surface-card` | `#fefdfb` | Card backgrounds |
+| `--surface-topbar` | `#f7f5f2` | Topbar |
+| `--surface-sidebar` | `#f3f1ee` | Sidebar, worktrees panel |
+| `--surface-modal` | `#fefdfb` | Modals |
+| `--surface-input` | `#fefdfb` | Input backgrounds |
+| `--surface-warm` | `#f5f3f0` | Warm surface |
+| `--surface-raised` | `#fefdfb` | Raised elements |
+| `--surface-hover` | `rgba(28, 25, 23, 0.045)` | Hover states |
+| `--surface-subtle` | `rgba(28, 25, 23, 0.025)` | Subtle backgrounds |
+| `--surface-muted` | `rgba(28, 25, 23, 0.04)` | Muted backgrounds |
+| `--surface-strong` | `rgba(28, 25, 23, 0.065)` | Strong backgrounds |
+| `--surface-stronger` | `rgba(28, 25, 23, 0.1)` | Stronger backgrounds |
 
 ### Borders
 
 | Token | Value | Usage |
 |---|---|---|
-| `--border-faint` | `rgba(0, 0, 0, 0.06)` | Internal dividers |
-| `--border-default` | `rgba(0, 0, 0, 0.1)` | Card/panel borders, topbar, sidebar |
-| `--border-strong` | `rgba(0, 0, 0, 0.14)` | Input borders |
+| `--border-faint` | `rgba(28, 25, 23, 0.07)` | Internal dividers |
+| `--border-default` | `rgba(28, 25, 23, 0.12)` | Card/panel borders, topbar, sidebar |
+| `--border-strong` | `rgba(28, 25, 23, 0.16)` | Input borders |
 
 ---
 
@@ -115,9 +123,9 @@ Shadows are used **minimally**. Cards have no shadow. Only modals and menus cast
 | Name | Value | Usage |
 |---|---|---|
 | `shadow-card` | `none` | Cards use borders, not shadows |
-| `shadow-modal` | `0 8px 32px rgba(0, 0, 0, 0.12)` | Modal overlay |
-| `shadow-menu` | `0 4px 16px rgba(0, 0, 0, 0.1)` | Context menus |
-| `shadow-panel` | `-2px 0 16px rgba(0, 0, 0, 0.08)` | Slide-out panel |
+| `shadow-modal` | `0 8px 32px rgba(28, 25, 23, 0.14)` | Modal overlay |
+| `shadow-menu` | `0 4px 16px rgba(28, 25, 23, 0.12)` | Context menus |
+| `shadow-panel` | `-2px 0 16px rgba(28, 25, 23, 0.1)` | Slide-out panel |
 
 ---
 
@@ -129,9 +137,9 @@ All buttons use `border: 0; border-radius: 999px; cursor: pointer`. Disabled: `o
 
 | Variant | Class | Background | Text Color | Usage |
 |---|---|---|---|---|
-| **Primary** | `.primary-button` | `#3d7a73` (solid flat) | `#ffffff` | Main CTA — save, create, confirm |
-| **Ghost** | `.ghost-button` | `rgba(0, 0, 0, 0.05)` | `var(--ink)` | Secondary actions — cancel, open |
-| **Danger** | `.danger-button` | `rgba(200, 50, 40, 0.1)` | `#b33a30` | Destructive actions — delete, remove |
+| **Primary** | `.primary-button` | `#2e7a6e` (solid flat) | `#fefdfb` | Main CTA — save, create, confirm |
+| **Ghost** | `.ghost-button` | `rgba(28, 25, 23, 0.055)` | `var(--ink)` | Secondary actions — cancel, open |
+| **Danger** | `.danger-button` | `rgba(180, 58, 46, 0.1)` | `#a63828` | Destructive actions — delete, remove |
 
 ### Sizes
 
@@ -157,7 +165,7 @@ Always use `<Input>`, `<Textarea>`, `<Select>` from `src/components/FormControls
 |---|---|
 | Border | `1px solid var(--border-strong)` |
 | Border Radius | `var(--radius-sm)` |
-| Background | `#ffffff` (light) / `#1e1e1e` (dark) |
+| Background | `#fefdfb` (light) / `#201e1c` (dark) |
 | Focus | Border changes to `var(--teal-focus)` |
 
 ---
@@ -166,7 +174,7 @@ Always use `<Input>`, `<Textarea>`, `<Select>` from `src/components/FormControls
 
 ### Card (`.card`)
 
-- Background: `#ffffff`
+- Background: `#fefdfb`
 - Border: `1px solid var(--border-default)`
 - Radius: `var(--radius-xl)` (12px)
 - Shadow: **none**
@@ -174,17 +182,17 @@ Always use `<Input>`, `<Textarea>`, `<Select>` from `src/components/FormControls
 
 ### Modal (`.modal-card`)
 
-- Background: `#ffffff`
+- Background: `#fefdfb`
 - Border: `1px solid var(--border-default)`
 - Radius: `var(--radius-xl)` (12px)
-- Shadow: `0 8px 32px rgba(0, 0, 0, 0.12)`
+- Shadow: `0 8px 32px rgba(28, 25, 23, 0.14)`
 - Padding: `24px`
 
 ### Slide-out Panel
 
 - Fixed right, full height
 - Width: `min(480px, calc(100vw - 60px))`
-- Shadow: `-2px 0 16px rgba(0, 0, 0, 0.08)`
+- Shadow: `-2px 0 16px rgba(28, 25, 23, 0.1)`
 
 ---
 

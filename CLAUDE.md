@@ -44,12 +44,12 @@ cd src-tauri && cargo clippy # lint Rust code
 
 All UI work **must** follow `DESIGN_SYSTEM.md`. Key rules:
 
-- **Colors**: Near-monochrome palette. Light: `#fafafa` background, `#1a1a1a` ink, `#3d7a73` teal accent (used sparingly). Do not introduce new brand colors. No gradients anywhere.
+- **Colors**: Use the documented palette tokens — warm ink tones (`#1c1917` base) with teal accent (`#2e7a6e`). Do not introduce new brand colors.
 - **Buttons**: Three variants only — `primary-button` (solid flat teal), `ghost-button` (secondary), `danger-button` (destructive). One primary button per visible form section. Pill radius (`999px`) for all standard buttons.
 - **Inputs**: Always use `<Input>`, `<Textarea>`, `<Select>` from `FormControls.tsx`. Focus ring teal. Never use native elements directly.
 - **Toast**: Bottom-right, one at a time, auto-dismiss 3s. Two variants: `toast-success` / `toast-error`. Prefix with `✓` / `✗`.
 - **Typography**: Sans-serif (`Avenir Next`) for all text, monospace (`SF Mono`) for code/paths. No serif fonts. Do not add new font stacks.
-- **Cards**: Flat white (`#ffffff`), radius `12px`, border only, no shadow. No glass-morphism, no `backdrop-filter`.
+- **Cards**: Warm white (`#fefdfb`), radius `12px`, border only, no shadow. No glass-morphism, no `backdrop-filter`.
 - **Modals**: Use `ModalShell` component. Radius `12px`, minimal shadow. Dismiss via Escape + backdrop click.
 - **Spacing**: 2px base grid. Common stops: 6, 8, 10, 12, 14, 20, 24px. Follow existing patterns.
 - **Transitions**: Buttons `140ms ease`, list items `100ms ease`, slide-out `180ms ease-out`.

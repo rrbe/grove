@@ -35,7 +35,7 @@
   --ink: #1c1917;
   --ink-strong: rgba(28, 25, 23, 0.9);
   --ink-secondary: rgba(28, 25, 23, 0.6);
-  --ink-tertiary: rgba(28, 25, 23, 0.4);
+  --ink-tertiary: rgba(28, 25, 23, 0.46);
   --ink-ghost: rgba(28, 25, 23, 0.3);
   --ink-faint: rgba(28, 25, 23, 0.15);
 
@@ -139,7 +139,7 @@
   --ink: #dbd6d0;
   --ink-strong: rgba(219, 214, 208, 0.92);
   --ink-secondary: rgba(219, 214, 208, 0.65);
-  --ink-tertiary: rgba(219, 214, 208, 0.42);
+  --ink-tertiary: rgba(219, 214, 208, 0.48);
   --ink-ghost: rgba(219, 214, 208, 0.3);
   --ink-faint: rgba(219, 214, 208, 0.18);
 

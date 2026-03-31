@@ -45,8 +45,8 @@ Standalone sizes outside the scale: `0.92rem` (sidebar branch name), `1.2rem` (d
 
 | Token | Stack | Usage |
 |---|---|---|
-| (`:root`) | `"Avenir Next", "Segoe UI", sans-serif` | All UI text |
-| `--font-mono` | `"SF Mono", "JetBrains Mono", monospace` | Code, paths, diffs |
+| (`:root`) | `"Avenir Next", "Segoe UI", Roboto, "Noto Sans", Ubuntu, Cantarell, sans-serif` | All UI text |
+| `--font-mono` | `"SF Mono", "Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, "Liberation Mono", monospace` | Code, paths, diffs |
 
 **No serif fonts.** All headings use the same sans-serif stack.
 
@@ -114,6 +114,68 @@ Use teal **sparingly** — only for interactive states, active indicators, and f
 | `--border-default` | `rgba(28, 25, 23, 0.12)` | Card/panel borders, topbar, sidebar |
 | `--border-strong` | `rgba(28, 25, 23, 0.16)` | Input borders |
 
+### Dark Mode Overrides
+
+Dark mode is activated via `[data-theme="dark"]`. All light-mode tokens above are overridden. Key differences:
+
+#### Ink (Dark)
+
+| Token | Value |
+|---|---|
+| `--ink` | `#dbd6d0` |
+| `--ink-strong` | `rgba(219, 214, 208, 0.92)` |
+| `--ink-secondary` | `rgba(219, 214, 208, 0.65)` |
+| `--ink-tertiary` | `rgba(219, 214, 208, 0.48)` |
+| `--ink-ghost` | `rgba(219, 214, 208, 0.3)` |
+| `--ink-faint` | `rgba(219, 214, 208, 0.18)` |
+
+#### Accent (Dark)
+
+| Token | Value |
+|---|---|
+| `--teal` | `#52b0a4` |
+| `--teal-bg` | `rgba(82, 176, 164, 0.1)` |
+| `--teal-bg-strong` | `rgba(82, 176, 164, 0.18)` |
+| `--teal-border` | `rgba(82, 176, 164, 0.25)` |
+| `--teal-focus` | `rgba(82, 176, 164, 0.48)` |
+| `--teal-muted` | `rgba(82, 176, 164, 0.58)` |
+| `--teal-hover` | `rgba(82, 176, 164, 0.78)` |
+
+#### Surfaces (Dark)
+
+| Token | Value |
+|---|---|
+| Page background | `#151312` |
+| `--surface-card` | `#1e1c19` |
+| `--surface-topbar` | `#181614` |
+| `--surface-sidebar` | `#1b1917` |
+| `--surface-modal` | `#201e1b` |
+| `--surface-input` | `#24221f` |
+| `--surface-warm` | `#1b1917` |
+| `--surface-raised` | `#24221f` |
+| `--surface-hover` | `rgba(219, 214, 208, 0.07)` |
+| `--surface-subtle` | `rgba(219, 214, 208, 0.04)` |
+| `--surface-muted` | `rgba(219, 214, 208, 0.065)` |
+| `--surface-strong` | `rgba(219, 214, 208, 0.095)` |
+| `--surface-stronger` | `rgba(219, 214, 208, 0.13)` |
+
+#### Borders (Dark)
+
+| Token | Value |
+|---|---|
+| `--border-faint` | `rgba(219, 214, 208, 0.08)` |
+| `--border-default` | `rgba(219, 214, 208, 0.12)` |
+| `--border-strong` | `rgba(219, 214, 208, 0.17)` |
+
+#### Semantic Colors (Dark)
+
+| Token | Value |
+|---|---|
+| `--success` | `#68c49c` |
+| `--danger` | `#e09080` |
+| `--warning` | `#cca44a` |
+| `--purple` | `#9c8acc` |
+
 ---
 
 ## Shadows
@@ -165,7 +227,7 @@ Always use `<Input>`, `<Textarea>`, `<Select>` from `src/components/FormControls
 |---|---|
 | Border | `1px solid var(--border-strong)` |
 | Border Radius | `var(--radius-sm)` |
-| Background | `#fefdfb` (light) / `#201e1c` (dark) |
+| Background | `#fefdfb` (light) / `#24221f` (dark) |
 | Focus | Border changes to `var(--teal-focus)` |
 
 ---
@@ -214,9 +276,21 @@ No per-launcher gradients. No decorative shadows or glows.
 | Height | `38px` |
 | Background | `var(--surface-topbar)` (solid, no blur) |
 | Border | `1px solid var(--border-default)` |
-| Left padding (macOS) | `78px` |
+| Left padding (macOS) | `78px` (set dynamically via JS) |
 
-**No backdrop-filter.** No glass-morphism.
+Contains brand mark + name on the left, centered repo path, empty right zone. **No backdrop-filter.** No glass-morphism.
+
+## Sidebar Navigation
+
+| Property | Value |
+|---|---|
+| Width | `48px` |
+| Background | transparent (inherits page bg) |
+| Tab size | `36px × 36px`, icon-only |
+| Active state | Teal icon + `var(--teal-bg)` background |
+| Hover state | `var(--ink-secondary)` icon + `var(--surface-hover)` background |
+
+Four tabs (top to bottom): Repository, Worktrees, Hooks, Settings. Icons from Lucide.
 
 ---
 
@@ -275,7 +349,8 @@ No per-launcher gradients. No decorative shadows or glows.
 |---|---|
 | Topbar height | `38px` |
 | Topbar left padding (macOS) | `78px` |
-| Sidebar width (worktrees) | `280px` |
+| Sidebar width | `48px` |
+| Worktrees list column | `280px` |
 | Max content width | `640-680px` |
 | Slide-out panel width | `min(480px, calc(100vw - 60px))` |
 | Modal max width | `min(900px, 100%)` |
@@ -294,3 +369,13 @@ No per-launcher gradients. No decorative shadows or glows.
 7. **Toast placement**: bottom-right, one at a time, auto-dismiss 3s.
 8. **Modal dismiss**: Escape key + backdrop click.
 9. **Typography**: Sans-serif everywhere. No serif fonts.
+
+---
+
+## Live Preview
+
+`design-system.html` (project root) renders all tokens and components using the real `src/styles.css` via Vite. To preview:
+
+1. Run `pnpm tauri:dev` (Vite dev server on port 1420)
+2. Open `http://localhost:1420/design-system.html`
+3. Toggle `[data-theme="dark"]` on `<html>` to verify dark mode

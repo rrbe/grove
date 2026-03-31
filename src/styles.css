@@ -1083,6 +1083,35 @@ textarea {
   border-color: var(--border-strong);
 }
 
+.launcher-icon-shell[data-launcher-id="claude"] {
+  background: #da7651;
+  border-color: rgba(205, 95, 47, 0.2);
+}
+
+.launcher-icon-shell[data-launcher-id="vscode"] {
+  background: rgba(0, 122, 204, 0.1);
+}
+
+.launcher-icon-shell[data-launcher-id="codex"] {
+  background: rgba(69, 80, 93, 0.1);
+}
+
+.launcher-icon-shell[data-launcher-id="gemini"] {
+  background: rgba(107, 99, 246, 0.1);
+}
+
+.launcher-icon-shell[data-launcher-id="wezterm"] {
+  background: rgba(78, 62, 200, 0.1);
+}
+
+.launcher-icon-shell[data-launcher-id="alacritty"] {
+  background: rgba(244, 109, 1, 0.1);
+}
+
+.launcher-icon-shell[data-launcher-id="kitty"] {
+  background: rgba(120, 68, 33, 0.1);
+}
+
 [data-theme="dark"] .launcher-icon-shell[data-launcher-id="cursor"],
 [data-theme="dark"] .launcher-icon-shell[data-launcher-id="terminal"],
 [data-theme="dark"] .launcher-icon-shell[data-launcher-id="ghostty"],
@@ -1091,6 +1120,35 @@ textarea {
 [data-theme="dark"] .launcher-icon-shell[data-launcher-id="opencode"] {
   background: #0d0c0b;
   border-color: rgba(219, 214, 208, 0.1);
+}
+
+[data-theme="dark"] .launcher-icon-shell[data-launcher-id="claude"] {
+  background: #c06840;
+  border-color: rgba(205, 95, 47, 0.25);
+}
+
+[data-theme="dark"] .launcher-icon-shell[data-launcher-id="vscode"] {
+  background: rgba(0, 122, 204, 0.14);
+}
+
+[data-theme="dark"] .launcher-icon-shell[data-launcher-id="codex"] {
+  background: rgba(69, 80, 93, 0.18);
+}
+
+[data-theme="dark"] .launcher-icon-shell[data-launcher-id="gemini"] {
+  background: rgba(107, 99, 246, 0.14);
+}
+
+[data-theme="dark"] .launcher-icon-shell[data-launcher-id="wezterm"] {
+  background: rgba(78, 62, 200, 0.14);
+}
+
+[data-theme="dark"] .launcher-icon-shell[data-launcher-id="alacritty"] {
+  background: rgba(244, 109, 1, 0.14);
+}
+
+[data-theme="dark"] .launcher-icon-shell[data-launcher-id="kitty"] {
+  background: rgba(120, 68, 33, 0.16);
 }
 
 .launcher-icon {

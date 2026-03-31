@@ -10,7 +10,7 @@ pub struct WatcherState {
 
 struct WatcherInner {
     _watcher: RecommendedWatcher,
-    _repo_root: String,
+    repo_root: String,
 }
 
 impl WatcherState {
@@ -20,10 +20,19 @@ impl WatcherState {
         }
     }
 
-    /// Stop the current watcher and start watching the given repo's `.git/worktrees/` directory.
+    /// Start watching the given repo's `.git/worktrees/` directory.
     /// If `.git/worktrees/` doesn't exist yet, watches `.git/` to detect its creation.
+    /// Skips restart if already watching the same repo (avoids event loops).
     pub fn start(&self, app: &AppHandle, repo_root: &str) {
         let mut guard = self.inner.lock().unwrap();
+
+        // If already watching the same repo, don't restart — avoids triggering
+        // initial events that would cause an infinite refresh loop.
+        if let Some(ref inner) = *guard {
+            if inner.repo_root == repo_root {
+                return;
+            }
+        }
 
         // Stop existing watcher (dropped automatically)
         *guard = None;
@@ -82,7 +91,7 @@ impl WatcherState {
 
         *guard = Some(WatcherInner {
             _watcher: watcher,
-            _repo_root: repo_root.to_string(),
+            repo_root: repo_root.to_string(),
         });
     }
 }

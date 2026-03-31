@@ -54,6 +54,7 @@ All UI work **must** follow `DESIGN_SYSTEM.md`. Key rules:
 - **Spacing**: 2px base grid. Common stops: 6, 8, 10, 12, 14, 20, 24px. Follow existing patterns.
 - **Transitions**: Buttons `140ms ease`, list items `100ms ease`, slide-out `180ms ease-out`.
 - **Dark mode**: Supports Light / Dark / System. All colors use CSS custom properties (`var(--token)`). When adding new UI, always use existing tokens from `:root` — never hardcode colors. Verify new pages/components look correct in both light and dark mode.
+- **Preview**: `design-system.html` at project root renders all tokens and components using the real `src/styles.css`. When adjusting colors or tokens, run `pnpm tauri:dev` (Vite dev server on port 1420), then use Chrome DevTools MCP to open `http://localhost:1420/design-system.html` to visually verify changes in real time. Toggle `[data-theme="dark"]` on `<html>` to check dark mode.
 
 ## Notes
 
@@ -64,4 +65,4 @@ All UI work **must** follow `DESIGN_SYSTEM.md`. Key rules:
 
 ## UI Layout
 
-Top navigation bar (38px, `titleBarStyle: overlay` with 78px left padding for macOS traffic lights) + full-width content area. Topbar: brand, 4 tabs (Repository, Worktrees, Hooks, Settings), "New Worktree" button on the right. Views: Repository (centered card with repo picker), Worktrees (master-detail grid: 280px worktree list | detail panel), Hooks (inline hooks editor), Settings (language, terminal, shell, tray icon, tooling, logs, config). Create worktree uses a right-side slide-out panel.
+Topbar (38px, `titleBarStyle: overlay` with 78px left padding for macOS traffic lights) shows brand + centered repo path. Left sidebar (48px, icon-only) has 4 tabs: Repository, Worktrees, Hooks, Settings. Main content fills the area right of the sidebar. Views: Repository (centered card with repo picker), Worktrees (master-detail grid: 280px worktree list | detail panel; "New Worktree" button in worktree toolbar), Hooks (inline hooks editor), Settings (language, terminal, shell, tray icon, tooling, logs, config). Create worktree uses a right-side slide-out panel.

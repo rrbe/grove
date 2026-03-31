@@ -12,6 +12,10 @@ Use `pnpm install` to install frontend dependencies. Run `pnpm tauri:dev` for th
 
 Follow the existing style rather than introducing new patterns. TypeScript uses 2-space indentation, semicolons, PascalCase for components and types, and camelCase for functions, state, and Tauri payload fields. Keep frontend IPC definitions in `src/lib/api.ts` and shared TS shapes in `src/lib/types.ts`. Rust follows standard `rustfmt` formatting, `snake_case` names, and `#[serde(rename_all = "camelCase")]` for structs crossing the JS bridge.
 
+## Design System Preview
+
+When adjusting colors, tokens, or component styles, use `design-system.html` (project root) to visually verify changes. It imports `src/styles.css` directly via Vite. Run `pnpm tauri:dev` (port 1420), then open `http://localhost:1420/design-system.html` via Chrome DevTools MCP to preview all tokens and components live. Toggle `[data-theme="dark"]` on `<html>` to check dark mode.
+
 ## Testing Guidelines
 
 Backend tests are inline Rust unit tests placed in `mod tests` blocks inside the relevant module files such as `src-tauri/src/git.rs`, `config.rs`, and `actions.rs`. Add tests next to the behavior you change. There is currently no dedicated frontend test harness, so at minimum run `pnpm build` after UI or API changes and `cargo test` after backend edits.

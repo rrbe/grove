@@ -1001,7 +1001,10 @@ fn cmd_config_edit() -> Result<(), String> {
         None => config::sample_config_text(),
     };
 
-    let parsed = edit_in_loop(&initial, "config", config::parse_config_text)?;
+    let Some(parsed) = edit_in_loop(&initial, "config", config::parse_config_text)? else {
+        eprintln!("no changes; config left unchanged");
+        return Ok(());
+    };
     let new_config = parsed.unwrap_or_default();
     if config::is_effectively_empty(&new_config) {
         store_data.repo_configs.remove(&repo_key);
@@ -1029,7 +1032,10 @@ fn cmd_hook_edit() -> Result<(), String> {
         config::render_hooks_text(&existing.hooks)?
     };
 
-    let new_hooks = edit_in_loop(&initial, "hooks", config::parse_hooks_text)?;
+    let Some(new_hooks) = edit_in_loop(&initial, "hooks", config::parse_hooks_text)? else {
+        eprintln!("no changes; hooks left unchanged");
+        return Ok(());
+    };
     let mut new_config = existing;
     new_config.hooks = new_hooks;
     if config::is_effectively_empty(&new_config) {
@@ -1058,13 +1064,21 @@ const HOOKS_EDIT_TEMPLATE: &str = r#"# Edit hooks below. The schema is a [[hooks
 "#;
 
 /// Open `initial_text` in the user's editor, then run `parse` on the saved
-/// content. If `parse` errors, prompt to retry — the editor reopens with the
-/// user's last edit, not the original template.
+/// content.
+///
+/// Returns `Ok(None)` if the user closed the editor without modifying the
+/// file (the caller should treat this as a no-op, not persist anything).
+/// Returns `Ok(Some(value))` on a successful parse of edited content.
+///
+/// On parse failure with a TTY, prompts to retry — the editor reopens with
+/// the user's last edit, not the original template. On non-TTY (no way to
+/// prompt), the parse error is returned directly so the caller sees the real
+/// problem instead of a "not a TTY" mask.
 fn edit_in_loop<F, T>(
     initial_text: &str,
     file_name_hint: &str,
     parse: F,
-) -> Result<T, String>
+) -> Result<Option<T>, String>
 where
     F: Fn(&str) -> Result<T, String>,
 {
@@ -1080,9 +1094,15 @@ where
         spawn_editor(tmp.path())?;
         let edited = std::fs::read_to_string(tmp.path())
             .map_err(|error| format!("cannot read edited file: {error}"))?;
+        if edited == initial_text {
+            return Ok(None);
+        }
         match parse(&edited) {
-            Ok(value) => return Ok(value),
+            Ok(value) => return Ok(Some(value)),
             Err(error) => {
+                if !std::io::stderr().is_terminal() {
+                    return Err(error);
+                }
                 eprintln!("error: {error}");
                 if !prompt_retry()? {
                     return Err("aborted".into());
@@ -1133,9 +1153,6 @@ fn resolve_editor() -> String {
 }
 
 fn prompt_retry() -> Result<bool, String> {
-    if !std::io::stderr().is_terminal() {
-        return Err("not a TTY — cannot prompt for retry".into());
-    }
     eprint!("retry? [Y/n] ");
     std::io::stderr().flush().ok();
     let mut answer = String::new();

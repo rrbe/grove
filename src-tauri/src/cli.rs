@@ -117,6 +117,8 @@ enum HookCommands {
     },
     /// List configured hooks for the current repository
     List,
+    /// Edit the hooks for the current repository in $EDITOR
+    Edit,
 }
 
 #[derive(Subcommand)]
@@ -174,6 +176,8 @@ enum ConfigCommands {
     },
     /// Print the on-disk path to ~/.grove/store.json
     Path,
+    /// Edit the full repo config (settings + launchers + hooks) in $EDITOR
+    Edit,
 }
 
 pub struct StdioLogWriter;
@@ -241,6 +245,7 @@ pub fn main() {
         Some(Commands::Hook { command }) => match command {
             HookCommands::Run { event, worktree } => cmd_hook_run(event, worktree.as_deref()),
             HookCommands::List => cmd_hook_list(),
+            HookCommands::Edit => cmd_hook_edit(),
         },
         Some(Commands::Worktree { command }) => match command {
             WorktreeCommands::List => cmd_worktree_list(),
@@ -515,6 +520,7 @@ fn cmd_config(command: ConfigCommands) -> Result<(), String> {
         ConfigCommands::Set { key, value, global } => cmd_config_set(&key, &value, global),
         ConfigCommands::Unset { key, global } => cmd_config_unset(&key, global),
         ConfigCommands::Path => cmd_config_path(),
+        ConfigCommands::Edit => cmd_config_edit(),
     }
 }
 
@@ -983,6 +989,162 @@ const FISH_SHELL_INIT: &str = r#"function grove
     end
 end
 "#;
+
+// ── config edit / hook edit ────────────────────────────────────────────────
+
+fn cmd_config_edit() -> Result<(), String> {
+    let repo_root = current_repo_root()?;
+    let repo_key = repo_root.to_string_lossy().to_string();
+    let mut store_data = store::load_store()?;
+    let initial = match store_data.repo_configs.get(&repo_key) {
+        Some(cfg) => config::render_config_text(cfg)?,
+        None => config::sample_config_text(),
+    };
+
+    let parsed = edit_in_loop(&initial, "config", config::parse_config_text)?;
+    let new_config = parsed.unwrap_or_default();
+    if config::is_effectively_empty(&new_config) {
+        store_data.repo_configs.remove(&repo_key);
+    } else {
+        store_data.repo_configs.insert(repo_key.clone(), new_config);
+    }
+    store::persist(&store_data)?;
+    eprintln!("config saved for {repo_key}");
+    Ok(())
+}
+
+fn cmd_hook_edit() -> Result<(), String> {
+    let repo_root = current_repo_root()?;
+    let repo_key = repo_root.to_string_lossy().to_string();
+    let mut store_data = store::load_store()?;
+    let existing = store_data
+        .repo_configs
+        .get(&repo_key)
+        .cloned()
+        .unwrap_or_default();
+
+    let initial = if existing.hooks.is_empty() {
+        HOOKS_EDIT_TEMPLATE.to_string()
+    } else {
+        config::render_hooks_text(&existing.hooks)?
+    };
+
+    let new_hooks = edit_in_loop(&initial, "hooks", config::parse_hooks_text)?;
+    let mut new_config = existing;
+    new_config.hooks = new_hooks;
+    if config::is_effectively_empty(&new_config) {
+        store_data.repo_configs.remove(&repo_key);
+    } else {
+        store_data.repo_configs.insert(repo_key.clone(), new_config);
+    }
+    store::persist(&store_data)?;
+    eprintln!("hooks saved for {repo_key}");
+    Ok(())
+}
+
+const HOOKS_EDIT_TEMPLATE: &str = r#"# Edit hooks below. The schema is a [[hooks.<event>]] array of step tables.
+#
+# Events: pre-create, post-create, pre-launch, post-launch, pre-remove, post-remove
+# Step types:
+#   type = "script"      run = "echo hello"
+#   type = "install"     run = "pnpm install"   # optional, auto-detected if omitted
+#   type = "launch"      launcherId = "vscode"
+#   type = "copy-files"  paths = [".env", ".env.local"]
+#
+# Save an empty file (or delete everything) to clear all hooks.
+
+# [[hooks.post-create]]
+# type = "install"
+"#;
+
+/// Open `initial_text` in the user's editor, then run `parse` on the saved
+/// content. If `parse` errors, prompt to retry — the editor reopens with the
+/// user's last edit, not the original template.
+fn edit_in_loop<F, T>(
+    initial_text: &str,
+    file_name_hint: &str,
+    parse: F,
+) -> Result<T, String>
+where
+    F: Fn(&str) -> Result<T, String>,
+{
+    let tmp = tempfile::Builder::new()
+        .prefix(&format!("grove-{file_name_hint}-"))
+        .suffix(".toml")
+        .tempfile()
+        .map_err(|error| format!("cannot create tmp file: {error}"))?;
+    std::fs::write(tmp.path(), initial_text)
+        .map_err(|error| format!("cannot write tmp file: {error}"))?;
+
+    loop {
+        spawn_editor(tmp.path())?;
+        let edited = std::fs::read_to_string(tmp.path())
+            .map_err(|error| format!("cannot read edited file: {error}"))?;
+        match parse(&edited) {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                eprintln!("error: {error}");
+                if !prompt_retry()? {
+                    return Err("aborted".into());
+                }
+                // tmp file already holds the user's edits; the next iteration
+                // reopens them.
+            }
+        }
+    }
+}
+
+fn spawn_editor(path: &Path) -> Result<(), String> {
+    let editor = resolve_editor();
+
+    #[cfg(unix)]
+    let status = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!(r#"{editor} "$1""#))
+        .arg("--")
+        .arg(path)
+        .status();
+    #[cfg(windows)]
+    let status = std::process::Command::new("cmd")
+        .args(["/C", &editor])
+        .arg(path)
+        .status();
+
+    let status = status.map_err(|error| format!("failed to spawn editor '{editor}': {error}"))?;
+    if !status.success() {
+        return Err(format!("editor '{editor}' exited with status {status}"));
+    }
+    Ok(())
+}
+
+fn resolve_editor() -> String {
+    for var in ["GROVE_EDITOR", "VISUAL", "EDITOR"] {
+        if let Ok(value) = std::env::var(var) {
+            if !value.trim().is_empty() {
+                return value;
+            }
+        }
+    }
+    if cfg!(windows) {
+        "notepad".into()
+    } else {
+        "vi".into()
+    }
+}
+
+fn prompt_retry() -> Result<bool, String> {
+    if !std::io::stderr().is_terminal() {
+        return Err("not a TTY — cannot prompt for retry".into());
+    }
+    eprint!("retry? [Y/n] ");
+    std::io::stderr().flush().ok();
+    let mut answer = String::new();
+    std::io::stdin()
+        .read_line(&mut answer)
+        .map_err(|error| format!("failed to read input: {error}"))?;
+    let trimmed = answer.trim().to_lowercase();
+    Ok(trimmed.is_empty() || trimmed == "y" || trimmed == "yes")
+}
 
 /// Install CLI — returns a message string (used by the Tauri GUI command).
 pub fn cmd_install_cli_inner() -> Result<String, String> {

@@ -631,8 +631,14 @@ pub fn load_repo_config(state: &SharedState, repo_root: &Path) -> LoadedConfig {
     let store = state.store.lock().unwrap();
     let stored_config = store.repo_configs.get(&repo_root_key).cloned();
     let custom_launchers = store.custom_launchers.clone();
+    let global_default_worktree_root = store.default_worktree_root.clone();
     drop(store);
-    config::load(repo_root, stored_config.as_ref(), &custom_launchers)
+    config::load(
+        repo_root,
+        stored_config.as_ref(),
+        &custom_launchers,
+        global_default_worktree_root.as_deref(),
+    )
 }
 
 pub fn plan_hooks(

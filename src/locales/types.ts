@@ -22,6 +22,9 @@ export interface Translations {
   fetching: string;
   selectBranch: string;
   worktreeRootLabel: string;
+  defaultWorktreeRootLabel: string;
+  defaultWorktreeRootHint: string;
+  worktreeRootPlaceholderFallback: string;
   setDefaultDirectory: string;
   hooks: string;
   addHook: string;

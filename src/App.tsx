@@ -43,6 +43,8 @@ import {
   setDefaultShell,
   listAvailableShells,
   setWorktreeRoot,
+  getDefaultWorktreeRoot,
+  setDefaultWorktreeRoot,
   getShowTrayIcon,
   setShowTrayIcon,
   checkGroveCliInstalled,
@@ -1537,10 +1539,22 @@ function SettingsPage({
   const [showConfigEditor, setShowConfigEditor] = useState(false);
   const [cliInstalled, setCliInstalled] = useState(false);
   const [cliLoading, setCliLoading] = useState(false);
+  const [globalWorktreeRoot, setGlobalWorktreeRoot] = useState<string>("");
 
   useEffect(() => {
     checkGroveCliInstalled().then(setCliInstalled).catch(() => {});
+    getDefaultWorktreeRoot().then((value) => setGlobalWorktreeRoot(value ?? "")).catch(() => {});
   }, []);
+
+  const persistGlobalWorktreeRoot = () => {
+    setDefaultWorktreeRoot(globalWorktreeRoot)
+      .then(() => {
+        if (repo) {
+          openRepo(repo.repoRoot).then(onRepoUpdate).catch(() => {});
+        }
+      })
+      .catch(() => {});
+  };
 
   const handleInstallCli = async () => {
     setCliLoading(true);
@@ -1730,7 +1744,24 @@ function SettingsPage({
         <p className="empty-copy">{t.cliDescription}</p>
       </section>
 
-      {/* Worktree Directory */}
+      {/* Global default Worktree Directory */}
+      <section className="card stack">
+        <div className="section-heading">
+          <span>{t.defaultWorktreeRootLabel}</span>
+        </div>
+        <Input
+          className="ghost-button btn-sm"
+          style={{ textAlign: "left" }}
+          value={globalWorktreeRoot}
+          placeholder=".claude"
+          onChange={(e) => setGlobalWorktreeRoot(e.target.value)}
+          onBlur={persistGlobalWorktreeRoot}
+          disabled={isBusy}
+        />
+        <p className="empty-copy">{t.defaultWorktreeRootHint}</p>
+      </section>
+
+      {/* Per-repo Worktree Directory override */}
       {repo && (
         <section className="card stack">
           <div className="section-heading">
@@ -1740,6 +1771,7 @@ function SettingsPage({
             className="ghost-button btn-sm"
             style={{ textAlign: "left" }}
             value={repo.mergedConfig.settings.worktreeRoot}
+            placeholder={`${t.worktreeRootPlaceholderFallback}${globalWorktreeRoot || ".claude"}`}
             onChange={(e) => {
               const newRoot = e.target.value;
               onRepoUpdate({ ...repo, mergedConfig: { ...repo.mergedConfig, settings: { ...repo.mergedConfig.settings, worktreeRoot: newRoot } } });

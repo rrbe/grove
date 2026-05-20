@@ -38,6 +38,8 @@ pub struct AppStore {
     pub show_tray_icon: Option<bool>,
     #[serde(default)]
     pub theme_mode: Option<String>,
+    #[serde(default)]
+    pub default_worktree_root: Option<String>,
     #[serde(default, skip_serializing)]
     pub repo_worktree_roots: BTreeMap<String, String>,
 }

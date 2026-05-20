@@ -78,7 +78,12 @@ pub fn load_repo_snapshot(
     push_recent(&mut store, &repo_root_str);
     store.last_active_repo = Some(repo_root_str.clone());
     store::persist(&store)?;
-    let loaded = config::load(&repo_root, stored_config.as_ref(), &store.custom_launchers);
+    let loaded = config::load(
+        &repo_root,
+        stored_config.as_ref(),
+        &store.custom_launchers,
+        store.default_worktree_root.as_deref(),
+    );
     let worktrees = git::scan_worktrees(&repo_root, &store)?;
 
     // Update PR cache with freshly fetched data
@@ -662,6 +667,8 @@ pub fn run() {
             get_default_shell,
             set_default_shell,
             set_repo_worktree_root,
+            get_default_worktree_root,
+            set_default_worktree_root,
             get_file_diff,
             detect_install_command,
             list_installed_apps,
@@ -748,6 +755,22 @@ fn set_default_terminal(
 ) -> Result<(), String> {
     let mut store = state.store.lock().unwrap();
     store.default_terminal = Some(terminal_id);
+    store::persist(&store)
+}
+
+#[tauri::command]
+fn get_default_worktree_root(state: State<'_, SharedState>) -> Option<String> {
+    state.store.lock().unwrap().default_worktree_root.clone()
+}
+
+#[tauri::command]
+fn set_default_worktree_root(
+    state: State<'_, SharedState>,
+    worktree_root: String,
+) -> Result<(), String> {
+    let trimmed = worktree_root.trim().to_string();
+    let mut store = state.store.lock().unwrap();
+    store.default_worktree_root = if trimmed.is_empty() { None } else { Some(trimmed) };
     store::persist(&store)
 }
 

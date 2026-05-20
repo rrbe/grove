@@ -749,17 +749,29 @@ fn cmd_rm(args: RmArgs) -> Result<(), String> {
         .map_err(|e| format!("cannot determine current directory: {e}"))?;
     let target = resolve_rm_target(&worktrees, args.branch.as_deref(), &cwd)?;
 
+    print_rm_plan(target, args.prune, args.force);
+
     if target.is_main {
-        return Err("cannot remove the main worktree".into());
+        let msg = "cannot remove the main worktree";
+        if args.dry_run {
+            eprintln!("warning: {msg}");
+            eprintln!("(dry run — no changes made)");
+            return Ok(());
+        }
+        return Err(msg.into());
     }
     if target.dirty && !args.force {
-        return Err(format!(
+        let msg = format!(
             "worktree has uncommitted changes — pass -f to force\n  path: {}",
             target.path
-        ));
+        );
+        if args.dry_run {
+            eprintln!("warning: dirty worktree — real run would require -f");
+            eprintln!("(dry run — no changes made)");
+            return Ok(());
+        }
+        return Err(msg);
     }
-
-    print_rm_plan(target, args.prune);
 
     if args.dry_run {
         eprintln!("(dry run — no changes made)");
@@ -767,7 +779,7 @@ fn cmd_rm(args: RmArgs) -> Result<(), String> {
     }
 
     if !args.yes {
-        confirm_or_abort()?;
+        confirm_or_abort(target)?;
     }
 
     let input = RemoveWorktreeInput {
@@ -775,7 +787,7 @@ fn cmd_rm(args: RmArgs) -> Result<(), String> {
         worktree_path: target.path.clone(),
         force: args.force,
     };
-    let mut sink = StdioLogWriter;
+    let mut sink = StderrLogWriter;
     actions::remove_worktree_cli(input, args.no_hooks, args.prune, &mut sink)
 }
 
@@ -801,7 +813,7 @@ fn resolve_rm_target<'a>(
     }
 }
 
-fn print_rm_plan(target: &crate::models::WorktreeRecord, prune: bool) {
+fn print_rm_plan(target: &crate::models::WorktreeRecord, prune: bool, force: bool) {
     eprintln!("worktree: {}", target.path);
     eprintln!(
         "branch:   {}",
@@ -823,17 +835,21 @@ fn print_rm_plan(target: &crate::models::WorktreeRecord, prune: bool) {
     if !status_bits.is_empty() {
         eprintln!("status:   {}", status_bits.join(", "));
     }
+    if force {
+        eprintln!("force:    yes");
+    }
     if prune {
         eprintln!("after:    git worktree prune");
     }
     eprintln!();
 }
 
-fn confirm_or_abort() -> Result<(), String> {
+fn confirm_or_abort(target: &crate::models::WorktreeRecord) -> Result<(), String> {
     if !std::io::stderr().is_terminal() {
         return Err("not a TTY — pass -y to confirm".into());
     }
-    eprint!("delete this worktree? [y/N] ");
+    let branch = target.branch.as_deref().unwrap_or("(detached)");
+    eprint!("delete worktree '{branch}' at {}? [y/N] ", target.path);
     std::io::stderr().flush().ok();
     let mut answer = String::new();
     std::io::stdin()
@@ -951,4 +967,70 @@ fn auto_detect_worktree(repo_root: &str, cwd: &str) -> Result<Option<String>, St
     }
     // cwd is inside the repo but not inside a specific worktree — use repo root context
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::WorktreeRecord;
+
+    fn make_worktree(path: &str, branch: Option<&str>, is_main: bool) -> WorktreeRecord {
+        WorktreeRecord {
+            id: path.into(),
+            path: path.into(),
+            branch: branch.map(String::from),
+            head_sha: "0".into(),
+            is_main,
+            locked_reason: None,
+            prunable_reason: None,
+            dirty: false,
+            ahead: 0,
+            behind: 0,
+            last_opened_at: None,
+            head_commit_date: None,
+            pr_number: None,
+            pr_url: None,
+            recent_commits: Vec::new(),
+            changed_files: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn resolve_rm_target_matches_branch_exactly() {
+        let worktrees = vec![
+            make_worktree("/repo", Some("main"), true),
+            make_worktree("/repo/.wt/login", Some("feat/login"), false),
+            make_worktree("/repo/.wt/oauth", Some("feat/oauth"), false),
+        ];
+        let target =
+            resolve_rm_target(&worktrees, Some("feat/login"), Path::new("/anywhere")).unwrap();
+        assert_eq!(target.path, "/repo/.wt/login");
+    }
+
+    #[test]
+    fn resolve_rm_target_infers_from_cwd_and_skips_main() {
+        let worktrees = vec![
+            make_worktree("/repo", Some("main"), true),
+            make_worktree("/repo/.wt/login", Some("feat/login"), false),
+        ];
+
+        let target = resolve_rm_target(
+            &worktrees,
+            None,
+            Path::new("/repo/.wt/login/sub/dir"),
+        )
+        .unwrap();
+        assert_eq!(target.path, "/repo/.wt/login");
+
+        // cwd in main worktree → no inferred target (main is excluded).
+        let err = resolve_rm_target(&worktrees, None, Path::new("/repo/src")).unwrap_err();
+        assert!(err.contains("not inside a worktree"), "{err}");
+    }
+
+    #[test]
+    fn resolve_rm_target_reports_unknown_branch() {
+        let worktrees = vec![make_worktree("/repo", Some("main"), true)];
+        let err = resolve_rm_target(&worktrees, Some("ghost"), Path::new("/repo")).unwrap_err();
+        assert!(err.contains("no worktree found for branch 'ghost'"), "{err}");
+    }
 }

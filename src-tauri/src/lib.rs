@@ -768,9 +768,8 @@ fn set_default_worktree_root(
     state: State<'_, SharedState>,
     worktree_root: String,
 ) -> Result<(), String> {
-    let trimmed = worktree_root.trim().to_string();
     let mut store = state.store.lock().unwrap();
-    store.default_worktree_root = if trimmed.is_empty() { None } else { Some(trimmed) };
+    store.default_worktree_root = store::trim_to_option(&worktree_root);
     store::persist(&store)
 }
 

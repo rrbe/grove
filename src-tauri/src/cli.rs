@@ -295,11 +295,7 @@ fn cmd_hook_run(event: HookEvent, worktree: Option<&str>) -> Result<(), String> 
 }
 
 fn cmd_hook_list() -> Result<(), String> {
-    let cwd = std::env::current_dir()
-        .map_err(|e| format!("cannot determine current directory: {e}"))?;
-    let cwd_str = cwd.to_string_lossy().to_string();
-    let repo_root = git::resolve_repo_root(&cwd_str)?;
-
+    let repo_root = current_repo_root()?;
     let app_store = store::load_store()?;
     let repo_root_str = repo_root.to_string_lossy().to_string();
     let stored_config = app_store.repo_configs.get(&repo_root_str).cloned();
@@ -342,11 +338,7 @@ fn cmd_hook_list() -> Result<(), String> {
 }
 
 fn cmd_worktree_list() -> Result<(), String> {
-    let cwd = std::env::current_dir()
-        .map_err(|e| format!("cannot determine current directory: {e}"))?;
-    let cwd_str = cwd.to_string_lossy().to_string();
-    let repo_root = git::resolve_repo_root(&cwd_str)?;
-
+    let repo_root = current_repo_root()?;
     let store = store::load_store()?;
     let worktrees = git::scan_worktrees(&repo_root, &store)?;
 
@@ -422,11 +414,7 @@ fn cmd_config_show(global_only: bool, repo_only: bool) -> Result<(), String> {
     let store_data = store::load_store()?;
 
     if global_only {
-        println!("[global]");
-        match store_data.default_worktree_root.as_deref() {
-            Some(value) => println!("worktree_root = {value:?}"),
-            None => println!("# (unset)"),
-        }
+        print_global_layer(&store_data);
         return Ok(());
     }
 
@@ -443,13 +431,8 @@ fn cmd_config_show(global_only: bool, repo_only: bool) -> Result<(), String> {
         return Ok(());
     }
 
-    // Effective view
     let Some(repo_root) = repo_root else {
-        println!("[global]");
-        match store_data.default_worktree_root.as_deref() {
-            Some(value) => println!("worktree_root = {value:?}"),
-            None => println!("# (unset)"),
-        }
+        print_global_layer(&store_data);
         eprintln!("\nhint: not inside a git repository — only global settings are shown");
         return Ok(());
     };
@@ -475,6 +458,14 @@ fn cmd_config_show(global_only: bool, repo_only: bool) -> Result<(), String> {
         describe_base_branch_source(&store_data, &repo_key),
     );
     Ok(())
+}
+
+fn print_global_layer(store: &store::AppStore) {
+    println!("[global]");
+    match store.default_worktree_root.as_deref() {
+        Some(value) => println!("worktree_root = {value:?}"),
+        None => println!("# (unset)"),
+    }
 }
 
 fn describe_worktree_root_source(store: &store::AppStore, repo_key: &str) -> String {
@@ -559,8 +550,7 @@ fn cmd_config_get(key: &str, global_only: bool, repo_only: bool) -> Result<(), S
 
 fn cmd_config_set(key: &str, value: &str, global: bool) -> Result<(), String> {
     let parsed = ConfigKey::parse(key)?;
-    let trimmed = value.trim();
-
+    let new_value = store::trim_to_option(value);
     let mut store_data = store::load_store()?;
 
     if global {
@@ -570,24 +560,9 @@ fn cmd_config_set(key: &str, value: &str, global: bool) -> Result<(), String> {
                 parsed.label()
             ));
         }
-        match parsed {
-            ConfigKey::WorktreeRoot => {
-                store_data.default_worktree_root = if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(trimmed.to_string())
-                };
-            }
-            ConfigKey::DefaultBaseBranch => unreachable!(),
-        }
+        store_data.default_worktree_root = new_value.clone();
         store::persist(&store_data)?;
-        match parsed {
-            ConfigKey::WorktreeRoot => match store_data.default_worktree_root.as_deref() {
-                Some(v) => println!("global.{} = {v:?}", parsed.label()),
-                None => println!("global.{} cleared", parsed.label()),
-            },
-            ConfigKey::DefaultBaseBranch => {}
-        }
+        report_set("global", parsed.label(), new_value.as_deref());
         return Ok(());
     }
 
@@ -595,30 +570,22 @@ fn cmd_config_set(key: &str, value: &str, global: bool) -> Result<(), String> {
     let repo_key = repo_root.to_string_lossy().to_string();
     let entry = store_data.repo_configs.entry(repo_key.clone()).or_default();
     match parsed {
-        ConfigKey::WorktreeRoot => {
-            entry.settings.worktree_root = if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            };
-        }
-        ConfigKey::DefaultBaseBranch => {
-            entry.settings.default_base_branch = if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            };
-        }
+        ConfigKey::WorktreeRoot => entry.settings.worktree_root = new_value.clone(),
+        ConfigKey::DefaultBaseBranch => entry.settings.default_base_branch = new_value.clone(),
     }
     if config::is_effectively_empty(entry) {
         store_data.repo_configs.remove(&repo_key);
     }
     store::persist(&store_data)?;
-    match (parsed, trimmed.is_empty()) {
-        (_, true) => println!("repo.{} cleared", parsed.label()),
-        (_, false) => println!("repo.{} = {trimmed:?}", parsed.label()),
-    }
+    report_set("repo", parsed.label(), new_value.as_deref());
     Ok(())
+}
+
+fn report_set(scope: &str, key: &str, value: Option<&str>) {
+    match value {
+        Some(v) => println!("{scope}.{key} = {v:?}"),
+        None => println!("{scope}.{key} cleared"),
+    }
 }
 
 fn cmd_config_unset(key: &str, global: bool) -> Result<(), String> {

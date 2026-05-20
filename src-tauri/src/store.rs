@@ -59,6 +59,15 @@ impl SharedState {
     }
 }
 
+pub fn trim_to_option(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 pub fn grove_home() -> Result<PathBuf, String> {
     let home = crate::platform::home_dir()?;
     Ok(home.join(".grove"))

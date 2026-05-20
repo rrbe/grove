@@ -1540,14 +1540,24 @@ function SettingsPage({
   const [cliInstalled, setCliInstalled] = useState(false);
   const [cliLoading, setCliLoading] = useState(false);
   const [globalWorktreeRoot, setGlobalWorktreeRoot] = useState<string>("");
+  const persistedGlobalWorktreeRoot = useRef<string>("");
 
   useEffect(() => {
     checkGroveCliInstalled().then(setCliInstalled).catch(() => {});
-    getDefaultWorktreeRoot().then((value) => setGlobalWorktreeRoot(value ?? "")).catch(() => {});
+    getDefaultWorktreeRoot()
+      .then((value) => {
+        const initial = value ?? "";
+        setGlobalWorktreeRoot(initial);
+        persistedGlobalWorktreeRoot.current = initial;
+      })
+      .catch(() => {});
   }, []);
 
   const persistGlobalWorktreeRoot = () => {
-    setDefaultWorktreeRoot(globalWorktreeRoot)
+    const next = globalWorktreeRoot.trim();
+    if (next === persistedGlobalWorktreeRoot.current) return;
+    persistedGlobalWorktreeRoot.current = next;
+    setDefaultWorktreeRoot(next)
       .then(() => {
         if (repo) {
           openRepo(repo.repoRoot).then(onRepoUpdate).catch(() => {});

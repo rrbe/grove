@@ -4,7 +4,7 @@ use crate::{
     models::{CreateMode, CreateWorktreeInput, HookEvent, LogLevel, RemoveWorktreeInput, RunLog},
     store,
 };
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::io::{IsTerminal, Write};
 use std::path::Path;
 use std::process;
@@ -71,6 +71,17 @@ enum Commands {
         #[arg(short = 'q', long)]
         quiet: bool,
     },
+    /// Print the path of a worktree by branch (use with `grove shell-init` to actually cd)
+    Cd {
+        /// Branch name (defaults to the main worktree)
+        branch: Option<String>,
+    },
+    /// Print a shell snippet that wires `grove cd` into the current shell
+    ShellInit {
+        /// Shell to emit init for
+        #[arg(value_enum)]
+        shell: ShellKind,
+    },
     /// Remove a worktree
     #[command(alias = "remove")]
     Rm {
@@ -112,6 +123,13 @@ enum HookCommands {
 enum WorktreeCommands {
     /// List worktrees for the current repository
     List,
+}
+
+#[derive(Copy, Clone, ValueEnum)]
+enum ShellKind {
+    Zsh,
+    Bash,
+    Fish,
 }
 
 #[derive(Subcommand)]
@@ -185,6 +203,8 @@ const CLI_SUBCOMMANDS: &[&str] = &[
     "new",
     "rm",
     "remove",
+    "cd",
+    "shell-init",
     "help",
     "--help",
     "-h",
@@ -243,6 +263,11 @@ pub fn main() {
             no_hooks,
             quiet,
         }),
+        Some(Commands::Cd { branch }) => cmd_cd(branch.as_deref()),
+        Some(Commands::ShellInit { shell }) => {
+            print!("{}", shell_init_snippet(shell));
+            Ok(())
+        }
         Some(Commands::Rm {
             branch,
             yes,
@@ -683,7 +708,7 @@ fn cmd_config_unset(key: &str, global: bool) -> Result<(), String> {
 fn current_repo_root() -> Result<std::path::PathBuf, String> {
     let cwd = std::env::current_dir()
         .map_err(|e| format!("cannot determine current directory: {e}"))?;
-    git::resolve_repo_root(&cwd.to_string_lossy())
+    git::main_worktree_root(&cwd.to_string_lossy())
 }
 
 // ── new / rm subcommands ───────────────────────────────────────────────────
@@ -870,6 +895,102 @@ fn confirm_or_abort(target: &crate::models::WorktreeRecord) -> Result<(), String
     }
 }
 
+// ── cd / shell-init subcommands ────────────────────────────────────────────
+
+fn cmd_cd(branch: Option<&str>) -> Result<(), String> {
+    let repo_root = current_repo_root()?;
+    let store_data = store::load_store()?;
+    let worktrees = git::scan_worktrees(&repo_root, &store_data)?;
+
+    let target_path = match branch {
+        None => worktrees
+            .iter()
+            .find(|w| w.is_main)
+            .map(|w| w.path.clone())
+            .ok_or_else(|| "main worktree not found".to_string())?,
+        Some(query) => match match_branch(&worktrees, query) {
+            MatchOutcome::Single(path) => path,
+            MatchOutcome::None => {
+                return Err(format!("no worktree matches '{query}'"));
+            }
+            MatchOutcome::Multiple(candidates) => {
+                let mut msg = format!("'{query}' matches multiple worktrees:\n");
+                for branch in &candidates {
+                    msg.push_str(&format!("  {branch}\n"));
+                }
+                msg.push_str("hint: pass the full branch name");
+                return Err(msg);
+            }
+        },
+    };
+    println!("{target_path}");
+    Ok(())
+}
+
+enum MatchOutcome {
+    None,
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+fn match_branch(worktrees: &[crate::models::WorktreeRecord], query: &str) -> MatchOutcome {
+    let exact: Vec<&crate::models::WorktreeRecord> = worktrees
+        .iter()
+        .filter(|w| w.branch.as_deref() == Some(query))
+        .collect();
+    if !exact.is_empty() {
+        return finalize_matches(&exact);
+    }
+    let fuzzy: Vec<&crate::models::WorktreeRecord> = worktrees
+        .iter()
+        .filter(|w| w.branch.as_deref().is_some_and(|b| b.contains(query)))
+        .collect();
+    finalize_matches(&fuzzy)
+}
+
+fn finalize_matches(matches: &[&crate::models::WorktreeRecord]) -> MatchOutcome {
+    match matches {
+        [] => MatchOutcome::None,
+        [only] => MatchOutcome::Single(only.path.clone()),
+        many => MatchOutcome::Multiple(
+            many.iter()
+                .filter_map(|w| w.branch.clone())
+                .collect(),
+        ),
+    }
+}
+
+fn shell_init_snippet(shell: ShellKind) -> &'static str {
+    match shell {
+        ShellKind::Zsh | ShellKind::Bash => POSIX_SHELL_INIT,
+        ShellKind::Fish => FISH_SHELL_INIT,
+    }
+}
+
+const POSIX_SHELL_INIT: &str = r#"grove() {
+  if [ "$1" = "cd" ]; then
+    shift
+    local _grove_target
+    _grove_target=$(command grove cd "$@") || return $?
+    cd "$_grove_target"
+  else
+    command grove "$@"
+  fi
+}
+"#;
+
+const FISH_SHELL_INIT: &str = r#"function grove
+    if test "$argv[1]" = "cd"
+        set -e argv[1]
+        set -l _grove_target (command grove cd $argv)
+        or return $status
+        cd $_grove_target
+    else
+        command grove $argv
+    end
+end
+"#;
+
 /// Install CLI — returns a message string (used by the Tauri GUI command).
 pub fn cmd_install_cli_inner() -> Result<String, String> {
     let target = Path::new("/usr/local/bin/grove");
@@ -1039,5 +1160,68 @@ mod tests {
         let worktrees = vec![make_worktree("/repo", Some("main"), true)];
         let err = resolve_rm_target(&worktrees, Some("ghost"), Path::new("/repo")).unwrap_err();
         assert!(err.contains("no worktree found for branch 'ghost'"), "{err}");
+    }
+
+    fn assert_match_path(outcome: MatchOutcome, expected: &str) {
+        match outcome {
+            MatchOutcome::Single(path) => assert_eq!(path, expected),
+            MatchOutcome::None => panic!("expected single match {expected:?}, got None"),
+            MatchOutcome::Multiple(branches) => {
+                panic!("expected single match {expected:?}, got many: {branches:?}")
+            }
+        }
+    }
+
+    #[test]
+    fn match_branch_prefers_exact_over_substring() {
+        let worktrees = vec![
+            make_worktree("/repo", Some("main"), true),
+            make_worktree("/repo/.wt/login", Some("login"), false),
+            make_worktree("/repo/.wt/feat-login", Some("feat/login"), false),
+        ];
+        // exact "login" wins even though substring would match both
+        assert_match_path(match_branch(&worktrees, "login"), "/repo/.wt/login");
+    }
+
+    #[test]
+    fn match_branch_substring_fallback_when_no_exact() {
+        let worktrees = vec![
+            make_worktree("/repo", Some("main"), true),
+            make_worktree("/repo/.wt/feat-login", Some("feat/login"), false),
+        ];
+        assert_match_path(match_branch(&worktrees, "login"), "/repo/.wt/feat-login");
+    }
+
+    #[test]
+    fn match_branch_multiple_substring_returns_candidates() {
+        let worktrees = vec![
+            make_worktree("/repo/.wt/feat-login", Some("feat/login"), false),
+            make_worktree("/repo/.wt/feat-oauth", Some("feat/oauth"), false),
+        ];
+        match match_branch(&worktrees, "feat/") {
+            MatchOutcome::Multiple(branches) => {
+                assert_eq!(branches, vec!["feat/login", "feat/oauth"]);
+            }
+            other => panic!("expected Multiple, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn match_branch_none_when_no_match() {
+        let worktrees = vec![make_worktree("/repo", Some("main"), true)];
+        assert!(matches!(
+            match_branch(&worktrees, "ghost"),
+            MatchOutcome::None
+        ));
+    }
+
+    impl std::fmt::Debug for MatchOutcome {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::None => write!(f, "None"),
+                Self::Single(p) => write!(f, "Single({p})"),
+                Self::Multiple(b) => write!(f, "Multiple({b:?})"),
+            }
+        }
     }
 }

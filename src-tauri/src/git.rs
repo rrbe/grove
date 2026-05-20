@@ -31,6 +31,35 @@ pub fn resolve_repo_root(candidate: &str) -> Result<PathBuf, String> {
     canonicalize(Path::new(&root))
 }
 
+/// Resolve the main worktree root for `candidate`, even when `candidate` is
+/// itself inside a linked worktree. `git rev-parse --show-toplevel` returns
+/// the *local* worktree, so anything that needs the shared repo root (config
+/// keys, worktree planning) must use this helper instead.
+pub fn main_worktree_root(candidate: &str) -> Result<PathBuf, String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(candidate)
+        .args(["rev-parse", "--git-common-dir"])
+        .output()
+        .map_err(|error| format!("failed to run git rev-parse: {error}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("not a git repository: {}", stderr.trim()));
+    }
+    let common_dir = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    // git may emit a path relative to `candidate`; resolve in that context.
+    let absolute = if Path::new(&common_dir).is_absolute() {
+        PathBuf::from(&common_dir)
+    } else {
+        PathBuf::from(candidate).join(&common_dir)
+    };
+    let parent = canonicalize(&absolute)?;
+    parent
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| format!("unexpected git-common-dir: {common_dir}"))
+}
+
 pub fn scan_worktrees(
     repo_root: &Path,
     store: &AppStore,

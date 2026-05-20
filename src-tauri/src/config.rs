@@ -17,9 +17,16 @@ pub fn load(
     repo_root: &Path,
     stored_config: Option<&ConfigFile>,
     custom_launchers: &[LauncherProfile],
+    global_default_worktree_root: Option<&str>,
 ) -> LoadedConfig {
     let mut merged = builtin_config();
     merged.settings.default_base_branch = git::detect_default_branch(repo_root);
+    if let Some(value) = global_default_worktree_root
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        merged.settings.worktree_root = value.to_string();
+    }
     if let Some(config) = stored_config {
         merged = merge_config(merged, config.clone());
     }
@@ -348,6 +355,37 @@ mod tests {
     fn parse_empty_config_as_none() {
         assert!(parse_config_text("").unwrap().is_none());
         assert!(parse_config_text("[settings]\n").unwrap().is_none());
+    }
+
+    #[test]
+    fn global_default_overrides_builtin_but_loses_to_per_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo_root = tmp.path();
+
+        // Builtin default is ".claude"; passing a global default switches it.
+        let loaded = load(repo_root, None, &[], Some("../wt"));
+        assert_eq!(loaded.merged.settings.worktree_root, "../wt");
+
+        // Per-repo override wins.
+        let stored = ConfigFile {
+            settings: SettingsPatch {
+                worktree_root: Some("custom-dir".into()),
+                ..SettingsPatch::default()
+            },
+            ..ConfigFile::default()
+        };
+        let loaded = load(repo_root, Some(&stored), &[], Some("../wt"));
+        assert_eq!(loaded.merged.settings.worktree_root, "custom-dir");
+    }
+
+    #[test]
+    fn empty_global_default_falls_back_to_builtin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let loaded = load(tmp.path(), None, &[], Some("   "));
+        assert_eq!(loaded.merged.settings.worktree_root, ".claude");
+
+        let loaded = load(tmp.path(), None, &[], None);
+        assert_eq!(loaded.merged.settings.worktree_root, ".claude");
     }
 
     #[test]

@@ -42,6 +42,11 @@ enum Commands {
         #[command(subcommand)]
         command: WorktreeCommands,
     },
+    /// View or change Grove configuration
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -64,6 +69,50 @@ enum WorktreeCommands {
     List,
 }
 
+#[derive(Subcommand)]
+enum ConfigCommands {
+    /// Print the effective configuration (defaults to merged view)
+    Show {
+        /// Show only the global layer (default = effective merged view)
+        #[arg(long, conflicts_with = "repo")]
+        global: bool,
+        /// Show only the per-repo layer
+        #[arg(long, conflicts_with = "global")]
+        repo: bool,
+    },
+    /// Get a single value (effective by default)
+    Get {
+        /// Key to read (e.g. worktree_root, default_base_branch)
+        key: String,
+        /// Read from the global layer instead of the effective merged value
+        #[arg(long, conflicts_with = "repo")]
+        global: bool,
+        /// Read from the per-repo layer only
+        #[arg(long, conflicts_with = "global")]
+        repo: bool,
+    },
+    /// Set a value (per-repo by default; pass --global for app-wide default)
+    Set {
+        /// Key to write (e.g. worktree_root, default_base_branch)
+        key: String,
+        /// Value to set; pass an empty string to clear
+        value: String,
+        /// Set the app-wide global default instead of per-repo
+        #[arg(long)]
+        global: bool,
+    },
+    /// Clear a value (per-repo by default; pass --global for app-wide default)
+    Unset {
+        /// Key to clear
+        key: String,
+        /// Clear the app-wide global default instead of per-repo
+        #[arg(long)]
+        global: bool,
+    },
+    /// Print the on-disk path to ~/.grove/store.json
+    Path,
+}
+
 pub struct StdioLogWriter;
 
 impl LogWriter for StdioLogWriter {
@@ -79,6 +128,7 @@ const CLI_SUBCOMMANDS: &[&str] = &[
     "open",
     "hook",
     "worktree",
+    "config",
     "help",
     "--help",
     "-h",
@@ -119,6 +169,7 @@ pub fn main() {
         Some(Commands::Worktree { command }) => match command {
             WorktreeCommands::List => cmd_worktree_list(),
         },
+        Some(Commands::Config { command }) => cmd_config(command),
         None => {
             if let Some(path) = cli.path {
                 cmd_open(&path)
@@ -244,15 +295,16 @@ fn cmd_hook_run(event: HookEvent, worktree: Option<&str>) -> Result<(), String> 
 }
 
 fn cmd_hook_list() -> Result<(), String> {
-    let cwd = std::env::current_dir()
-        .map_err(|e| format!("cannot determine current directory: {e}"))?;
-    let cwd_str = cwd.to_string_lossy().to_string();
-    let repo_root = git::resolve_repo_root(&cwd_str)?;
-
+    let repo_root = current_repo_root()?;
     let app_store = store::load_store()?;
     let repo_root_str = repo_root.to_string_lossy().to_string();
     let stored_config = app_store.repo_configs.get(&repo_root_str).cloned();
-    let loaded = config::load(&repo_root, stored_config.as_ref(), &app_store.custom_launchers);
+    let loaded = config::load(
+        &repo_root,
+        stored_config.as_ref(),
+        &app_store.custom_launchers,
+        app_store.default_worktree_root.as_deref(),
+    );
 
     let mut found = false;
     for event in HookEvent::ALL {
@@ -286,11 +338,7 @@ fn cmd_hook_list() -> Result<(), String> {
 }
 
 fn cmd_worktree_list() -> Result<(), String> {
-    let cwd = std::env::current_dir()
-        .map_err(|e| format!("cannot determine current directory: {e}"))?;
-    let cwd_str = cwd.to_string_lossy().to_string();
-    let repo_root = git::resolve_repo_root(&cwd_str)?;
-
+    let repo_root = current_repo_root()?;
     let store = store::load_store()?;
     let worktrees = git::scan_worktrees(&repo_root, &store)?;
 
@@ -313,6 +361,241 @@ fn cmd_worktree_list() -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+// ── Config subcommand ──────────────────────────────────────────────────────
+
+#[derive(Copy, Clone)]
+enum ConfigKey {
+    WorktreeRoot,
+    DefaultBaseBranch,
+}
+
+impl ConfigKey {
+    fn parse(input: &str) -> Result<Self, String> {
+        let normalized = input.trim().trim_start_matches("settings.");
+        match normalized {
+            "worktree_root" | "worktreeRoot" => Ok(Self::WorktreeRoot),
+            "default_base_branch" | "defaultBaseBranch" => Ok(Self::DefaultBaseBranch),
+            other => Err(format!(
+                "unknown config key: {other}\n  supported: worktree_root, default_base_branch"
+            )),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::WorktreeRoot => "worktree_root",
+            Self::DefaultBaseBranch => "default_base_branch",
+        }
+    }
+
+    fn global_supported(self) -> bool {
+        matches!(self, Self::WorktreeRoot)
+    }
+}
+
+fn cmd_config(command: ConfigCommands) -> Result<(), String> {
+    match command {
+        ConfigCommands::Show { global, repo } => cmd_config_show(global, repo),
+        ConfigCommands::Get { key, global, repo } => cmd_config_get(&key, global, repo),
+        ConfigCommands::Set { key, value, global } => cmd_config_set(&key, &value, global),
+        ConfigCommands::Unset { key, global } => cmd_config_unset(&key, global),
+        ConfigCommands::Path => cmd_config_path(),
+    }
+}
+
+fn cmd_config_path() -> Result<(), String> {
+    println!("{}", store::store_path()?.display());
+    Ok(())
+}
+
+fn cmd_config_show(global_only: bool, repo_only: bool) -> Result<(), String> {
+    let store_data = store::load_store()?;
+
+    if global_only {
+        print_global_layer(&store_data);
+        return Ok(());
+    }
+
+    let repo_root = current_repo_root().ok();
+    if repo_only {
+        let repo_root = repo_root
+            .ok_or_else(|| "not inside a git repository — pass --global or run from a repo".to_string())?;
+        let repo_key = repo_root.to_string_lossy().to_string();
+        println!("[repo {repo_key}]");
+        match store_data.repo_configs.get(&repo_key) {
+            Some(config) => print!("{}", config::render_config_text(config)?),
+            None => println!("# (no per-repo overrides)"),
+        }
+        return Ok(());
+    }
+
+    let Some(repo_root) = repo_root else {
+        print_global_layer(&store_data);
+        eprintln!("\nhint: not inside a git repository — only global settings are shown");
+        return Ok(());
+    };
+
+    let repo_key = repo_root.to_string_lossy().to_string();
+    let stored_config = store_data.repo_configs.get(&repo_key).cloned();
+    let loaded = config::load(
+        &repo_root,
+        stored_config.as_ref(),
+        &store_data.custom_launchers,
+        store_data.default_worktree_root.as_deref(),
+    );
+
+    println!("# effective config for {repo_key}");
+    println!(
+        "worktree_root       = {:?}  # {}",
+        loaded.merged.settings.worktree_root,
+        describe_worktree_root_source(&store_data, &repo_key),
+    );
+    println!(
+        "default_base_branch = {:?}  # {}",
+        loaded.merged.settings.default_base_branch,
+        describe_base_branch_source(&store_data, &repo_key),
+    );
+    Ok(())
+}
+
+fn print_global_layer(store: &store::AppStore) {
+    println!("[global]");
+    match store.default_worktree_root.as_deref() {
+        Some(value) => println!("worktree_root = {value:?}"),
+        None => println!("# (unset)"),
+    }
+}
+
+fn describe_worktree_root_source(store: &store::AppStore, repo_key: &str) -> String {
+    if store
+        .repo_configs
+        .get(repo_key)
+        .and_then(|c| c.settings.worktree_root.as_deref())
+        .is_some()
+    {
+        "from per-repo override".into()
+    } else if store.default_worktree_root.is_some() {
+        "from global default".into()
+    } else {
+        "from built-in default".into()
+    }
+}
+
+fn describe_base_branch_source(store: &store::AppStore, repo_key: &str) -> String {
+    if store
+        .repo_configs
+        .get(repo_key)
+        .and_then(|c| c.settings.default_base_branch.as_deref())
+        .is_some()
+    {
+        "from per-repo override".into()
+    } else {
+        "detected from git".into()
+    }
+}
+
+fn cmd_config_get(key: &str, global_only: bool, repo_only: bool) -> Result<(), String> {
+    let parsed = ConfigKey::parse(key)?;
+    let store_data = store::load_store()?;
+
+    if global_only {
+        if !parsed.global_supported() {
+            return Err(format!(
+                "{} has no global-layer value (only per-repo)",
+                parsed.label()
+            ));
+        }
+        match parsed {
+            ConfigKey::WorktreeRoot => {
+                if let Some(value) = store_data.default_worktree_root.as_deref() {
+                    println!("{value}");
+                }
+            }
+            ConfigKey::DefaultBaseBranch => {}
+        }
+        return Ok(());
+    }
+
+    let repo_root = current_repo_root()?;
+    let repo_key = repo_root.to_string_lossy().to_string();
+
+    if repo_only {
+        let stored = store_data.repo_configs.get(&repo_key);
+        let value = stored.and_then(|c| match parsed {
+            ConfigKey::WorktreeRoot => c.settings.worktree_root.as_deref(),
+            ConfigKey::DefaultBaseBranch => c.settings.default_base_branch.as_deref(),
+        });
+        if let Some(value) = value {
+            println!("{value}");
+        }
+        return Ok(());
+    }
+
+    let stored_config = store_data.repo_configs.get(&repo_key).cloned();
+    let loaded = config::load(
+        &repo_root,
+        stored_config.as_ref(),
+        &store_data.custom_launchers,
+        store_data.default_worktree_root.as_deref(),
+    );
+    let value = match parsed {
+        ConfigKey::WorktreeRoot => &loaded.merged.settings.worktree_root,
+        ConfigKey::DefaultBaseBranch => &loaded.merged.settings.default_base_branch,
+    };
+    println!("{value}");
+    Ok(())
+}
+
+fn cmd_config_set(key: &str, value: &str, global: bool) -> Result<(), String> {
+    let parsed = ConfigKey::parse(key)?;
+    let new_value = store::trim_to_option(value);
+    let mut store_data = store::load_store()?;
+
+    if global {
+        if !parsed.global_supported() {
+            return Err(format!(
+                "{} cannot be set globally (only per-repo)",
+                parsed.label()
+            ));
+        }
+        store_data.default_worktree_root = new_value.clone();
+        store::persist(&store_data)?;
+        report_set("global", parsed.label(), new_value.as_deref());
+        return Ok(());
+    }
+
+    let repo_root = current_repo_root()?;
+    let repo_key = repo_root.to_string_lossy().to_string();
+    let entry = store_data.repo_configs.entry(repo_key.clone()).or_default();
+    match parsed {
+        ConfigKey::WorktreeRoot => entry.settings.worktree_root = new_value.clone(),
+        ConfigKey::DefaultBaseBranch => entry.settings.default_base_branch = new_value.clone(),
+    }
+    if config::is_effectively_empty(entry) {
+        store_data.repo_configs.remove(&repo_key);
+    }
+    store::persist(&store_data)?;
+    report_set("repo", parsed.label(), new_value.as_deref());
+    Ok(())
+}
+
+fn report_set(scope: &str, key: &str, value: Option<&str>) {
+    match value {
+        Some(v) => println!("{scope}.{key} = {v:?}"),
+        None => println!("{scope}.{key} cleared"),
+    }
+}
+
+fn cmd_config_unset(key: &str, global: bool) -> Result<(), String> {
+    cmd_config_set(key, "", global)
+}
+
+fn current_repo_root() -> Result<std::path::PathBuf, String> {
+    let cwd = std::env::current_dir()
+        .map_err(|e| format!("cannot determine current directory: {e}"))?;
+    git::resolve_repo_root(&cwd.to_string_lossy())
 }
 
 /// Install CLI — returns a message string (used by the Tauri GUI command).

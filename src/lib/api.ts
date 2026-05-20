@@ -99,6 +99,14 @@ export function setWorktreeRoot(repoRoot: string, worktreeRoot: string) {
   return invoke<RepoSnapshot>("set_repo_worktree_root", { repoRoot, worktreeRoot });
 }
 
+export function getDefaultWorktreeRoot() {
+  return invoke<string | null>("get_default_worktree_root");
+}
+
+export function setDefaultWorktreeRoot(worktreeRoot: string) {
+  return invoke<void>("set_default_worktree_root", { worktreeRoot });
+}
+
 export function detectInstallCommand(repoRoot: string) {
   return invoke<string | null>("detect_install_command", { repoRoot });
 }

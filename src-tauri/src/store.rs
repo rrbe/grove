@@ -38,6 +38,8 @@ pub struct AppStore {
     pub show_tray_icon: Option<bool>,
     #[serde(default)]
     pub theme_mode: Option<String>,
+    #[serde(default)]
+    pub default_worktree_root: Option<String>,
     #[serde(default, skip_serializing)]
     pub repo_worktree_roots: BTreeMap<String, String>,
 }
@@ -54,6 +56,15 @@ impl SharedState {
             store: Mutex::new(store),
             window_registry: Mutex::new(BTreeMap::new()),
         })
+    }
+}
+
+pub fn trim_to_option(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }
 

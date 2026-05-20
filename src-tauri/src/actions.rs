@@ -103,6 +103,18 @@ pub fn create_worktree(
     default_terminal: Option<&str>,
     default_shell: &str,
 ) -> Result<ActionResponse, String> {
+    let (planned, _worktree_path) =
+        plan_create_worktree(state, input, default_terminal, default_shell, false)?;
+    execute(app, state, &planned.repo_root, planned.steps)
+}
+
+fn plan_create_worktree(
+    state: &SharedState,
+    input: CreateWorktreeInput,
+    default_terminal: Option<&str>,
+    default_shell: &str,
+    skip_hooks: bool,
+) -> Result<(PlannedExecution, PathBuf), String> {
     let repo_root = git::resolve_repo_root(&input.repo_root)?;
     let loaded = load_repo_config(state, &repo_root);
     let default_remote = git::detect_default_remote(&repo_root).unwrap_or_else(|| "origin".into());
@@ -140,14 +152,16 @@ pub fn create_worktree(
     );
 
     let mut steps = Vec::new();
-    steps.extend(plan_hooks(
-        &repo_root,
-        &loaded,
-        HookEvent::PreCreate,
-        &context,
-        default_terminal,
-        default_shell,
-    )?);
+    if !skip_hooks {
+        steps.extend(plan_hooks(
+            &repo_root,
+            &loaded,
+            HookEvent::PreCreate,
+            &context,
+            default_terminal,
+            default_shell,
+        )?);
+    }
     steps.push(ExecutionStep::GitCreate {
         repo_root: repo_root.clone(),
         mode: input.mode,
@@ -156,30 +170,55 @@ pub fn create_worktree(
         remote_ref: input.remote_ref.clone(),
         worktree_path: worktree_path.clone(),
     });
-    steps.extend(plan_hooks(
-        &repo_root,
-        &loaded,
-        HookEvent::PostCreate,
-        &context,
-        default_terminal,
-        default_shell,
-    )?);
-
-    if !input.auto_start_launchers.is_empty() {
-        for launcher_id in &input.auto_start_launchers {
-            steps.extend(plan_launch_action(
-                &repo_root,
-                &loaded,
-                &context,
-                launcher_id,
-                None,
-                false,
-                default_terminal,
-            )?);
-        }
+    if !skip_hooks {
+        steps.extend(plan_hooks(
+            &repo_root,
+            &loaded,
+            HookEvent::PostCreate,
+            &context,
+            default_terminal,
+            default_shell,
+        )?);
     }
 
-    execute(app, state, &repo_root, steps)
+    for launcher_id in &input.auto_start_launchers {
+        steps.extend(plan_launch_action(
+            &repo_root,
+            &loaded,
+            &context,
+            launcher_id,
+            None,
+            false,
+            default_terminal,
+        )?);
+    }
+
+    let title = format!("Create {branch}");
+    let planned = PlannedExecution {
+        repo_root,
+        title,
+        steps,
+    };
+    Ok((planned, worktree_path))
+}
+
+pub fn create_worktree_cli(
+    state: &SharedState,
+    input: CreateWorktreeInput,
+    skip_hooks: bool,
+    sink: &mut impl LogWriter,
+) -> Result<PathBuf, String> {
+    let (default_terminal, default_shell) = read_cli_defaults(state);
+    let (planned, worktree_path) = plan_create_worktree(
+        state,
+        input,
+        default_terminal.as_deref(),
+        &default_shell,
+        skip_hooks,
+    )?;
+    run_steps(planned.steps, sink)?;
+    persist_recent_repo(state, &planned.repo_root)?;
+    Ok(worktree_path)
 }
 
 pub fn remove_worktree(
@@ -189,7 +228,8 @@ pub fn remove_worktree(
     default_terminal: Option<&str>,
     default_shell: &str,
 ) -> Result<ActionResponse, String> {
-    let planned = plan_remove_worktree_execution(state, input, default_terminal, default_shell)?;
+    let planned =
+        plan_remove_worktree_execution(state, input, default_terminal, default_shell, false)?;
     execute(app, state, &planned.repo_root, planned.steps)
 }
 
@@ -200,7 +240,8 @@ pub fn start_remove_worktree_session(
     default_terminal: Option<&str>,
     default_shell: &str,
 ) -> Result<ExecutionSessionSnapshot, String> {
-    let planned = plan_remove_worktree_execution(state, input, default_terminal, default_shell)?;
+    let planned =
+        plan_remove_worktree_execution(state, input, default_terminal, default_shell, false)?;
     let session_id = next_session_id();
     let snapshot = ExecutionSessionSnapshot {
         session_id: session_id.clone(),
@@ -256,20 +297,9 @@ pub fn run_hooks_cli(
     sink: &mut impl LogWriter,
 ) -> Result<(), String> {
     let repo_root = git::resolve_repo_root(repo_root)?;
-    let store = crate::store::load_store()?;
-    let state = SharedState {
-        store: std::sync::Mutex::new(store),
-        window_registry: std::sync::Mutex::new(BTreeMap::new()),
-    };
+    let state = build_cli_state()?;
     let loaded = load_repo_config(&state, &repo_root);
-    let default_shell = state
-        .store
-        .lock()
-        .unwrap()
-        .default_shell
-        .clone()
-        .unwrap_or_else(crate::platform::default_shell);
-    let default_terminal = state.store.lock().unwrap().default_terminal.clone();
+    let (default_terminal, default_shell) = read_cli_defaults(&state);
 
     let context = if let Some(wt_path) = worktree_path {
         let store_guard = state.store.lock().unwrap();
@@ -307,10 +337,7 @@ pub fn run_hooks_cli(
         return Ok(());
     }
 
-    for step in steps {
-        step.run(sink)?;
-    }
-    Ok(())
+    run_steps(steps, sink)
 }
 
 pub fn launch_worktree(
@@ -418,6 +445,7 @@ fn plan_remove_worktree_execution(
     input: RemoveWorktreeInput,
     default_terminal: Option<&str>,
     default_shell: &str,
+    skip_hooks: bool,
 ) -> Result<PlannedExecution, String> {
     let repo_root = git::resolve_repo_root(&input.repo_root)?;
     let loaded = load_repo_config(state, &repo_root);
@@ -430,28 +458,33 @@ fn plan_remove_worktree_execution(
         return Err("cannot remove the main worktree".into());
     }
     let context = build_context_from_worktree(&repo_root, &loaded, worktree, false);
-    let mut steps = plan_hooks(
-        &repo_root,
-        &loaded,
-        HookEvent::PreRemove,
-        &context,
-        default_terminal,
-        default_shell,
-    )?;
+    let mut steps = Vec::new();
+    if !skip_hooks {
+        steps.extend(plan_hooks(
+            &repo_root,
+            &loaded,
+            HookEvent::PreRemove,
+            &context,
+            default_terminal,
+            default_shell,
+        )?);
+    }
     steps.push(ExecutionStep::GitRemove {
         repo_root: repo_root.clone(),
         worktree_path: PathBuf::from(&worktree.path),
         force: input.force,
         unlock_first: input.force && worktree.locked_reason.is_some(),
     });
-    steps.extend(plan_hooks(
-        &repo_root,
-        &loaded,
-        HookEvent::PostRemove,
-        &context,
-        default_terminal,
-        default_shell,
-    )?);
+    if !skip_hooks {
+        steps.extend(plan_hooks(
+            &repo_root,
+            &loaded,
+            HookEvent::PostRemove,
+            &context,
+            default_terminal,
+            default_shell,
+        )?);
+    }
     Ok(PlannedExecution {
         repo_root,
         title: format!(
@@ -460,6 +493,63 @@ fn plan_remove_worktree_execution(
         ),
         steps,
     })
+}
+
+pub fn remove_worktree_cli(
+    state: &SharedState,
+    input: RemoveWorktreeInput,
+    skip_hooks: bool,
+    prune: bool,
+    sink: &mut impl LogWriter,
+) -> Result<(), String> {
+    let (default_terminal, default_shell) = read_cli_defaults(state);
+    let mut planned = plan_remove_worktree_execution(
+        state,
+        input,
+        default_terminal.as_deref(),
+        &default_shell,
+        skip_hooks,
+    )?;
+    if prune {
+        planned.steps.push(ExecutionStep::GitPrune {
+            repo_root: planned.repo_root.clone(),
+        });
+    }
+    run_steps(planned.steps, sink)?;
+    persist_recent_repo(state, &planned.repo_root)?;
+    Ok(())
+}
+
+fn run_steps(steps: Vec<ExecutionStep>, sink: &mut impl LogWriter) -> Result<(), String> {
+    for step in steps {
+        step.run(sink)?;
+    }
+    Ok(())
+}
+
+fn persist_recent_repo(state: &SharedState, repo_root: &Path) -> Result<(), String> {
+    let mut store = state.store.lock().unwrap();
+    push_recent(&mut store, &repo_root.to_string_lossy());
+    persist(&store)
+}
+
+pub fn build_cli_state() -> Result<SharedState, String> {
+    let store = crate::store::load_store()?;
+    Ok(SharedState {
+        store: std::sync::Mutex::new(store),
+        window_registry: std::sync::Mutex::new(BTreeMap::new()),
+    })
+}
+
+fn read_cli_defaults(state: &SharedState) -> (Option<String>, String) {
+    let store = state.store.lock().unwrap();
+    (
+        store.default_terminal.clone(),
+        store
+            .default_shell
+            .clone()
+            .unwrap_or_else(crate::platform::default_shell),
+    )
 }
 
 fn next_session_id() -> String {
@@ -513,9 +603,7 @@ fn run_session_execution(
         app: app.clone(),
         session_id: session_id.to_string(),
     };
-    for step in steps {
-        step.run(&mut sink)?;
-    }
+    run_steps(steps, &mut sink)?;
 
     let now = Utc::now().to_rfc3339();
     {
@@ -855,9 +943,7 @@ fn execute(
 ) -> Result<ActionResponse, String> {
     let mut logs = Vec::new();
     let mut sink = VecLogWriter { logs: &mut logs };
-    for step in steps {
-        step.run(&mut sink)?;
-    }
+    run_steps(steps, &mut sink)?;
     let now = Utc::now().to_rfc3339();
     {
         let mut store = state.store.lock().unwrap();

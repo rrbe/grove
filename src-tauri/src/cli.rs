@@ -1,10 +1,11 @@
 use crate::{
     actions::{self, LogWriter},
     config, git,
-    models::{HookEvent, LogLevel, RunLog},
+    models::{CreateMode, CreateWorktreeInput, HookEvent, LogLevel, RemoveWorktreeInput, RunLog},
     store,
 };
 use clap::{Parser, Subcommand};
+use std::io::{IsTerminal, Write};
 use std::path::Path;
 use std::process;
 
@@ -46,6 +47,50 @@ enum Commands {
     Config {
         #[command(subcommand)]
         command: ConfigCommands,
+    },
+    /// Create a worktree for a branch
+    New {
+        /// Branch name (created if it does not exist)
+        branch: String,
+        /// Base ref for new branches (default: configured default base)
+        #[arg(short = 'b', long, value_name = "REF")]
+        base: Option<String>,
+        /// Custom worktree path (overrides the configured worktree root)
+        #[arg(short = 'p', long, value_name = "PATH")]
+        path: Option<String>,
+        /// Track a remote branch (sets upstream); implies --remote-branch
+        #[arg(short = 'r', long, value_name = "REMOTE_REF", conflicts_with = "existing")]
+        remote: Option<String>,
+        /// Use an existing local branch instead of creating a new one
+        #[arg(long, conflicts_with = "remote")]
+        existing: bool,
+        /// Skip pre-create / post-create hooks
+        #[arg(long)]
+        no_hooks: bool,
+        /// Only print the resulting worktree path on stdout (logs to stderr)
+        #[arg(short = 'q', long)]
+        quiet: bool,
+    },
+    /// Remove a worktree
+    #[command(alias = "remove")]
+    Rm {
+        /// Branch name (defaults to the worktree containing the current directory)
+        branch: Option<String>,
+        /// Skip the confirmation prompt
+        #[arg(short = 'y', long)]
+        yes: bool,
+        /// Force removal (allows dirty worktrees, unlocks locked ones)
+        #[arg(short = 'f', long)]
+        force: bool,
+        /// Print what would happen without making changes
+        #[arg(long)]
+        dry_run: bool,
+        /// Skip pre-remove / post-remove hooks
+        #[arg(long)]
+        no_hooks: bool,
+        /// Run `git worktree prune` after removal
+        #[arg(long)]
+        prune: bool,
     },
 }
 
@@ -124,11 +169,22 @@ impl LogWriter for StdioLogWriter {
     }
 }
 
+struct StderrLogWriter;
+
+impl LogWriter for StderrLogWriter {
+    fn push(&mut self, log: RunLog) {
+        eprintln!("{}", log.message);
+    }
+}
+
 const CLI_SUBCOMMANDS: &[&str] = &[
     "open",
     "hook",
     "worktree",
     "config",
+    "new",
+    "rm",
+    "remove",
     "help",
     "--help",
     "-h",
@@ -170,6 +226,38 @@ pub fn main() {
             WorktreeCommands::List => cmd_worktree_list(),
         },
         Some(Commands::Config { command }) => cmd_config(command),
+        Some(Commands::New {
+            branch,
+            base,
+            path,
+            remote,
+            existing,
+            no_hooks,
+            quiet,
+        }) => cmd_new(NewArgs {
+            branch,
+            base,
+            path,
+            remote,
+            existing,
+            no_hooks,
+            quiet,
+        }),
+        Some(Commands::Rm {
+            branch,
+            yes,
+            force,
+            dry_run,
+            no_hooks,
+            prune,
+        }) => cmd_rm(RmArgs {
+            branch,
+            yes,
+            force,
+            dry_run,
+            no_hooks,
+            prune,
+        }),
         None => {
             if let Some(path) = cli.path {
                 cmd_open(&path)
@@ -598,6 +686,190 @@ fn current_repo_root() -> Result<std::path::PathBuf, String> {
     git::resolve_repo_root(&cwd.to_string_lossy())
 }
 
+// ── new / rm subcommands ───────────────────────────────────────────────────
+
+struct NewArgs {
+    branch: String,
+    base: Option<String>,
+    path: Option<String>,
+    remote: Option<String>,
+    existing: bool,
+    no_hooks: bool,
+    quiet: bool,
+}
+
+fn cmd_new(args: NewArgs) -> Result<(), String> {
+    let repo_root = current_repo_root()?;
+    let mode = if args.remote.is_some() {
+        CreateMode::RemoteBranch
+    } else if args.existing {
+        CreateMode::ExistingBranch
+    } else {
+        CreateMode::NewBranch
+    };
+    let input = CreateWorktreeInput {
+        repo_root: repo_root.to_string_lossy().to_string(),
+        mode,
+        branch: args.branch,
+        base_ref: args.base,
+        remote_ref: args.remote,
+        path: args.path,
+        auto_start_launchers: Vec::new(),
+    };
+    let state = actions::build_cli_state()?;
+    let worktree_path = if args.quiet {
+        let mut sink = StderrLogWriter;
+        actions::create_worktree_cli(&state, input, args.no_hooks, &mut sink)?
+    } else {
+        let mut sink = StdioLogWriter;
+        actions::create_worktree_cli(&state, input, args.no_hooks, &mut sink)?
+    };
+    if args.quiet {
+        println!("{}", worktree_path.display());
+    } else {
+        eprintln!("\n→ {}", worktree_path.display());
+    }
+    Ok(())
+}
+
+struct RmArgs {
+    branch: Option<String>,
+    yes: bool,
+    force: bool,
+    dry_run: bool,
+    no_hooks: bool,
+    prune: bool,
+}
+
+fn cmd_rm(args: RmArgs) -> Result<(), String> {
+    let repo_root = current_repo_root()?;
+    let state = actions::build_cli_state()?;
+    let worktrees = {
+        let store_guard = state.store.lock().unwrap();
+        git::scan_worktrees(&repo_root, &store_guard)?
+    };
+
+    let cwd = std::env::current_dir()
+        .map_err(|e| format!("cannot determine current directory: {e}"))?;
+    let target = resolve_rm_target(&worktrees, args.branch.as_deref(), &cwd)?;
+
+    print_rm_plan(target, args.prune, args.force);
+
+    let blockers = collect_rm_blockers(target, args.force);
+    if !blockers.is_empty() {
+        if args.dry_run {
+            for blocker in &blockers {
+                eprintln!("warning: {blocker}");
+            }
+        } else {
+            return Err(blockers.join("\n"));
+        }
+    }
+
+    if args.dry_run {
+        eprintln!("(dry run — no changes made)");
+        return Ok(());
+    }
+
+    if !args.yes {
+        confirm_or_abort(target)?;
+    }
+
+    let input = RemoveWorktreeInput {
+        repo_root: repo_root.to_string_lossy().to_string(),
+        worktree_path: target.path.clone(),
+        force: args.force,
+    };
+    let mut sink = StderrLogWriter;
+    actions::remove_worktree_cli(&state, input, args.no_hooks, args.prune, &mut sink)
+}
+
+fn collect_rm_blockers(target: &crate::models::WorktreeRecord, force: bool) -> Vec<String> {
+    let mut blockers = Vec::new();
+    if target.is_main {
+        blockers.push("cannot remove the main worktree".into());
+    }
+    if target.dirty && !force {
+        blockers.push(format!(
+            "worktree has uncommitted changes — pass -f to force\n  path: {}",
+            target.path
+        ));
+    }
+    blockers
+}
+
+fn resolve_rm_target<'a>(
+    worktrees: &'a [crate::models::WorktreeRecord],
+    branch: Option<&str>,
+    cwd: &Path,
+) -> Result<&'a crate::models::WorktreeRecord, String> {
+    if let Some(branch) = branch {
+        worktrees
+            .iter()
+            .find(|w| w.branch.as_deref() == Some(branch))
+            .ok_or_else(|| format!("no worktree found for branch '{branch}'"))
+    } else {
+        worktrees
+            .iter()
+            .filter(|w| !w.is_main)
+            .find(|w| cwd.starts_with(&w.path))
+            .ok_or_else(|| {
+                "not inside a worktree — pass a branch name, or cd into the worktree to remove"
+                    .to_string()
+            })
+    }
+}
+
+fn print_rm_plan(target: &crate::models::WorktreeRecord, prune: bool, force: bool) {
+    eprintln!("worktree: {}", target.path);
+    eprintln!(
+        "branch:   {}",
+        target.branch.as_deref().unwrap_or("(detached)")
+    );
+    let mut status_bits = Vec::new();
+    if target.dirty {
+        status_bits.push("dirty".to_string());
+    }
+    if target.ahead > 0 {
+        status_bits.push(format!("{} ahead", target.ahead));
+    }
+    if target.behind > 0 {
+        status_bits.push(format!("{} behind", target.behind));
+    }
+    if target.locked_reason.is_some() {
+        status_bits.push("locked".to_string());
+    }
+    if !status_bits.is_empty() {
+        eprintln!("status:   {}", status_bits.join(", "));
+    }
+    if force {
+        eprintln!("force:    yes");
+    }
+    if prune {
+        eprintln!("after:    git worktree prune");
+    }
+    eprintln!();
+}
+
+fn confirm_or_abort(target: &crate::models::WorktreeRecord) -> Result<(), String> {
+    if !std::io::stderr().is_terminal() {
+        return Err("not a TTY — pass -y to confirm".into());
+    }
+    let branch = target.branch.as_deref().unwrap_or("(detached)");
+    eprint!("delete worktree '{branch}' at {}? [y/N] ", target.path);
+    std::io::stderr().flush().ok();
+    let mut answer = String::new();
+    std::io::stdin()
+        .read_line(&mut answer)
+        .map_err(|e| format!("failed to read input: {e}"))?;
+    let trimmed = answer.trim().to_lowercase();
+    if trimmed == "y" || trimmed == "yes" {
+        Ok(())
+    } else {
+        Err("aborted".into())
+    }
+}
+
 /// Install CLI — returns a message string (used by the Tauri GUI command).
 pub fn cmd_install_cli_inner() -> Result<String, String> {
     let target = Path::new("/usr/local/bin/grove");
@@ -702,4 +974,70 @@ fn auto_detect_worktree(repo_root: &str, cwd: &str) -> Result<Option<String>, St
     }
     // cwd is inside the repo but not inside a specific worktree — use repo root context
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::WorktreeRecord;
+
+    fn make_worktree(path: &str, branch: Option<&str>, is_main: bool) -> WorktreeRecord {
+        WorktreeRecord {
+            id: path.into(),
+            path: path.into(),
+            branch: branch.map(String::from),
+            head_sha: "0".into(),
+            is_main,
+            locked_reason: None,
+            prunable_reason: None,
+            dirty: false,
+            ahead: 0,
+            behind: 0,
+            last_opened_at: None,
+            head_commit_date: None,
+            pr_number: None,
+            pr_url: None,
+            recent_commits: Vec::new(),
+            changed_files: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn resolve_rm_target_matches_branch_exactly() {
+        let worktrees = vec![
+            make_worktree("/repo", Some("main"), true),
+            make_worktree("/repo/.wt/login", Some("feat/login"), false),
+            make_worktree("/repo/.wt/oauth", Some("feat/oauth"), false),
+        ];
+        let target =
+            resolve_rm_target(&worktrees, Some("feat/login"), Path::new("/anywhere")).unwrap();
+        assert_eq!(target.path, "/repo/.wt/login");
+    }
+
+    #[test]
+    fn resolve_rm_target_infers_from_cwd_and_skips_main() {
+        let worktrees = vec![
+            make_worktree("/repo", Some("main"), true),
+            make_worktree("/repo/.wt/login", Some("feat/login"), false),
+        ];
+
+        let target = resolve_rm_target(
+            &worktrees,
+            None,
+            Path::new("/repo/.wt/login/sub/dir"),
+        )
+        .unwrap();
+        assert_eq!(target.path, "/repo/.wt/login");
+
+        // cwd in main worktree → no inferred target (main is excluded).
+        let err = resolve_rm_target(&worktrees, None, Path::new("/repo/src")).unwrap_err();
+        assert!(err.contains("not inside a worktree"), "{err}");
+    }
+
+    #[test]
+    fn resolve_rm_target_reports_unknown_branch() {
+        let worktrees = vec![make_worktree("/repo", Some("main"), true)];
+        let err = resolve_rm_target(&worktrees, Some("ghost"), Path::new("/repo")).unwrap_err();
+        assert!(err.contains("no worktree found for branch 'ghost'"), "{err}");
+    }
 }

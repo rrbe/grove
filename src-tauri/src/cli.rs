@@ -899,63 +899,56 @@ fn confirm_or_abort(target: &crate::models::WorktreeRecord) -> Result<(), String
 
 fn cmd_cd(branch: Option<&str>) -> Result<(), String> {
     let repo_root = current_repo_root()?;
-    let store_data = store::load_store()?;
-    let worktrees = git::scan_worktrees(&repo_root, &store_data)?;
-
     let target_path = match branch {
-        None => worktrees
-            .iter()
-            .find(|w| w.is_main)
-            .map(|w| w.path.clone())
-            .ok_or_else(|| "main worktree not found".to_string())?,
-        Some(query) => match match_branch(&worktrees, query) {
-            MatchOutcome::Single(path) => path,
-            MatchOutcome::None => {
-                return Err(format!("no worktree matches '{query}'"));
-            }
-            MatchOutcome::Multiple(candidates) => {
-                let mut msg = format!("'{query}' matches multiple worktrees:\n");
-                for branch in &candidates {
-                    msg.push_str(&format!("  {branch}\n"));
+        None => repo_root.to_string_lossy().into_owned(),
+        Some(query) => {
+            let worktrees = git::list_worktrees(&repo_root)?;
+            match match_branch(&worktrees, query) {
+                MatchOutcome::Single(path) => path,
+                MatchOutcome::None => {
+                    return Err(format!("no worktree matches '{query}'"));
                 }
-                msg.push_str("hint: pass the full branch name");
-                return Err(msg);
+                MatchOutcome::Multiple(candidates) => {
+                    return Err(format!(
+                        "'{query}' matches multiple worktrees:\n  {}\nhint: pass the full branch name",
+                        candidates.join("\n  "),
+                    ));
+                }
             }
-        },
+        }
     };
     println!("{target_path}");
     Ok(())
 }
 
+#[cfg_attr(test, derive(Debug))]
 enum MatchOutcome {
     None,
     Single(String),
     Multiple(Vec<String>),
 }
 
-fn match_branch(worktrees: &[crate::models::WorktreeRecord], query: &str) -> MatchOutcome {
-    let exact: Vec<&crate::models::WorktreeRecord> = worktrees
+fn match_branch(worktrees: &[git::ParsedWorktree], query: &str) -> MatchOutcome {
+    let exact: Vec<&git::ParsedWorktree> = worktrees
         .iter()
         .filter(|w| w.branch.as_deref() == Some(query))
         .collect();
     if !exact.is_empty() {
         return finalize_matches(&exact);
     }
-    let fuzzy: Vec<&crate::models::WorktreeRecord> = worktrees
+    let fuzzy: Vec<&git::ParsedWorktree> = worktrees
         .iter()
         .filter(|w| w.branch.as_deref().is_some_and(|b| b.contains(query)))
         .collect();
     finalize_matches(&fuzzy)
 }
 
-fn finalize_matches(matches: &[&crate::models::WorktreeRecord]) -> MatchOutcome {
+fn finalize_matches(matches: &[&git::ParsedWorktree]) -> MatchOutcome {
     match matches {
         [] => MatchOutcome::None,
-        [only] => MatchOutcome::Single(only.path.clone()),
+        [only] => MatchOutcome::Single(only.path.to_string_lossy().into_owned()),
         many => MatchOutcome::Multiple(
-            many.iter()
-                .filter_map(|w| w.branch.clone())
-                .collect(),
+            many.iter().filter_map(|w| w.branch.clone()).collect(),
         ),
     }
 }
@@ -1162,6 +1155,16 @@ mod tests {
         assert!(err.contains("no worktree found for branch 'ghost'"), "{err}");
     }
 
+    fn parsed(path: &str, branch: Option<&str>) -> git::ParsedWorktree {
+        git::ParsedWorktree {
+            path: path.into(),
+            branch: branch.map(String::from),
+            head_sha: String::new(),
+            locked_reason: None,
+            prunable_reason: None,
+        }
+    }
+
     fn assert_match_path(outcome: MatchOutcome, expected: &str) {
         match outcome {
             MatchOutcome::Single(path) => assert_eq!(path, expected),
@@ -1175,9 +1178,9 @@ mod tests {
     #[test]
     fn match_branch_prefers_exact_over_substring() {
         let worktrees = vec![
-            make_worktree("/repo", Some("main"), true),
-            make_worktree("/repo/.wt/login", Some("login"), false),
-            make_worktree("/repo/.wt/feat-login", Some("feat/login"), false),
+            parsed("/repo", Some("main")),
+            parsed("/repo/.wt/login", Some("login")),
+            parsed("/repo/.wt/feat-login", Some("feat/login")),
         ];
         // exact "login" wins even though substring would match both
         assert_match_path(match_branch(&worktrees, "login"), "/repo/.wt/login");
@@ -1186,8 +1189,8 @@ mod tests {
     #[test]
     fn match_branch_substring_fallback_when_no_exact() {
         let worktrees = vec![
-            make_worktree("/repo", Some("main"), true),
-            make_worktree("/repo/.wt/feat-login", Some("feat/login"), false),
+            parsed("/repo", Some("main")),
+            parsed("/repo/.wt/feat-login", Some("feat/login")),
         ];
         assert_match_path(match_branch(&worktrees, "login"), "/repo/.wt/feat-login");
     }
@@ -1195,8 +1198,8 @@ mod tests {
     #[test]
     fn match_branch_multiple_substring_returns_candidates() {
         let worktrees = vec![
-            make_worktree("/repo/.wt/feat-login", Some("feat/login"), false),
-            make_worktree("/repo/.wt/feat-oauth", Some("feat/oauth"), false),
+            parsed("/repo/.wt/feat-login", Some("feat/login")),
+            parsed("/repo/.wt/feat-oauth", Some("feat/oauth")),
         ];
         match match_branch(&worktrees, "feat/") {
             MatchOutcome::Multiple(branches) => {
@@ -1208,20 +1211,10 @@ mod tests {
 
     #[test]
     fn match_branch_none_when_no_match() {
-        let worktrees = vec![make_worktree("/repo", Some("main"), true)];
+        let worktrees = vec![parsed("/repo", Some("main"))];
         assert!(matches!(
             match_branch(&worktrees, "ghost"),
             MatchOutcome::None
         ));
-    }
-
-    impl std::fmt::Debug for MatchOutcome {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            match self {
-                Self::None => write!(f, "None"),
-                Self::Single(p) => write!(f, "Single({p})"),
-                Self::Multiple(b) => write!(f, "Multiple({b:?})"),
-            }
-        }
     }
 }

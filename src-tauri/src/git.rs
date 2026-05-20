@@ -31,13 +31,39 @@ pub fn resolve_repo_root(candidate: &str) -> Result<PathBuf, String> {
     canonicalize(Path::new(&root))
 }
 
+/// Resolve the main worktree root for `candidate`, even when `candidate` is
+/// itself inside a linked worktree. `git rev-parse --show-toplevel` returns
+/// the *local* worktree, so anything that needs the shared repo root (config
+/// keys, worktree planning) must use this helper instead.
+pub fn main_worktree_root(candidate: &str) -> Result<PathBuf, String> {
+    let common_dir = run_git_text(Path::new(candidate), ["rev-parse", "--git-common-dir"])
+        .map_err(|stderr| format!("not a git repository: {stderr}"))?
+        .trim()
+        .to_string();
+    // git may emit a path relative to `candidate`; resolve in that context.
+    let absolute = if Path::new(&common_dir).is_absolute() {
+        PathBuf::from(&common_dir)
+    } else {
+        PathBuf::from(candidate).join(&common_dir)
+    };
+    canonicalize(&absolute)?
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| format!("unexpected git-common-dir: {common_dir}"))
+}
+
+/// Lightweight worktree list: just paths and branches, no status / PR lookup.
+/// Use this when you only need to map branch→path (e.g. `grove cd`).
+pub fn list_worktrees(repo_root: &Path) -> Result<Vec<ParsedWorktree>, String> {
+    let output = run_git(repo_root, ["worktree", "list", "--porcelain", "-z"])?;
+    parse_worktree_porcelain(&output.stdout)
+}
+
 pub fn scan_worktrees(
     repo_root: &Path,
     store: &AppStore,
 ) -> Result<Vec<WorktreeRecord>, String> {
-    let output = run_git(repo_root, ["worktree", "list", "--porcelain", "-z"])
-        .map(|o| o.stdout)?;
-    let parsed = parse_worktree_porcelain(&output)?;
+    let parsed = list_worktrees(repo_root)?;
     let main_root = canonicalize(repo_root)?;
 
     let branches: Vec<String> = parsed

@@ -18,3 +18,10 @@
 - [x] 打 exe\deb\rpm 等多种包
 - [x] Grove 本身支持多窗口
 - [x] grove cli
+- [ ] 帮 claude、codex 等设立 hooks
+- [ ] pr 关了也能关联
+- [ ] grove cli hook run 有问题，有时找不到
+- [ ] worktree map 展示血缘
+- [ ] wt cli 快捷删除 worktree
+- [ ] 思考一下 worktree 如何更好展示信息，方便用户想起来 worktree 是干嘛的
+- [ ] Add Design.md 不然样式一直有小问题

@@ -716,12 +716,13 @@ fn cmd_new(args: NewArgs) -> Result<(), String> {
         path: args.path,
         auto_start_launchers: Vec::new(),
     };
+    let state = actions::build_cli_state()?;
     let worktree_path = if args.quiet {
         let mut sink = StderrLogWriter;
-        actions::create_worktree_cli(input, args.no_hooks, &mut sink)?
+        actions::create_worktree_cli(&state, input, args.no_hooks, &mut sink)?
     } else {
         let mut sink = StdioLogWriter;
-        actions::create_worktree_cli(input, args.no_hooks, &mut sink)?
+        actions::create_worktree_cli(&state, input, args.no_hooks, &mut sink)?
     };
     if args.quiet {
         println!("{}", worktree_path.display());
@@ -742,8 +743,11 @@ struct RmArgs {
 
 fn cmd_rm(args: RmArgs) -> Result<(), String> {
     let repo_root = current_repo_root()?;
-    let store_data = store::load_store()?;
-    let worktrees = git::scan_worktrees(&repo_root, &store_data)?;
+    let state = actions::build_cli_state()?;
+    let worktrees = {
+        let store_guard = state.store.lock().unwrap();
+        git::scan_worktrees(&repo_root, &store_guard)?
+    };
 
     let cwd = std::env::current_dir()
         .map_err(|e| format!("cannot determine current directory: {e}"))?;
@@ -751,26 +755,15 @@ fn cmd_rm(args: RmArgs) -> Result<(), String> {
 
     print_rm_plan(target, args.prune, args.force);
 
-    if target.is_main {
-        let msg = "cannot remove the main worktree";
+    let blockers = collect_rm_blockers(target, args.force);
+    if !blockers.is_empty() {
         if args.dry_run {
-            eprintln!("warning: {msg}");
-            eprintln!("(dry run — no changes made)");
-            return Ok(());
+            for blocker in &blockers {
+                eprintln!("warning: {blocker}");
+            }
+        } else {
+            return Err(blockers.join("\n"));
         }
-        return Err(msg.into());
-    }
-    if target.dirty && !args.force {
-        let msg = format!(
-            "worktree has uncommitted changes — pass -f to force\n  path: {}",
-            target.path
-        );
-        if args.dry_run {
-            eprintln!("warning: dirty worktree — real run would require -f");
-            eprintln!("(dry run — no changes made)");
-            return Ok(());
-        }
-        return Err(msg);
     }
 
     if args.dry_run {
@@ -788,7 +781,21 @@ fn cmd_rm(args: RmArgs) -> Result<(), String> {
         force: args.force,
     };
     let mut sink = StderrLogWriter;
-    actions::remove_worktree_cli(input, args.no_hooks, args.prune, &mut sink)
+    actions::remove_worktree_cli(&state, input, args.no_hooks, args.prune, &mut sink)
+}
+
+fn collect_rm_blockers(target: &crate::models::WorktreeRecord, force: bool) -> Vec<String> {
+    let mut blockers = Vec::new();
+    if target.is_main {
+        blockers.push("cannot remove the main worktree".into());
+    }
+    if target.dirty && !force {
+        blockers.push(format!(
+            "worktree has uncommitted changes — pass -f to force\n  path: {}",
+            target.path
+        ));
+    }
+    blockers
 }
 
 fn resolve_rm_target<'a>(

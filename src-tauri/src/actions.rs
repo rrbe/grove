@@ -203,27 +203,21 @@ fn plan_create_worktree(
 }
 
 pub fn create_worktree_cli(
+    state: &SharedState,
     input: CreateWorktreeInput,
     skip_hooks: bool,
     sink: &mut impl LogWriter,
 ) -> Result<PathBuf, String> {
-    let state = build_cli_state()?;
-    let (default_terminal, default_shell) = read_cli_defaults(&state);
+    let (default_terminal, default_shell) = read_cli_defaults(state);
     let (planned, worktree_path) = plan_create_worktree(
-        &state,
+        state,
         input,
         default_terminal.as_deref(),
         &default_shell,
         skip_hooks,
     )?;
-    for step in planned.steps {
-        step.run(sink)?;
-    }
-    {
-        let mut store = state.store.lock().unwrap();
-        push_recent(&mut store, &planned.repo_root.to_string_lossy());
-        persist(&store)?;
-    }
+    run_steps(planned.steps, sink)?;
+    persist_recent_repo(state, &planned.repo_root)?;
     Ok(worktree_path)
 }
 
@@ -343,10 +337,7 @@ pub fn run_hooks_cli(
         return Ok(());
     }
 
-    for step in steps {
-        step.run(sink)?;
-    }
-    Ok(())
+    run_steps(steps, sink)
 }
 
 pub fn launch_worktree(
@@ -505,15 +496,15 @@ fn plan_remove_worktree_execution(
 }
 
 pub fn remove_worktree_cli(
+    state: &SharedState,
     input: RemoveWorktreeInput,
     skip_hooks: bool,
     prune: bool,
     sink: &mut impl LogWriter,
 ) -> Result<(), String> {
-    let state = build_cli_state()?;
-    let (default_terminal, default_shell) = read_cli_defaults(&state);
+    let (default_terminal, default_shell) = read_cli_defaults(state);
     let mut planned = plan_remove_worktree_execution(
-        &state,
+        state,
         input,
         default_terminal.as_deref(),
         &default_shell,
@@ -524,18 +515,25 @@ pub fn remove_worktree_cli(
             repo_root: planned.repo_root.clone(),
         });
     }
-    for step in planned.steps {
+    run_steps(planned.steps, sink)?;
+    persist_recent_repo(state, &planned.repo_root)?;
+    Ok(())
+}
+
+fn run_steps(steps: Vec<ExecutionStep>, sink: &mut impl LogWriter) -> Result<(), String> {
+    for step in steps {
         step.run(sink)?;
-    }
-    {
-        let mut store = state.store.lock().unwrap();
-        push_recent(&mut store, &planned.repo_root.to_string_lossy());
-        persist(&store)?;
     }
     Ok(())
 }
 
-fn build_cli_state() -> Result<SharedState, String> {
+fn persist_recent_repo(state: &SharedState, repo_root: &Path) -> Result<(), String> {
+    let mut store = state.store.lock().unwrap();
+    push_recent(&mut store, &repo_root.to_string_lossy());
+    persist(&store)
+}
+
+pub fn build_cli_state() -> Result<SharedState, String> {
     let store = crate::store::load_store()?;
     Ok(SharedState {
         store: std::sync::Mutex::new(store),
@@ -605,9 +603,7 @@ fn run_session_execution(
         app: app.clone(),
         session_id: session_id.to_string(),
     };
-    for step in steps {
-        step.run(&mut sink)?;
-    }
+    run_steps(steps, &mut sink)?;
 
     let now = Utc::now().to_rfc3339();
     {
@@ -947,9 +943,7 @@ fn execute(
 ) -> Result<ActionResponse, String> {
     let mut logs = Vec::new();
     let mut sink = VecLogWriter { logs: &mut logs };
-    for step in steps {
-        step.run(&mut sink)?;
-    }
+    run_steps(steps, &mut sink)?;
     let now = Utc::now().to_rfc3339();
     {
         let mut store = state.store.lock().unwrap();

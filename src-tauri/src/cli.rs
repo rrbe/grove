@@ -933,20 +933,8 @@ struct ConvertArgs {
     no_hooks: bool,
 }
 
-#[cfg_attr(test, derive(Debug))]
-struct ConvertPlan {
-    branch: String,
-}
-
-fn plan_convert(
-    worktrees: &[crate::models::WorktreeRecord],
-    base: &str,
-) -> Result<ConvertPlan, String> {
-    let main = worktrees
-        .iter()
-        .find(|w| w.is_main)
-        .ok_or_else(|| "no main worktree found".to_string())?;
-    let branch = main.branch.clone().ok_or_else(|| {
+fn plan_convert(branch: Option<&str>, dirty: bool, base: &str) -> Result<String, String> {
+    let branch = branch.ok_or_else(|| {
         "main worktree is in detached HEAD state — checkout a branch first".to_string()
     })?;
     if branch == base {
@@ -954,35 +942,30 @@ fn plan_convert(
             "main worktree is already on '{base}' — nothing to convert"
         ));
     }
-    if main.dirty {
+    if dirty {
         return Err(
             "main worktree has uncommitted changes — commit or stash before converting".into(),
         );
     }
-    Ok(ConvertPlan { branch })
+    Ok(branch.to_string())
 }
 
 fn cmd_convert(args: ConvertArgs) -> Result<(), String> {
     let repo_root = current_repo_root()?;
     let state = actions::build_cli_state()?;
-
-    let worktrees = {
-        let store_guard = state.store.lock().unwrap();
-        git::scan_worktrees(&repo_root, &store_guard)?
-    };
-
     let loaded = actions::load_repo_config(&state, &repo_root);
+
     let base = args
         .base
-        .clone()
         .filter(|v| !v.trim().is_empty())
         .unwrap_or_else(|| loaded.merged.settings.default_base_branch.clone());
 
-    let plan = plan_convert(&worktrees, &base)?;
-    let branch = plan.branch;
+    let current = git::current_branch(&repo_root)?;
+    let (dirty, _, _, _) = git::git_status_details(&repo_root)?;
+    let branch = plan_convert(current.as_deref(), dirty, &base)?;
 
-    // Pre-flight: refuse if the destination path already exists, so we don't
-    // switch the main worktree off the branch and then fail to add the new one.
+    // Pre-check the target path so a collision fails before we switch main off
+    // the branch we're about to extract.
     let target_path =
         actions::resolve_create_path(&repo_root, &loaded, &branch, args.path.as_deref())?;
     if target_path.exists() {
@@ -992,40 +975,24 @@ fn cmd_convert(args: ConvertArgs) -> Result<(), String> {
         ));
     }
 
-    // Phase 1: switch the main worktree to the base branch so git will allow
-    // us to claim `branch` for a new worktree.
-    let switch_output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(&repo_root)
-        .args(["switch", &base])
-        .output()
-        .map_err(|e| format!("failed to run git switch: {e}"))?;
-    if !switch_output.status.success() {
-        let stderr = String::from_utf8_lossy(&switch_output.stderr);
-        return Err(format!(
-            "failed to switch main worktree to '{base}': {}",
-            stderr.trim()
-        ));
-    }
+    git::run_git_text(&repo_root, ["switch", &base])
+        .map_err(|stderr| format!("failed to switch main worktree to '{base}': {stderr}"))?;
     eprintln!("Switched main worktree to {base}");
 
-    // Phase 2: add a worktree for the original branch.
     let input = CreateWorktreeInput {
         repo_root: repo_root.to_string_lossy().to_string(),
         mode: CreateMode::ExistingBranch,
         branch: branch.clone(),
-        base_ref: Some(base.clone()),
+        base_ref: None,
         remote_ref: None,
-        path: args.path.clone(),
+        path: args.path,
         auto_start_launchers: Vec::new(),
     };
 
     let mut sink = StderrLogWriter;
     let worktree_path = actions::create_worktree_cli(&state, input, args.no_hooks, &mut sink)
         .map_err(|e| {
-            format!(
-                "{e}\nhint: main worktree is now on '{base}'; run `git switch {branch}` to undo",
-            )
+            format!("{e}\nhint: main worktree is now on '{base}'; run `git switch {branch}` to undo")
         })?;
 
     println!("{}", worktree_path.display());
@@ -1495,42 +1462,26 @@ mod tests {
 
     #[test]
     fn plan_convert_rejects_default_branch() {
-        let worktrees = vec![make_worktree("/repo", Some("main"), true)];
-        let err = plan_convert(&worktrees, "main").unwrap_err();
+        let err = plan_convert(Some("main"), false, "main").unwrap_err();
         assert!(err.contains("already on 'main'"), "{err}");
     }
 
     #[test]
     fn plan_convert_rejects_detached_head() {
-        let worktrees = vec![make_worktree("/repo", None, true)];
-        let err = plan_convert(&worktrees, "main").unwrap_err();
+        let err = plan_convert(None, false, "main").unwrap_err();
         assert!(err.contains("detached HEAD"), "{err}");
     }
 
     #[test]
     fn plan_convert_rejects_dirty_main() {
-        let mut wt = make_worktree("/repo", Some("feat/foo"), true);
-        wt.dirty = true;
-        let worktrees = vec![wt];
-        let err = plan_convert(&worktrees, "main").unwrap_err();
+        let err = plan_convert(Some("feat/foo"), true, "main").unwrap_err();
         assert!(err.contains("uncommitted changes"), "{err}");
     }
 
     #[test]
     fn plan_convert_returns_branch_on_clean_main() {
-        let worktrees = vec![
-            make_worktree("/repo", Some("feat/foo"), true),
-            make_worktree("/repo/.wt/other", Some("feat/other"), false),
-        ];
-        let plan = plan_convert(&worktrees, "main").unwrap();
-        assert_eq!(plan.branch, "feat/foo");
-    }
-
-    #[test]
-    fn plan_convert_errors_when_no_main_worktree() {
-        let worktrees = vec![make_worktree("/repo/.wt/foo", Some("feat/foo"), false)];
-        let err = plan_convert(&worktrees, "main").unwrap_err();
-        assert!(err.contains("no main worktree"), "{err}");
+        let branch = plan_convert(Some("feat/foo"), false, "main").unwrap();
+        assert_eq!(branch, "feat/foo");
     }
 
     #[test]

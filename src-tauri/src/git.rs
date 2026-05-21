@@ -208,6 +208,18 @@ pub fn resolve_head_sha(repo_root: &Path, reference: &str) -> Result<String, Str
     run_git_text(repo_root, ["rev-parse", reference]).map(|sha| sha.trim().to_string())
 }
 
+/// Returns the current branch name, or `None` for detached HEAD.
+pub fn current_branch(repo_root: &Path) -> Result<Option<String>, String> {
+    let name = run_git_text(repo_root, ["rev-parse", "--abbrev-ref", "HEAD"])?
+        .trim()
+        .to_string();
+    if name == "HEAD" {
+        Ok(None)
+    } else {
+        Ok(Some(name))
+    }
+}
+
 pub fn head_commit_date(worktree_path: &Path) -> Option<String> {
     run_git_text(worktree_path, ["log", "-1", "--format=%aI", "HEAD"])
         .ok()

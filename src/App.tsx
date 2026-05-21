@@ -52,14 +52,6 @@ import {
   uninstallGroveCli,
 } from "./lib/api";
 import { useI18n, type Locale, type Translations } from "./lib/i18n";
-import {
-  checkForUpdate,
-  downloadAndInstallUpdate,
-  INITIAL_PROGRESS,
-  type UpdateInfo,
-  type DownloadProgress,
-  type Update,
-} from "./lib/updater";
 import { useTheme, type ThemeMode } from "./lib/theme";
 import { HooksModal, type HooksMap } from "./components/HooksModal";
 import { CreateWorktreeModal, type CreateFormState } from "./components/CreateWorktreeModal";
@@ -178,9 +170,6 @@ export default function App({ repoPath }: { repoPath: string }) {
   const [customLauncherModal, setCustomLauncherModal] = useState<{ editing: LauncherProfile | null; repoRoot: string | null } | null>(null);
   const [showTrayIconEnabled, setShowTrayIconEnabled] = useState(true);
   const [appVersion, setAppVersion] = useState("");
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [updateObj, setUpdateObj] = useState<Update | null>(null);
-  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress>(INITIAL_PROGRESS);
 
   // Listen for Settings menu item (Cmd+, handled by native menu)
   useEffect(() => {
@@ -200,21 +189,6 @@ export default function App({ repoPath }: { repoPath: string }) {
     getVersion().then(setAppVersion).catch(() => {});
   }, []);
 
-  // Listen for update-available event from Rust background checker
-  useEffect(() => {
-    let unlisten: UnlistenFn | null = null;
-    void listen<UpdateInfo>("update-available", async (event) => {
-      setUpdateInfo(event.payload);
-      const update = await checkForUpdate();
-      if (update) setUpdateObj(update);
-    }).then((fn) => {
-      unlisten = fn;
-    });
-    return () => {
-      if (unlisten) unlisten();
-    };
-  }, []);
-
   // Listen for worktrees-changed event from filesystem watcher
   useEffect(() => {
     let unlisten: UnlistenFn | null = null;
@@ -229,14 +203,6 @@ export default function App({ repoPath }: { repoPath: string }) {
       if (unlisten) unlisten();
     };
   }); // re-subscribe when repo changes so closure captures latest repo
-
-  // Show toast when update is detected
-  useEffect(() => {
-    if (updateInfo) {
-      showToast(`${t.updateAvailable}: v${updateInfo.version}`, "success");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [updateInfo?.version]);
 
   const selectedWorktree = repo?.worktrees.find((w) => w.id === selectedWorktreeId) ?? null;
 
@@ -887,29 +853,6 @@ export default function App({ repoPath }: { repoPath: string }) {
             locale={locale}
             setLocale={setLocale}
             appVersion={appVersion}
-            updateInfo={updateInfo}
-            updateObj={updateObj}
-            downloadProgress={downloadProgress}
-            onCheckForUpdate={async () => {
-              const update = await checkForUpdate();
-              if (update) {
-                setUpdateObj(update);
-                setUpdateInfo({
-                  version: update.version,
-                  currentVersion: update.currentVersion,
-                  body: update.body ?? undefined,
-                  date: update.date ?? undefined,
-                });
-              } else {
-                showToast(t.upToDate, "success");
-              }
-            }}
-            onDownloadUpdate={() => {
-              if (updateObj) {
-                void downloadAndInstallUpdate(updateObj, setDownloadProgress);
-              }
-            }}
-            onRetryDownload={() => setDownloadProgress(INITIAL_PROGRESS)}
           />
           </>
         )}
@@ -1502,12 +1445,6 @@ function SettingsPage({
   locale,
   setLocale,
   appVersion,
-  updateInfo,
-  updateObj,
-  downloadProgress,
-  onCheckForUpdate,
-  onDownloadUpdate,
-  onRetryDownload,
 }: {
   toolStatuses: ToolStatus[];
   logs: TaggedLog[];
@@ -1529,12 +1466,6 @@ function SettingsPage({
   locale: Locale;
   setLocale: (l: Locale) => void;
   appVersion: string;
-  updateInfo: UpdateInfo | null;
-  updateObj: Update | null;
-  downloadProgress: DownloadProgress;
-  onCheckForUpdate: () => void;
-  onDownloadUpdate: () => void;
-  onRetryDownload: () => void;
 }) {
   const [showConfigEditor, setShowConfigEditor] = useState(false);
   const [cliInstalled, setCliInstalled] = useState(false);
@@ -1592,69 +1523,6 @@ function SettingsPage({
 
   return (
     <div className="settings-view">
-      {/* Software Update */}
-      <section className="card stack">
-        <div className="section-heading">
-          <span>{t.softwareUpdate}</span>
-          {!updateInfo && (
-            <button className="ghost-button" onClick={onCheckForUpdate}>
-              {t.checkForUpdates}
-            </button>
-          )}
-        </div>
-        {updateInfo ? (
-          <div className="update-panel">
-            <p>{t.updateAvailableDesc(updateInfo.version)}</p>
-            {updateInfo.body && <p className="empty-copy">{updateInfo.body}</p>}
-
-            {downloadProgress.phase === "idle" && updateObj && (
-              <button className="primary-button" onClick={onDownloadUpdate}>
-                {t.downloadAndInstall}
-              </button>
-            )}
-
-            {downloadProgress.phase === "downloading" && (
-              <div className="update-progress">
-                <div className="progress-bar">
-                  <div
-                    className="progress-fill"
-                    style={{
-                      width: downloadProgress.total
-                        ? `${(downloadProgress.downloaded / downloadProgress.total) * 100}%`
-                        : undefined,
-                    }}
-                  />
-                </div>
-                <span className="empty-copy">
-                  {downloadProgress.total
-                    ? `${Math.round((downloadProgress.downloaded / downloadProgress.total) * 100)}%`
-                    : `${(downloadProgress.downloaded / 1024 / 1024).toFixed(1)} MB`}
-                </span>
-              </div>
-            )}
-
-            {downloadProgress.phase === "installing" && (
-              <p className="empty-copy">{t.installingUpdate}</p>
-            )}
-
-            {downloadProgress.phase === "done" && (
-              <p className="empty-copy">{t.updateInstalledRestarting}</p>
-            )}
-
-            {downloadProgress.phase === "error" && (
-              <div className="warning-panel">
-                <p>{t.updateFailed}: {downloadProgress.error}</p>
-                <button className="ghost-button" onClick={onRetryDownload}>
-                  {t.retry}
-                </button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="empty-copy">{t.currentVersion}: v{appVersion}</p>
-        )}
-      </section>
-
       {/* Default Terminal */}
       <section className="card stack">
         <div className="section-heading">

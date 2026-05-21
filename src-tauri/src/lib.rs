@@ -158,11 +158,7 @@ async fn save_repo_hooks(
         let repo_root_str = repo_root.to_string_lossy().to_string();
         {
             let mut store = state.store.lock().unwrap();
-            if config::is_effectively_empty(&parsed) {
-                store.repo_configs.remove(&repo_root_str);
-            } else {
-                store.repo_configs.insert(repo_root_str.clone(), parsed);
-            }
+            store::upsert_repo_config(&mut store, &repo_root_str, parsed);
             store::persist(&store)?;
         }
         load_repo_snapshot(&app, &state, repo_root_str)

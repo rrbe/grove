@@ -118,6 +118,18 @@ pub fn persist(store: &AppStore) -> Result<(), String> {
     Ok(())
 }
 
+/// Insert `config` under `repo_key`, or remove the entry entirely if the
+/// config is effectively empty. Caller must `persist` afterwards. Keeps
+/// `repo_configs` free of all-default placeholders that would never affect
+/// behavior but would bloat the JSON store.
+pub fn upsert_repo_config(store: &mut AppStore, repo_key: &str, config: ConfigFile) {
+    if crate::config::is_effectively_empty(&config) {
+        store.repo_configs.remove(repo_key);
+    } else {
+        store.repo_configs.insert(repo_key.to_string(), config);
+    }
+}
+
 pub fn push_recent(store: &mut AppStore, repo_root: &str) {
     store.recent_repos.retain(|item| item != repo_root);
     store.recent_repos.insert(0, repo_root.to_string());
@@ -196,5 +208,38 @@ mod tests {
         assert_eq!(store.recent_repos, vec!["/repo/x"]);
         assert!(store.default_terminal.is_none());
         assert!(store.pr_cache.is_empty());
+    }
+
+    #[test]
+    fn upsert_repo_config_inserts_non_empty() {
+        let mut store = AppStore::default();
+        let mut config = ConfigFile::default();
+        config.settings.default_base_branch = Some("develop".into());
+        upsert_repo_config(&mut store, "/repo/a", config);
+        assert_eq!(
+            store
+                .repo_configs
+                .get("/repo/a")
+                .and_then(|c| c.settings.default_base_branch.as_deref()),
+            Some("develop"),
+        );
+    }
+
+    #[test]
+    fn upsert_repo_config_removes_when_effectively_empty() {
+        let mut store = AppStore::default();
+        let mut seeded = ConfigFile::default();
+        seeded.settings.default_base_branch = Some("develop".into());
+        store.repo_configs.insert("/repo/a".into(), seeded);
+
+        upsert_repo_config(&mut store, "/repo/a", ConfigFile::default());
+        assert!(!store.repo_configs.contains_key("/repo/a"));
+    }
+
+    #[test]
+    fn upsert_repo_config_empty_on_missing_key_is_noop() {
+        let mut store = AppStore::default();
+        upsert_repo_config(&mut store, "/repo/missing", ConfigFile::default());
+        assert!(store.repo_configs.is_empty());
     }
 }

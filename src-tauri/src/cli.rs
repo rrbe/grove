@@ -1005,12 +1005,7 @@ fn cmd_config_edit() -> Result<(), String> {
         eprintln!("no changes; config left unchanged");
         return Ok(());
     };
-    let new_config = parsed.unwrap_or_default();
-    if config::is_effectively_empty(&new_config) {
-        store_data.repo_configs.remove(&repo_key);
-    } else {
-        store_data.repo_configs.insert(repo_key.clone(), new_config);
-    }
+    store::upsert_repo_config(&mut store_data, &repo_key, parsed.unwrap_or_default());
     store::persist(&store_data)?;
     eprintln!("config saved for {repo_key}");
     Ok(())
@@ -1038,11 +1033,7 @@ fn cmd_hook_edit() -> Result<(), String> {
     };
     let mut new_config = existing;
     new_config.hooks = new_hooks;
-    if config::is_effectively_empty(&new_config) {
-        store_data.repo_configs.remove(&repo_key);
-    } else {
-        store_data.repo_configs.insert(repo_key.clone(), new_config);
-    }
+    store::upsert_repo_config(&mut store_data, &repo_key, new_config);
     store::persist(&store_data)?;
     eprintln!("hooks saved for {repo_key}");
     Ok(())
@@ -1091,7 +1082,7 @@ where
         .map_err(|error| format!("cannot write tmp file: {error}"))?;
 
     loop {
-        spawn_editor(tmp.path())?;
+        crate::platform::spawn_editor(&resolve_editor(), tmp.path())?;
         let edited = std::fs::read_to_string(tmp.path())
             .map_err(|error| format!("cannot read edited file: {error}"))?;
         if edited == initial_text {
@@ -1112,29 +1103,6 @@ where
             }
         }
     }
-}
-
-fn spawn_editor(path: &Path) -> Result<(), String> {
-    let editor = resolve_editor();
-
-    #[cfg(unix)]
-    let status = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(format!(r#"{editor} "$1""#))
-        .arg("--")
-        .arg(path)
-        .status();
-    #[cfg(windows)]
-    let status = std::process::Command::new("cmd")
-        .args(["/C", &editor])
-        .arg(path)
-        .status();
-
-    let status = status.map_err(|error| format!("failed to spawn editor '{editor}': {error}"))?;
-    if !status.success() {
-        return Err(format!("editor '{editor}' exited with status {status}"));
-    }
-    Ok(())
 }
 
 fn resolve_editor() -> String {

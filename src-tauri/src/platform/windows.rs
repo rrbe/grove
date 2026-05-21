@@ -166,3 +166,17 @@ pub fn home_dir() -> Result<PathBuf, String> {
         .map(PathBuf::from)
         .map_err(|_| "USERPROFILE and HOME not set".to_string())
 }
+
+/// Spawn `editor` on `path`, inheriting stdio. `cmd /C` lets the editor
+/// string carry its own arguments (e.g. "code --wait").
+pub fn spawn_editor(editor: &str, path: &Path) -> Result<(), String> {
+    let status = Command::new("cmd")
+        .args(["/C", editor])
+        .arg(path)
+        .status()
+        .map_err(|error| format!("failed to spawn editor '{editor}': {error}"))?;
+    if !status.success() {
+        return Err(format!("editor '{editor}' exited with status {status}"));
+    }
+    Ok(())
+}

@@ -76,3 +76,20 @@ pub fn home_dir() -> Result<PathBuf, String> {
         .map(PathBuf::from)
         .map_err(|_| "HOME not set".to_string())
 }
+
+/// Spawn `editor` (potentially with flags, e.g. "code --wait") on `path`,
+/// inheriting stdio so the user can interact directly. Routed through
+/// `sh -c` so the editor string can carry its own arguments.
+pub fn spawn_editor(editor: &str, path: &Path) -> Result<(), String> {
+    let status = Command::new("sh")
+        .arg("-c")
+        .arg(format!(r#"{editor} "$1""#))
+        .arg("--")
+        .arg(path)
+        .status()
+        .map_err(|error| format!("failed to spawn editor '{editor}': {error}"))?;
+    if !status.success() {
+        return Err(format!("editor '{editor}' exited with status {status}"));
+    }
+    Ok(())
+}

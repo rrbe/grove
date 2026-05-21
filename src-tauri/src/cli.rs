@@ -71,6 +71,20 @@ enum Commands {
         #[arg(short = 'q', long)]
         quiet: bool,
     },
+    /// Convert the main worktree's current branch into a separate worktree
+    ///
+    /// Switches the main worktree onto the configured base branch and creates
+    /// a new worktree for the branch that was previously checked out there.
+    Convert {
+        /// Target worktree path (default: configured worktree root + sanitized branch name)
+        path: Option<String>,
+        /// Base branch to switch the main worktree onto (default: configured default base)
+        #[arg(short = 'b', long, value_name = "REF")]
+        base: Option<String>,
+        /// Skip pre-create / post-create hooks
+        #[arg(long)]
+        no_hooks: bool,
+    },
     /// Print the path of a worktree by branch (use with `grove shell-init` to actually cd)
     Cd {
         /// Branch name (defaults to the main worktree)
@@ -205,6 +219,7 @@ const CLI_SUBCOMMANDS: &[&str] = &[
     "worktree",
     "config",
     "new",
+    "convert",
     "rm",
     "remove",
     "cd",
@@ -267,6 +282,15 @@ pub fn main() {
             existing,
             no_hooks,
             quiet,
+        }),
+        Some(Commands::Convert {
+            path,
+            base,
+            no_hooks,
+        }) => cmd_convert(ConvertArgs {
+            path,
+            base,
+            no_hooks,
         }),
         Some(Commands::Cd { branch }) => cmd_cd(branch.as_deref()),
         Some(Commands::ShellInit { shell }) => {
@@ -901,6 +925,80 @@ fn confirm_or_abort(target: &crate::models::WorktreeRecord) -> Result<(), String
     }
 }
 
+// ── convert subcommand ────────────────────────────────────────────────────
+
+struct ConvertArgs {
+    path: Option<String>,
+    base: Option<String>,
+    no_hooks: bool,
+}
+
+fn plan_convert(branch: Option<&str>, dirty: bool, base: &str) -> Result<String, String> {
+    let branch = branch.ok_or_else(|| {
+        "main worktree is in detached HEAD state — checkout a branch first".to_string()
+    })?;
+    if branch == base {
+        return Err(format!(
+            "main worktree is already on '{base}' — nothing to convert"
+        ));
+    }
+    if dirty {
+        return Err(
+            "main worktree has uncommitted changes — commit or stash before converting".into(),
+        );
+    }
+    Ok(branch.to_string())
+}
+
+fn cmd_convert(args: ConvertArgs) -> Result<(), String> {
+    let repo_root = current_repo_root()?;
+    let state = actions::build_cli_state()?;
+    let loaded = actions::load_repo_config(&state, &repo_root);
+
+    let base = args
+        .base
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| loaded.merged.settings.default_base_branch.clone());
+
+    let current = git::current_branch(&repo_root)?;
+    let (dirty, _, _, _) = git::git_status_details(&repo_root)?;
+    let branch = plan_convert(current.as_deref(), dirty, &base)?;
+
+    // Pre-check the target path so a collision fails before we switch main off
+    // the branch we're about to extract.
+    let target_path =
+        actions::resolve_create_path(&repo_root, &loaded, &branch, args.path.as_deref())?;
+    if target_path.exists() {
+        return Err(format!(
+            "target path already exists: {}",
+            target_path.display()
+        ));
+    }
+
+    git::run_git_text(&repo_root, ["switch", &base])
+        .map_err(|stderr| format!("failed to switch main worktree to '{base}': {stderr}"))?;
+    eprintln!("Switched main worktree to {base}");
+
+    let input = CreateWorktreeInput {
+        repo_root: repo_root.to_string_lossy().to_string(),
+        mode: CreateMode::ExistingBranch,
+        branch: branch.clone(),
+        base_ref: None,
+        remote_ref: None,
+        path: args.path,
+        auto_start_launchers: Vec::new(),
+    };
+
+    let mut sink = StderrLogWriter;
+    let worktree_path = actions::create_worktree_cli(&state, input, args.no_hooks, &mut sink)
+        .map_err(|e| {
+            format!("{e}\nhint: main worktree is now on '{base}'; run `git switch {branch}` to undo")
+        })?;
+
+    println!("{}", worktree_path.display());
+    Ok(())
+}
+
 // ── cd / shell-init subcommands ────────────────────────────────────────────
 
 fn cmd_cd(branch: Option<&str>) -> Result<(), String> {
@@ -967,25 +1065,31 @@ fn shell_init_snippet(shell: ShellKind) -> &'static str {
 }
 
 const POSIX_SHELL_INIT: &str = r#"grove() {
-  if [ "$1" = "cd" ]; then
-    shift
-    local _grove_target
-    _grove_target=$(command grove cd "$@") || return $?
-    cd "$_grove_target"
-  else
-    command grove "$@"
-  fi
+  case "$1" in
+    cd|convert)
+      local _grove_subcmd="$1"
+      shift
+      local _grove_target
+      _grove_target=$(command grove "$_grove_subcmd" "$@") || return $?
+      cd "$_grove_target"
+      ;;
+    *)
+      command grove "$@"
+      ;;
+  esac
 }
 "#;
 
 const FISH_SHELL_INIT: &str = r#"function grove
-    if test "$argv[1]" = "cd"
-        set -e argv[1]
-        set -l _grove_target (command grove cd $argv)
-        or return $status
-        cd $_grove_target
-    else
-        command grove $argv
+    switch $argv[1]
+        case cd convert
+            set -l _grove_subcmd $argv[1]
+            set -e argv[1]
+            set -l _grove_target (command grove $_grove_subcmd $argv)
+            or return $status
+            cd $_grove_target
+        case '*'
+            command grove $argv
     end
 end
 "#;
@@ -1354,6 +1458,30 @@ mod tests {
             }
             other => panic!("expected Multiple, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn plan_convert_rejects_default_branch() {
+        let err = plan_convert(Some("main"), false, "main").unwrap_err();
+        assert!(err.contains("already on 'main'"), "{err}");
+    }
+
+    #[test]
+    fn plan_convert_rejects_detached_head() {
+        let err = plan_convert(None, false, "main").unwrap_err();
+        assert!(err.contains("detached HEAD"), "{err}");
+    }
+
+    #[test]
+    fn plan_convert_rejects_dirty_main() {
+        let err = plan_convert(Some("feat/foo"), true, "main").unwrap_err();
+        assert!(err.contains("uncommitted changes"), "{err}");
+    }
+
+    #[test]
+    fn plan_convert_returns_branch_on_clean_main() {
+        let branch = plan_convert(Some("feat/foo"), false, "main").unwrap();
+        assert_eq!(branch, "feat/foo");
     }
 
     #[test]

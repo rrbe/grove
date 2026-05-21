@@ -209,4 +209,37 @@ mod tests {
         assert!(store.default_terminal.is_none());
         assert!(store.pr_cache.is_empty());
     }
+
+    #[test]
+    fn upsert_repo_config_inserts_non_empty() {
+        let mut store = AppStore::default();
+        let mut config = ConfigFile::default();
+        config.settings.default_base_branch = Some("develop".into());
+        upsert_repo_config(&mut store, "/repo/a", config);
+        assert_eq!(
+            store
+                .repo_configs
+                .get("/repo/a")
+                .and_then(|c| c.settings.default_base_branch.as_deref()),
+            Some("develop"),
+        );
+    }
+
+    #[test]
+    fn upsert_repo_config_removes_when_effectively_empty() {
+        let mut store = AppStore::default();
+        let mut seeded = ConfigFile::default();
+        seeded.settings.default_base_branch = Some("develop".into());
+        store.repo_configs.insert("/repo/a".into(), seeded);
+
+        upsert_repo_config(&mut store, "/repo/a", ConfigFile::default());
+        assert!(!store.repo_configs.contains_key("/repo/a"));
+    }
+
+    #[test]
+    fn upsert_repo_config_empty_on_missing_key_is_noop() {
+        let mut store = AppStore::default();
+        upsert_repo_config(&mut store, "/repo/missing", ConfigFile::default());
+        assert!(store.repo_configs.is_empty());
+    }
 }

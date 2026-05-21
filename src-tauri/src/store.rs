@@ -118,6 +118,18 @@ pub fn persist(store: &AppStore) -> Result<(), String> {
     Ok(())
 }
 
+/// Insert `config` under `repo_key`, or remove the entry entirely if the
+/// config is effectively empty. Caller must `persist` afterwards. Keeps
+/// `repo_configs` free of all-default placeholders that would never affect
+/// behavior but would bloat the JSON store.
+pub fn upsert_repo_config(store: &mut AppStore, repo_key: &str, config: ConfigFile) {
+    if crate::config::is_effectively_empty(&config) {
+        store.repo_configs.remove(repo_key);
+    } else {
+        store.repo_configs.insert(repo_key.to_string(), config);
+    }
+}
+
 pub fn push_recent(store: &mut AppStore, repo_root: &str) {
     store.recent_repos.retain(|item| item != repo_root);
     store.recent_repos.insert(0, repo_root.to_string());

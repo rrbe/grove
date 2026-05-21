@@ -260,7 +260,7 @@ pub fn detect_app(app_name: &str) -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
-pub use super::posix::{available_shells, detect_cli, home_dir};
+pub use super::posix::{available_shells, detect_cli, home_dir, spawn_editor};
 
 pub fn open_app(app: &str, args: &[String], cwd: &Path) -> Result<(), String> {
     let mut command = Command::new("open");

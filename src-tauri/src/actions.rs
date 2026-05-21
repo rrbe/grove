@@ -683,7 +683,7 @@ pub fn find_worktree<'a>(
         .ok_or_else(|| format!("worktree not found: {path}"))
 }
 
-fn resolve_create_path(
+pub fn resolve_create_path(
     repo_root: &Path,
     loaded: &LoadedConfig,
     branch: &str,

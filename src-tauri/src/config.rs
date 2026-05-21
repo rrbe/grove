@@ -63,6 +63,38 @@ pub fn render_config_text(config: &ConfigFile) -> Result<String, String> {
     toml::to_string_pretty(config).map_err(|error| format!("failed to render config: {error}"))
 }
 
+/// Render *only* the hooks map as a standalone TOML document. Used by `grove
+/// hook edit` so the user sees just `[[hooks.<event>]]` tables without the
+/// surrounding settings/launchers noise.
+pub fn render_hooks_text(
+    hooks: &BTreeMap<HookEvent, Vec<HookStep>>,
+) -> Result<String, String> {
+    #[derive(serde::Serialize)]
+    struct HooksOnly<'a> {
+        hooks: &'a BTreeMap<HookEvent, Vec<HookStep>>,
+    }
+    toml::to_string_pretty(&HooksOnly { hooks })
+        .map_err(|error| format!("failed to render hooks: {error}"))
+}
+
+/// Parse a hooks-only TOML document. Empty input → empty map (lets the user
+/// clear all hooks by saving an empty file).
+pub fn parse_hooks_text(
+    text: &str,
+) -> Result<BTreeMap<HookEvent, Vec<HookStep>>, String> {
+    if text.trim().is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    #[derive(serde::Deserialize, Default)]
+    struct HooksOnly {
+        #[serde(default)]
+        hooks: BTreeMap<HookEvent, Vec<HookStep>>,
+    }
+    let parsed: HooksOnly = toml::from_str(text)
+        .map_err(|error| format!("hooks doc is invalid TOML: {error}"))?;
+    Ok(parsed.hooks)
+}
+
 pub fn builtin_config() -> ResolvedConfig {
     ResolvedConfig {
         settings: RepoSettings {
@@ -411,5 +443,45 @@ type = "install"
         assert_eq!(post_create[0].step_type, HookStepType::CopyFiles);
         assert_eq!(post_create[0].paths, vec![".env.local", ".npmrc"]);
         assert_eq!(post_create[1].step_type, HookStepType::Install);
+    }
+
+    #[test]
+    fn hooks_text_roundtrip_preserves_steps() {
+        let hooks = BTreeMap::from([(
+            HookEvent::PostCreate,
+            vec![
+                HookStep {
+                    step_type: HookStepType::CopyFiles,
+                    run: None,
+                    launcher_id: None,
+                    paths: vec![".env".into()],
+                    shell: None,
+                },
+                HookStep {
+                    step_type: HookStepType::Script,
+                    run: Some("echo hi".into()),
+                    launcher_id: None,
+                    paths: Vec::new(),
+                    shell: None,
+                },
+            ],
+        )]);
+        let text = render_hooks_text(&hooks).unwrap();
+        let parsed = parse_hooks_text(&text).unwrap();
+        assert_eq!(parsed, hooks);
+    }
+
+    #[test]
+    fn parse_empty_hooks_text_is_empty_map() {
+        assert!(parse_hooks_text("").unwrap().is_empty());
+        assert!(parse_hooks_text("   \n  ").unwrap().is_empty());
+        // Comments-only document also produces empty hooks.
+        assert!(parse_hooks_text("# just a comment\n").unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_hooks_text_rejects_invalid_toml() {
+        let err = parse_hooks_text("[[hooks.post-create]\ntype = ").unwrap_err();
+        assert!(err.contains("invalid TOML"), "{err}");
     }
 }

@@ -168,15 +168,4 @@ export interface Translations {
   themeLight: string;
   themeDark: string;
   themeSystem: string;
-  softwareUpdate: string;
-  checkForUpdates: string;
-  updateAvailable: string;
-  updateAvailableDesc: (version: string) => string;
-  downloadAndInstall: string;
-  installingUpdate: string;
-  updateInstalledRestarting: string;
-  updateFailed: string;
-  upToDate: string;
-  currentVersion: string;
-  retry: string;
 }

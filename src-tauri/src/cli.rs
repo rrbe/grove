@@ -51,12 +51,12 @@ enum Commands {
     /// Create a worktree for a branch (alias of `grove worktree new`)
     #[command(hide = true)]
     New(NewArgs),
-    /// Convert the main worktree's branch into a worktree (alias of `grove worktree convert`)
+    /// Detach the current branch into its own worktree (alias of `grove worktree detach`)
+    #[command(alias = "convert", hide = true)]
+    Detach(DetachArgs),
+    /// Attach a worktree's branch back onto the main worktree (alias of `grove worktree attach`)
     #[command(hide = true)]
-    Convert(ConvertArgs),
-    /// Absorb a worktree's branch back into the main worktree (alias of `grove worktree absorb`)
-    #[command(hide = true)]
-    Absorb(AbsorbArgs),
+    Attach(AttachArgs),
     /// Print the path of a worktree by branch (use with `grove shell-init` to actually cd)
     Cd {
         /// Branch name (defaults to the main worktree)
@@ -95,17 +95,18 @@ enum WorktreeCommands {
     List,
     /// Create a worktree for a branch
     New(NewArgs),
-    /// Convert the main worktree's current branch into a separate worktree
+    /// Detach the current branch into its own worktree
     ///
-    /// Switches the main worktree onto the configured base branch and creates
-    /// a new worktree for the branch that was previously checked out there.
-    Convert(ConvertArgs),
-    /// Absorb a worktree's branch back into the main worktree
+    /// Moves the main worktree's current branch into a new linked worktree and
+    /// switches the main worktree back onto the configured base branch.
+    #[command(alias = "convert")]
+    Detach(DetachArgs),
+    /// Attach a worktree's branch back onto the main worktree
     ///
-    /// The inverse of `convert`: removes the linked worktree and switches the
+    /// The inverse of `detach`: removes the linked worktree and switches the
     /// main worktree onto its branch. Uncommitted changes are carried over via
     /// a stash; committed work is never at risk.
-    Absorb(AbsorbArgs),
+    Attach(AttachArgs),
     /// Remove a worktree
     #[command(alias = "remove")]
     Rm(RmArgs),
@@ -189,8 +190,9 @@ const CLI_SUBCOMMANDS: &[&str] = &[
     "worktree",
     "config",
     "new",
+    "detach",
     "convert",
-    "absorb",
+    "attach",
     "rm",
     "remove",
     "cd",
@@ -236,15 +238,15 @@ pub fn main() {
         Some(Commands::Worktree { command }) => match command {
             WorktreeCommands::List => cmd_worktree_list(),
             WorktreeCommands::New(args) => cmd_new(args),
-            WorktreeCommands::Convert(args) => cmd_convert(args),
-            WorktreeCommands::Absorb(args) => cmd_absorb(args),
+            WorktreeCommands::Detach(args) => cmd_detach(args),
+            WorktreeCommands::Attach(args) => cmd_attach(args),
             WorktreeCommands::Rm(args) => cmd_rm(args),
         },
         Some(Commands::Config { command }) => cmd_config(command),
         // Top-level aliases for the worktree lifecycle verbs (hidden from help).
         Some(Commands::New(args)) => cmd_new(args),
-        Some(Commands::Convert(args)) => cmd_convert(args),
-        Some(Commands::Absorb(args)) => cmd_absorb(args),
+        Some(Commands::Detach(args)) => cmd_detach(args),
+        Some(Commands::Attach(args)) => cmd_attach(args),
         Some(Commands::Cd { branch }) => cmd_cd(branch.as_deref()),
         Some(Commands::ShellInit { shell }) => {
             print!("{}", shell_init_snippet(shell));
@@ -896,10 +898,10 @@ fn prompt_confirm(action: &str) -> Result<(), String> {
     }
 }
 
-// ── convert subcommand ────────────────────────────────────────────────────
+// ── detach subcommand ──────────────────────────────────────────────────────
 
 #[derive(clap::Args)]
-struct ConvertArgs {
+struct DetachArgs {
     /// Target worktree path (default: configured worktree root + sanitized branch name)
     path: Option<String>,
     /// Base branch to switch the main worktree onto (default: configured default base)
@@ -910,31 +912,31 @@ struct ConvertArgs {
     no_hooks: bool,
 }
 
-fn plan_convert(branch: Option<&str>, dirty: bool, base: &str) -> Result<String, String> {
+fn plan_detach(branch: Option<&str>, dirty: bool, base: &str) -> Result<String, String> {
     let branch = branch.ok_or_else(|| {
         "main worktree is in detached HEAD state — checkout a branch first".to_string()
     })?;
     if branch == base {
         return Err(format!(
-            "main worktree is already on '{base}' — nothing to convert"
+            "main worktree is already on '{base}' — nothing to detach"
         ));
     }
     if dirty {
         return Err(
             "main worktree is not clean — commit or stash your changes (untracked files \
-             included) before converting"
+             included) before detaching"
                 .into(),
         );
     }
     Ok(branch.to_string())
 }
 
-/// Build the failure message for a `create_worktree_cli` error during convert.
+/// Build the failure message for a `create_worktree_cli` error during detach.
 ///
 /// When the worktree was already created (the branch is now checked out in its
 /// new worktree), a `git switch {branch}` undo would fail — so the undo hint is
 /// only emitted while the branch is still free.
-fn convert_failure_message(branch: &str, base: &str, err: &str, worktree_created: bool) -> String {
+fn detach_failure_message(branch: &str, base: &str, err: &str, worktree_created: bool) -> String {
     if worktree_created {
         format!(
             "{err}\nnote: the worktree for '{branch}' was created but a post-create step failed; \
@@ -947,16 +949,16 @@ fn convert_failure_message(branch: &str, base: &str, err: &str, worktree_created
     }
 }
 
-fn cmd_convert(args: ConvertArgs) -> Result<(), String> {
+fn cmd_detach(args: DetachArgs) -> Result<(), String> {
     let repo_root = current_repo_root()?;
 
-    // `convert` always operates on the *main* worktree. Warn when invoked from a
+    // `detach` always operates on the *main* worktree. Warn when invoked from a
     // linked worktree so the user isn't surprised that main got switched.
     if let Ok(cwd) = std::env::current_dir() {
         if let Ok(local) = git::resolve_repo_root(&cwd.to_string_lossy()) {
             if local != repo_root {
                 eprintln!(
-                    "note: convert operates on the main worktree ({}), not the current worktree",
+                    "note: detach operates on the main worktree ({}), not the current worktree",
                     repo_root.display()
                 );
             }
@@ -973,7 +975,7 @@ fn cmd_convert(args: ConvertArgs) -> Result<(), String> {
 
     let current = git::current_branch(&repo_root)?;
     let dirty = git::is_dirty(&repo_root)?;
-    let branch = plan_convert(current.as_deref(), dirty, &base)?;
+    let branch = plan_detach(current.as_deref(), dirty, &base)?;
 
     // Pre-check the target path so a collision fails before we switch main off
     // the branch we're about to extract.
@@ -1010,7 +1012,7 @@ fn cmd_convert(args: ConvertArgs) -> Result<(), String> {
             let worktree_created = git::list_worktrees(&repo_root)
                 .map(|wts| wts.iter().any(|w| w.branch.as_deref() == Some(branch.as_str())))
                 .unwrap_or(false);
-            return Err(convert_failure_message(&branch, &base, &e, worktree_created));
+            return Err(detach_failure_message(&branch, &base, &e, worktree_created));
         }
     };
 
@@ -1018,11 +1020,11 @@ fn cmd_convert(args: ConvertArgs) -> Result<(), String> {
     Ok(())
 }
 
-// ── absorb subcommand ──────────────────────────────────────────────────────
+// ── attach subcommand ──────────────────────────────────────────────────────
 
 #[derive(clap::Args)]
-struct AbsorbArgs {
-    /// Branch / worktree to absorb (defaults to the worktree containing the current directory)
+struct AttachArgs {
+    /// Branch / worktree to attach (defaults to the worktree containing the current directory)
     branch: Option<String>,
     /// Skip the confirmation prompt
     #[arg(short = 'y', long)]
@@ -1035,28 +1037,28 @@ struct AbsorbArgs {
     no_hooks: bool,
 }
 
-/// Validate an absorb request. Returns the branch to move into the main
+/// Validate an attach request. Returns the branch to move into the main
 /// worktree, or an error describing why the request can't proceed.
-fn plan_absorb(
+fn plan_attach(
     target_is_main: bool,
     target_branch: Option<&str>,
     main_dirty: bool,
 ) -> Result<String, String> {
     if target_is_main {
-        return Err("cannot absorb the main worktree into itself".into());
+        return Err("cannot attach the main worktree to itself".into());
     }
     let branch = target_branch.ok_or_else(|| {
-        "worktree is in detached HEAD state — no branch to absorb".to_string()
+        "worktree is in detached HEAD state — no branch to attach".to_string()
     })?;
     if main_dirty {
         return Err(
-            "main worktree has uncommitted changes — commit or stash them before absorbing".into(),
+            "main worktree has uncommitted changes — commit or stash them before attaching".into(),
         );
     }
     Ok(branch.to_string())
 }
 
-fn resolve_absorb_target<'a>(
+fn resolve_attach_target<'a>(
     worktrees: &'a [git::ParsedWorktree],
     main_root: &Path,
     branch: Option<&str>,
@@ -1078,13 +1080,13 @@ fn resolve_absorb_target<'a>(
                     .unwrap_or(false)
             })
             .ok_or_else(|| {
-                "not inside a linked worktree — pass a branch name, or cd into the worktree to absorb"
+                "not inside a linked worktree — pass a branch name, or cd into the worktree to attach"
                     .to_string()
             })
     }
 }
 
-fn cmd_absorb(args: AbsorbArgs) -> Result<(), String> {
+fn cmd_attach(args: AttachArgs) -> Result<(), String> {
     let repo_root = current_repo_root()?;
     let main_root = git::canonicalize(&repo_root)?;
     let state = actions::build_cli_state()?;
@@ -1092,22 +1094,22 @@ fn cmd_absorb(args: AbsorbArgs) -> Result<(), String> {
 
     let cwd = std::env::current_dir()
         .map_err(|e| format!("cannot determine current directory: {e}"))?;
-    let target = resolve_absorb_target(&worktrees, &main_root, args.branch.as_deref(), &cwd)?;
+    let target = resolve_attach_target(&worktrees, &main_root, args.branch.as_deref(), &cwd)?;
     let target_path = git::canonicalize(&target.path)?;
 
     let target_is_main = target_path == main_root;
     // Only tracked changes block the switch; untracked files (incl. nested
     // worktree dirs under the default in-repo worktree root) are preserved.
     let main_dirty = git::has_tracked_modifications(&repo_root)?;
-    let branch = plan_absorb(target_is_main, target.branch.as_deref(), main_dirty)?;
+    let branch = plan_attach(target_is_main, target.branch.as_deref(), main_dirty)?;
 
     let target_dirty = git::is_dirty(&target_path)?;
     let ignored = git::list_ignored(&target_path).unwrap_or_default();
-    print_absorb_plan(&branch, &target_path, target_dirty, &ignored);
+    print_attach_plan(&branch, &target_path, target_dirty, &ignored);
 
     if !args.yes {
         prompt_confirm(&format!(
-            "absorb '{branch}' into the main worktree (removes the worktree at {})?",
+            "attach '{branch}' onto the main worktree (removes the worktree at {})?",
             target_path.display()
         ))?;
     }
@@ -1117,7 +1119,7 @@ fn cmd_absorb(args: AbsorbArgs) -> Result<(), String> {
     let stashed = if target_dirty {
         let created = git::stash_push_including_untracked(
             &target_path,
-            &format!("grove absorb {branch}"),
+            &format!("grove attach {branch}"),
         )?;
         if created {
             eprintln!("Stashed uncommitted changes from {}", target_path.display());
@@ -1145,7 +1147,7 @@ fn cmd_absorb(args: AbsorbArgs) -> Result<(), String> {
         return Err(e);
     }
 
-    // 3. Switch the main worktree onto the absorbed branch.
+    // 3. Switch the main worktree onto the attached branch.
     git::run_git_text(&repo_root, ["switch", &branch])
         .map_err(|stderr| format!("failed to switch main worktree to '{branch}': {stderr}"))?;
     eprintln!("Switched main worktree to {branch}");
@@ -1165,8 +1167,8 @@ fn cmd_absorb(args: AbsorbArgs) -> Result<(), String> {
     Ok(())
 }
 
-fn print_absorb_plan(branch: &str, target_path: &Path, dirty: bool, ignored: &[String]) {
-    eprintln!("absorb:   {branch}");
+fn print_attach_plan(branch: &str, target_path: &Path, dirty: bool, ignored: &[String]) {
+    eprintln!("attach:   {branch}");
     eprintln!("worktree: {}", target_path.display());
     if dirty {
         eprintln!("changes:  uncommitted changes will be carried over via a stash");
@@ -1258,12 +1260,12 @@ const POSIX_SHELL_INIT: &str = r#"__grove_cd() {
 }
 grove() {
   case "$1" in
-    cd|convert|absorb)
+    cd|detach|attach|convert)
       __grove_cd "$@"
       ;;
     worktree)
       case "$2" in
-        convert|absorb) __grove_cd "$@" ;;
+        detach|attach|convert) __grove_cd "$@" ;;
         *) command grove "$@" ;;
       esac
       ;;
@@ -1281,11 +1283,11 @@ const FISH_SHELL_INIT: &str = r#"function __grove_cd
 end
 function grove
     switch $argv[1]
-        case cd convert absorb
+        case cd detach attach convert
             __grove_cd $argv
         case worktree
             switch $argv[2]
-                case convert absorb
+                case detach attach convert
                     __grove_cd $argv
                 case '*'
                     command grove $argv
@@ -1663,66 +1665,66 @@ mod tests {
     }
 
     #[test]
-    fn plan_convert_rejects_default_branch() {
-        let err = plan_convert(Some("main"), false, "main").unwrap_err();
+    fn plan_detach_rejects_default_branch() {
+        let err = plan_detach(Some("main"), false, "main").unwrap_err();
         assert!(err.contains("already on 'main'"), "{err}");
     }
 
     #[test]
-    fn plan_convert_rejects_detached_head() {
-        let err = plan_convert(None, false, "main").unwrap_err();
+    fn plan_detach_rejects_detached_head() {
+        let err = plan_detach(None, false, "main").unwrap_err();
         assert!(err.contains("detached HEAD"), "{err}");
     }
 
     #[test]
-    fn plan_convert_rejects_dirty_main() {
-        let err = plan_convert(Some("feat/foo"), true, "main").unwrap_err();
+    fn plan_detach_rejects_dirty_main() {
+        let err = plan_detach(Some("feat/foo"), true, "main").unwrap_err();
         assert!(err.contains("not clean"), "{err}");
         assert!(err.contains("untracked"), "{err}");
     }
 
     #[test]
-    fn plan_convert_returns_branch_on_clean_main() {
-        let branch = plan_convert(Some("feat/foo"), false, "main").unwrap();
+    fn plan_detach_returns_branch_on_clean_main() {
+        let branch = plan_detach(Some("feat/foo"), false, "main").unwrap();
         assert_eq!(branch, "feat/foo");
     }
 
     #[test]
-    fn convert_failure_suggests_switch_when_worktree_not_created() {
-        let msg = convert_failure_message("feat/foo", "main", "boom", false);
+    fn detach_failure_suggests_switch_when_worktree_not_created() {
+        let msg = detach_failure_message("feat/foo", "main", "boom", false);
         assert!(msg.contains("git switch feat/foo"), "{msg}");
         assert!(msg.contains("to undo"), "{msg}");
     }
 
     #[test]
-    fn convert_failure_omits_switch_when_worktree_created() {
-        let msg = convert_failure_message("feat/foo", "main", "boom", true);
+    fn detach_failure_omits_switch_when_worktree_created() {
+        let msg = detach_failure_message("feat/foo", "main", "boom", true);
         assert!(!msg.contains("git switch feat/foo"), "{msg}");
         assert!(msg.contains("post-create step failed"), "{msg}");
         assert!(msg.contains("lives in its new worktree"), "{msg}");
     }
 
     #[test]
-    fn plan_absorb_rejects_main_worktree() {
-        let err = plan_absorb(true, Some("main"), false).unwrap_err();
-        assert!(err.contains("into itself"), "{err}");
+    fn plan_attach_rejects_main_worktree() {
+        let err = plan_attach(true, Some("main"), false).unwrap_err();
+        assert!(err.contains("cannot attach"), "{err}");
     }
 
     #[test]
-    fn plan_absorb_rejects_detached_head() {
-        let err = plan_absorb(false, None, false).unwrap_err();
+    fn plan_attach_rejects_detached_head() {
+        let err = plan_attach(false, None, false).unwrap_err();
         assert!(err.contains("detached HEAD"), "{err}");
     }
 
     #[test]
-    fn plan_absorb_rejects_dirty_main() {
-        let err = plan_absorb(false, Some("feat/foo"), true).unwrap_err();
+    fn plan_attach_rejects_dirty_main() {
+        let err = plan_attach(false, Some("feat/foo"), true).unwrap_err();
         assert!(err.contains("uncommitted changes"), "{err}");
     }
 
     #[test]
-    fn plan_absorb_returns_branch_when_clean() {
-        let branch = plan_absorb(false, Some("feat/foo"), false).unwrap();
+    fn plan_attach_returns_branch_when_clean() {
+        let branch = plan_attach(false, Some("feat/foo"), false).unwrap();
         assert_eq!(branch, "feat/foo");
     }
 

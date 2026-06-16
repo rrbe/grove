@@ -48,43 +48,15 @@ enum Commands {
         #[command(subcommand)]
         command: ConfigCommands,
     },
-    /// Create a worktree for a branch
-    New {
-        /// Branch name (created if it does not exist)
-        branch: String,
-        /// Base ref for new branches (default: configured default base)
-        #[arg(short = 'b', long, value_name = "REF")]
-        base: Option<String>,
-        /// Custom worktree path (overrides the configured worktree root)
-        #[arg(short = 'p', long, value_name = "PATH")]
-        path: Option<String>,
-        /// Track a remote branch (sets upstream); implies --remote-branch
-        #[arg(short = 'r', long, value_name = "REMOTE_REF", conflicts_with = "existing")]
-        remote: Option<String>,
-        /// Use an existing local branch instead of creating a new one
-        #[arg(long, conflicts_with = "remote")]
-        existing: bool,
-        /// Skip pre-create / post-create hooks
-        #[arg(long)]
-        no_hooks: bool,
-        /// Only print the resulting worktree path on stdout (logs to stderr)
-        #[arg(short = 'q', long)]
-        quiet: bool,
-    },
-    /// Convert the main worktree's current branch into a separate worktree
-    ///
-    /// Switches the main worktree onto the configured base branch and creates
-    /// a new worktree for the branch that was previously checked out there.
-    Convert {
-        /// Target worktree path (default: configured worktree root + sanitized branch name)
-        path: Option<String>,
-        /// Base branch to switch the main worktree onto (default: configured default base)
-        #[arg(short = 'b', long, value_name = "REF")]
-        base: Option<String>,
-        /// Skip pre-create / post-create hooks
-        #[arg(long)]
-        no_hooks: bool,
-    },
+    /// Create a worktree for a branch (alias of `grove worktree new`)
+    #[command(hide = true)]
+    New(NewArgs),
+    /// Convert the main worktree's branch into a worktree (alias of `grove worktree convert`)
+    #[command(hide = true)]
+    Convert(ConvertArgs),
+    /// Absorb a worktree's branch back into the main worktree (alias of `grove worktree absorb`)
+    #[command(hide = true)]
+    Absorb(AbsorbArgs),
     /// Print the path of a worktree by branch (use with `grove shell-init` to actually cd)
     Cd {
         /// Branch name (defaults to the main worktree)
@@ -96,27 +68,9 @@ enum Commands {
         #[arg(value_enum)]
         shell: ShellKind,
     },
-    /// Remove a worktree
-    #[command(alias = "remove")]
-    Rm {
-        /// Branch name (defaults to the worktree containing the current directory)
-        branch: Option<String>,
-        /// Skip the confirmation prompt
-        #[arg(short = 'y', long)]
-        yes: bool,
-        /// Force removal (allows dirty worktrees, unlocks locked ones)
-        #[arg(short = 'f', long)]
-        force: bool,
-        /// Print what would happen without making changes
-        #[arg(long)]
-        dry_run: bool,
-        /// Skip pre-remove / post-remove hooks
-        #[arg(long)]
-        no_hooks: bool,
-        /// Run `git worktree prune` after removal
-        #[arg(long)]
-        prune: bool,
-    },
+    /// Remove a worktree (alias of `grove worktree rm`)
+    #[command(alias = "remove", hide = true)]
+    Rm(RmArgs),
 }
 
 #[derive(Subcommand)]
@@ -139,6 +93,22 @@ enum HookCommands {
 enum WorktreeCommands {
     /// List worktrees for the current repository
     List,
+    /// Create a worktree for a branch
+    New(NewArgs),
+    /// Convert the main worktree's current branch into a separate worktree
+    ///
+    /// Switches the main worktree onto the configured base branch and creates
+    /// a new worktree for the branch that was previously checked out there.
+    Convert(ConvertArgs),
+    /// Absorb a worktree's branch back into the main worktree
+    ///
+    /// The inverse of `convert`: removes the linked worktree and switches the
+    /// main worktree onto its branch. Uncommitted changes are carried over via
+    /// a stash; committed work is never at risk.
+    Absorb(AbsorbArgs),
+    /// Remove a worktree
+    #[command(alias = "remove")]
+    Rm(RmArgs),
 }
 
 #[derive(Copy, Clone, ValueEnum)]
@@ -220,6 +190,7 @@ const CLI_SUBCOMMANDS: &[&str] = &[
     "config",
     "new",
     "convert",
+    "absorb",
     "rm",
     "remove",
     "cd",
@@ -264,54 +235,22 @@ pub fn main() {
         },
         Some(Commands::Worktree { command }) => match command {
             WorktreeCommands::List => cmd_worktree_list(),
+            WorktreeCommands::New(args) => cmd_new(args),
+            WorktreeCommands::Convert(args) => cmd_convert(args),
+            WorktreeCommands::Absorb(args) => cmd_absorb(args),
+            WorktreeCommands::Rm(args) => cmd_rm(args),
         },
         Some(Commands::Config { command }) => cmd_config(command),
-        Some(Commands::New {
-            branch,
-            base,
-            path,
-            remote,
-            existing,
-            no_hooks,
-            quiet,
-        }) => cmd_new(NewArgs {
-            branch,
-            base,
-            path,
-            remote,
-            existing,
-            no_hooks,
-            quiet,
-        }),
-        Some(Commands::Convert {
-            path,
-            base,
-            no_hooks,
-        }) => cmd_convert(ConvertArgs {
-            path,
-            base,
-            no_hooks,
-        }),
+        // Top-level aliases for the worktree lifecycle verbs (hidden from help).
+        Some(Commands::New(args)) => cmd_new(args),
+        Some(Commands::Convert(args)) => cmd_convert(args),
+        Some(Commands::Absorb(args)) => cmd_absorb(args),
         Some(Commands::Cd { branch }) => cmd_cd(branch.as_deref()),
         Some(Commands::ShellInit { shell }) => {
             print!("{}", shell_init_snippet(shell));
             Ok(())
         }
-        Some(Commands::Rm {
-            branch,
-            yes,
-            force,
-            dry_run,
-            no_hooks,
-            prune,
-        }) => cmd_rm(RmArgs {
-            branch,
-            yes,
-            force,
-            dry_run,
-            no_hooks,
-            prune,
-        }),
+        Some(Commands::Rm(args)) => cmd_rm(args),
         None => {
             if let Some(path) = cli.path {
                 cmd_open(&path)
@@ -743,13 +682,27 @@ fn current_repo_root() -> Result<std::path::PathBuf, String> {
 
 // ── new / rm subcommands ───────────────────────────────────────────────────
 
+#[derive(clap::Args)]
 struct NewArgs {
+    /// Branch name (created if it does not exist)
     branch: String,
+    /// Base ref for new branches (default: configured default base)
+    #[arg(short = 'b', long, value_name = "REF")]
     base: Option<String>,
+    /// Custom worktree path (overrides the configured worktree root)
+    #[arg(short = 'p', long, value_name = "PATH")]
     path: Option<String>,
+    /// Track a remote branch (sets upstream); implies --remote-branch
+    #[arg(short = 'r', long, value_name = "REMOTE_REF", conflicts_with = "existing")]
     remote: Option<String>,
+    /// Use an existing local branch instead of creating a new one
+    #[arg(long, conflicts_with = "remote")]
     existing: bool,
+    /// Skip pre-create / post-create hooks
+    #[arg(long)]
     no_hooks: bool,
+    /// Only print the resulting worktree path on stdout (logs to stderr)
+    #[arg(short = 'q', long)]
     quiet: bool,
 }
 
@@ -787,12 +740,24 @@ fn cmd_new(args: NewArgs) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(clap::Args)]
 struct RmArgs {
+    /// Branch name (defaults to the worktree containing the current directory)
     branch: Option<String>,
+    /// Skip the confirmation prompt
+    #[arg(short = 'y', long)]
     yes: bool,
+    /// Force removal (allows dirty worktrees, unlocks locked ones)
+    #[arg(short = 'f', long)]
     force: bool,
+    /// Print what would happen without making changes
+    #[arg(long)]
     dry_run: bool,
+    /// Skip pre-remove / post-remove hooks
+    #[arg(long)]
     no_hooks: bool,
+    /// Run `git worktree prune` after removal
+    #[arg(long)]
     prune: bool,
 }
 
@@ -907,11 +872,17 @@ fn print_rm_plan(target: &crate::models::WorktreeRecord, prune: bool, force: boo
 }
 
 fn confirm_or_abort(target: &crate::models::WorktreeRecord) -> Result<(), String> {
+    let branch = target.branch.as_deref().unwrap_or("(detached)");
+    prompt_confirm(&format!("delete worktree '{branch}' at {}?", target.path))
+}
+
+/// Ask the user to confirm a destructive `action` on stderr. Errors (rather than
+/// silently proceeding) when not attached to a TTY, so scripts must pass `-y`.
+fn prompt_confirm(action: &str) -> Result<(), String> {
     if !std::io::stderr().is_terminal() {
         return Err("not a TTY — pass -y to confirm".into());
     }
-    let branch = target.branch.as_deref().unwrap_or("(detached)");
-    eprint!("delete worktree '{branch}' at {}? [y/N] ", target.path);
+    eprint!("{action} [y/N] ");
     std::io::stderr().flush().ok();
     let mut answer = String::new();
     std::io::stdin()
@@ -927,9 +898,15 @@ fn confirm_or_abort(target: &crate::models::WorktreeRecord) -> Result<(), String
 
 // ── convert subcommand ────────────────────────────────────────────────────
 
+#[derive(clap::Args)]
 struct ConvertArgs {
+    /// Target worktree path (default: configured worktree root + sanitized branch name)
     path: Option<String>,
+    /// Base branch to switch the main worktree onto (default: configured default base)
+    #[arg(short = 'b', long, value_name = "REF")]
     base: Option<String>,
+    /// Skip pre-create / post-create hooks
+    #[arg(long)]
     no_hooks: bool,
 }
 
@@ -1041,6 +1018,174 @@ fn cmd_convert(args: ConvertArgs) -> Result<(), String> {
     Ok(())
 }
 
+// ── absorb subcommand ──────────────────────────────────────────────────────
+
+#[derive(clap::Args)]
+struct AbsorbArgs {
+    /// Branch / worktree to absorb (defaults to the worktree containing the current directory)
+    branch: Option<String>,
+    /// Skip the confirmation prompt
+    #[arg(short = 'y', long)]
+    yes: bool,
+    /// Force removal of a locked worktree
+    #[arg(short = 'f', long)]
+    force: bool,
+    /// Skip pre-remove / post-remove hooks
+    #[arg(long)]
+    no_hooks: bool,
+}
+
+/// Validate an absorb request. Returns the branch to move into the main
+/// worktree, or an error describing why the request can't proceed.
+fn plan_absorb(
+    target_is_main: bool,
+    target_branch: Option<&str>,
+    main_dirty: bool,
+) -> Result<String, String> {
+    if target_is_main {
+        return Err("cannot absorb the main worktree into itself".into());
+    }
+    let branch = target_branch.ok_or_else(|| {
+        "worktree is in detached HEAD state — no branch to absorb".to_string()
+    })?;
+    if main_dirty {
+        return Err(
+            "main worktree has uncommitted changes — commit or stash them before absorbing".into(),
+        );
+    }
+    Ok(branch.to_string())
+}
+
+fn resolve_absorb_target<'a>(
+    worktrees: &'a [git::ParsedWorktree],
+    main_root: &Path,
+    branch: Option<&str>,
+    cwd: &Path,
+) -> Result<&'a git::ParsedWorktree, String> {
+    if let Some(branch) = branch {
+        worktrees
+            .iter()
+            .find(|w| w.branch.as_deref() == Some(branch))
+            .ok_or_else(|| format!("no worktree found for branch '{branch}'"))
+    } else {
+        let cwd_canonical = git::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
+        worktrees
+            .iter()
+            .filter(|w| git::canonicalize(&w.path).map(|p| p != *main_root).unwrap_or(true))
+            .find(|w| {
+                git::canonicalize(&w.path)
+                    .map(|p| cwd_canonical.starts_with(&p))
+                    .unwrap_or(false)
+            })
+            .ok_or_else(|| {
+                "not inside a linked worktree — pass a branch name, or cd into the worktree to absorb"
+                    .to_string()
+            })
+    }
+}
+
+fn cmd_absorb(args: AbsorbArgs) -> Result<(), String> {
+    let repo_root = current_repo_root()?;
+    let main_root = git::canonicalize(&repo_root)?;
+    let state = actions::build_cli_state()?;
+    let worktrees = git::list_worktrees(&repo_root)?;
+
+    let cwd = std::env::current_dir()
+        .map_err(|e| format!("cannot determine current directory: {e}"))?;
+    let target = resolve_absorb_target(&worktrees, &main_root, args.branch.as_deref(), &cwd)?;
+    let target_path = git::canonicalize(&target.path)?;
+
+    let target_is_main = target_path == main_root;
+    // Only tracked changes block the switch; untracked files (incl. nested
+    // worktree dirs under the default in-repo worktree root) are preserved.
+    let main_dirty = git::has_tracked_modifications(&repo_root)?;
+    let branch = plan_absorb(target_is_main, target.branch.as_deref(), main_dirty)?;
+
+    let target_dirty = git::is_dirty(&target_path)?;
+    let ignored = git::list_ignored(&target_path).unwrap_or_default();
+    print_absorb_plan(&branch, &target_path, target_dirty, &ignored);
+
+    if !args.yes {
+        prompt_confirm(&format!(
+            "absorb '{branch}' into the main worktree (removes the worktree at {})?",
+            target_path.display()
+        ))?;
+    }
+
+    // 1. Capture uncommitted work into a stash so removal is non-destructive and
+    //    recoverable even if a later step fails. Committed work is never at risk.
+    let stashed = if target_dirty {
+        let created = git::stash_push_including_untracked(
+            &target_path,
+            &format!("grove absorb {branch}"),
+        )?;
+        if created {
+            eprintln!("Stashed uncommitted changes from {}", target_path.display());
+        }
+        created
+    } else {
+        false
+    };
+
+    // 2. Remove the now-clean worktree, running pre/post-remove hooks.
+    let input = RemoveWorktreeInput {
+        repo_root: repo_root.to_string_lossy().to_string(),
+        worktree_path: target_path.to_string_lossy().to_string(),
+        force: args.force,
+    };
+    let mut sink = StderrLogWriter;
+    if let Err(e) = actions::remove_worktree_cli(&state, input, args.no_hooks, false, &mut sink) {
+        if stashed {
+            return Err(format!(
+                "{e}\nnote: your uncommitted changes are safe in a stash — run `git stash pop` \
+                 in {} after resolving",
+                target_path.display()
+            ));
+        }
+        return Err(e);
+    }
+
+    // 3. Switch the main worktree onto the absorbed branch.
+    git::run_git_text(&repo_root, ["switch", &branch])
+        .map_err(|stderr| format!("failed to switch main worktree to '{branch}': {stderr}"))?;
+    eprintln!("Switched main worktree to {branch}");
+
+    // 4. Re-apply the stashed work onto the main worktree.
+    if stashed {
+        git::stash_pop_restoring_index(&repo_root).map_err(|e| {
+            format!(
+                "{e}\nnote: your changes are still stashed — run `git stash pop` in {}",
+                repo_root.display()
+            )
+        })?;
+        eprintln!("Restored stashed changes onto {branch}");
+    }
+
+    println!("{}", repo_root.display());
+    Ok(())
+}
+
+fn print_absorb_plan(branch: &str, target_path: &Path, dirty: bool, ignored: &[String]) {
+    eprintln!("absorb:   {branch}");
+    eprintln!("worktree: {}", target_path.display());
+    if dirty {
+        eprintln!("changes:  uncommitted changes will be carried over via a stash");
+    }
+    if !ignored.is_empty() {
+        eprintln!(
+            "deletes:  {} ignored path(s) will be removed with the worktree (e.g. {})",
+            ignored.len(),
+            ignored
+                .iter()
+                .take(3)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    eprintln!();
+}
+
 // ── cd / shell-init subcommands ────────────────────────────────────────────
 
 fn cmd_cd(branch: Option<&str>) -> Result<(), String> {
@@ -1106,14 +1251,21 @@ fn shell_init_snippet(shell: ShellKind) -> &'static str {
     }
 }
 
-const POSIX_SHELL_INIT: &str = r#"grove() {
+const POSIX_SHELL_INIT: &str = r#"__grove_cd() {
+  local _grove_target
+  _grove_target=$(command grove "$@") || return $?
+  cd "$_grove_target"
+}
+grove() {
   case "$1" in
-    cd|convert)
-      local _grove_subcmd="$1"
-      shift
-      local _grove_target
-      _grove_target=$(command grove "$_grove_subcmd" "$@") || return $?
-      cd "$_grove_target"
+    cd|convert|absorb)
+      __grove_cd "$@"
+      ;;
+    worktree)
+      case "$2" in
+        convert|absorb) __grove_cd "$@" ;;
+        *) command grove "$@" ;;
+      esac
       ;;
     *)
       command grove "$@"
@@ -1122,14 +1274,22 @@ const POSIX_SHELL_INIT: &str = r#"grove() {
 }
 "#;
 
-const FISH_SHELL_INIT: &str = r#"function grove
+const FISH_SHELL_INIT: &str = r#"function __grove_cd
+    set -l _grove_target (command grove $argv)
+    or return $status
+    cd $_grove_target
+end
+function grove
     switch $argv[1]
-        case cd convert
-            set -l _grove_subcmd $argv[1]
-            set -e argv[1]
-            set -l _grove_target (command grove $_grove_subcmd $argv)
-            or return $status
-            cd $_grove_target
+        case cd convert absorb
+            __grove_cd $argv
+        case worktree
+            switch $argv[2]
+                case convert absorb
+                    __grove_cd $argv
+                case '*'
+                    command grove $argv
+            end
         case '*'
             command grove $argv
     end
@@ -1540,6 +1700,30 @@ mod tests {
         assert!(!msg.contains("git switch feat/foo"), "{msg}");
         assert!(msg.contains("post-create step failed"), "{msg}");
         assert!(msg.contains("lives in its new worktree"), "{msg}");
+    }
+
+    #[test]
+    fn plan_absorb_rejects_main_worktree() {
+        let err = plan_absorb(true, Some("main"), false).unwrap_err();
+        assert!(err.contains("into itself"), "{err}");
+    }
+
+    #[test]
+    fn plan_absorb_rejects_detached_head() {
+        let err = plan_absorb(false, None, false).unwrap_err();
+        assert!(err.contains("detached HEAD"), "{err}");
+    }
+
+    #[test]
+    fn plan_absorb_rejects_dirty_main() {
+        let err = plan_absorb(false, Some("feat/foo"), true).unwrap_err();
+        assert!(err.contains("uncommitted changes"), "{err}");
+    }
+
+    #[test]
+    fn plan_absorb_returns_branch_when_clean() {
+        let branch = plan_absorb(false, Some("feat/foo"), false).unwrap();
+        assert_eq!(branch, "feat/foo");
     }
 
     #[test]

@@ -228,6 +228,64 @@ pub fn is_dirty(worktree_path: &Path) -> Result<bool, String> {
     Ok(!output.trim().is_empty())
 }
 
+/// Returns true if the worktree has uncommitted *tracked* changes (staged or
+/// unstaged). Untracked files are ignored — `git switch` preserves them, and
+/// nested worktree directories show up as untracked in the parent. Use this
+/// (not `is_dirty`) when deciding whether a branch switch is safe.
+pub fn has_tracked_modifications(worktree_path: &Path) -> Result<bool, String> {
+    let output = run_git_text(worktree_path, ["status", "--porcelain"])?;
+    Ok(output
+        .lines()
+        .any(|line| !line.trim().is_empty() && !line.starts_with("??")))
+}
+
+fn stash_count(worktree_path: &Path) -> Result<usize, String> {
+    let out = run_git_text(worktree_path, ["stash", "list"])?;
+    Ok(out.lines().filter(|line| !line.trim().is_empty()).count())
+}
+
+/// Stash all tracked changes plus untracked files (NOT ignored files) in
+/// `worktree_path`. Returns true if a stash entry was actually created.
+pub fn stash_push_including_untracked(
+    worktree_path: &Path,
+    message: &str,
+) -> Result<bool, String> {
+    let before = stash_count(worktree_path)?;
+    run_git_text(
+        worktree_path,
+        ["stash", "push", "--include-untracked", "--message", message],
+    )?;
+    Ok(stash_count(worktree_path)? > before)
+}
+
+/// Pop the most recent stash into `worktree_path`, trying to restore the index
+/// (staged/unstaged distinction) first and falling back to a plain pop if the
+/// index cannot be reinstated cleanly. The fallback only runs while the stash is
+/// still present, so changes are never applied twice.
+pub fn stash_pop_restoring_index(worktree_path: &Path) -> Result<(), String> {
+    match run_git_text(worktree_path, ["stash", "pop", "--index"]) {
+        Ok(_) => Ok(()),
+        Err(index_err) => {
+            if stash_count(worktree_path)? == 0 {
+                return Err(index_err);
+            }
+            run_git_text(worktree_path, ["stash", "pop"]).map(|_| ())
+        }
+    }
+}
+
+/// List ignored entries in `worktree_path`. These are deleted together with the
+/// worktree directory, so callers can warn before removing. Paths are returned
+/// as git reports them (directories may be collapsed, e.g. `node_modules/`).
+pub fn list_ignored(worktree_path: &Path) -> Result<Vec<String>, String> {
+    let out = run_git_text(worktree_path, ["status", "--porcelain", "--ignored"])?;
+    Ok(out
+        .lines()
+        .filter_map(|line| line.strip_prefix("!! "))
+        .map(|path| path.trim().to_string())
+        .collect())
+}
+
 pub fn head_commit_date(worktree_path: &Path) -> Option<String> {
     run_git_text(worktree_path, ["log", "-1", "--format=%aI", "HEAD"])
         .ok()

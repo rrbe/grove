@@ -220,6 +220,14 @@ pub fn current_branch(repo_root: &Path) -> Result<Option<String>, String> {
     }
 }
 
+/// Returns true if the worktree has uncommitted changes or untracked files.
+/// Lightweight alternative to `git_status_details` when only the dirty flag is
+/// needed (skips the ahead/behind rev-list).
+pub fn is_dirty(worktree_path: &Path) -> Result<bool, String> {
+    let output = run_git_text(worktree_path, ["status", "--porcelain"])?;
+    Ok(!output.trim().is_empty())
+}
+
 pub fn head_commit_date(worktree_path: &Path) -> Option<String> {
     run_git_text(worktree_path, ["log", "-1", "--format=%aI", "HEAD"])
         .ok()

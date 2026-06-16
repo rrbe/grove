@@ -944,14 +944,48 @@ fn plan_convert(branch: Option<&str>, dirty: bool, base: &str) -> Result<String,
     }
     if dirty {
         return Err(
-            "main worktree has uncommitted changes — commit or stash before converting".into(),
+            "main worktree is not clean — commit or stash your changes (untracked files \
+             included) before converting"
+                .into(),
         );
     }
     Ok(branch.to_string())
 }
 
+/// Build the failure message for a `create_worktree_cli` error during convert.
+///
+/// When the worktree was already created (the branch is now checked out in its
+/// new worktree), a `git switch {branch}` undo would fail — so the undo hint is
+/// only emitted while the branch is still free.
+fn convert_failure_message(branch: &str, base: &str, err: &str, worktree_created: bool) -> String {
+    if worktree_created {
+        format!(
+            "{err}\nnote: the worktree for '{branch}' was created but a post-create step failed; \
+             main worktree is now on '{base}' and '{branch}' lives in its new worktree"
+        )
+    } else {
+        format!(
+            "{err}\nhint: main worktree is now on '{base}'; run `git switch {branch}` to undo"
+        )
+    }
+}
+
 fn cmd_convert(args: ConvertArgs) -> Result<(), String> {
     let repo_root = current_repo_root()?;
+
+    // `convert` always operates on the *main* worktree. Warn when invoked from a
+    // linked worktree so the user isn't surprised that main got switched.
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Ok(local) = git::resolve_repo_root(&cwd.to_string_lossy()) {
+            if local != repo_root {
+                eprintln!(
+                    "note: convert operates on the main worktree ({}), not the current worktree",
+                    repo_root.display()
+                );
+            }
+        }
+    }
+
     let state = actions::build_cli_state()?;
     let loaded = actions::load_repo_config(&state, &repo_root);
 
@@ -961,7 +995,7 @@ fn cmd_convert(args: ConvertArgs) -> Result<(), String> {
         .unwrap_or_else(|| loaded.merged.settings.default_base_branch.clone());
 
     let current = git::current_branch(&repo_root)?;
-    let (dirty, _, _, _) = git::git_status_details(&repo_root)?;
+    let dirty = git::is_dirty(&repo_root)?;
     let branch = plan_convert(current.as_deref(), dirty, &base)?;
 
     // Pre-check the target path so a collision fails before we switch main off
@@ -990,10 +1024,18 @@ fn cmd_convert(args: ConvertArgs) -> Result<(), String> {
     };
 
     let mut sink = StderrLogWriter;
-    let worktree_path = actions::create_worktree_cli(&state, input, args.no_hooks, &mut sink)
-        .map_err(|e| {
-            format!("{e}\nhint: main worktree is now on '{base}'; run `git switch {branch}` to undo")
-        })?;
+    let worktree_path = match actions::create_worktree_cli(&state, input, args.no_hooks, &mut sink) {
+        Ok(path) => path,
+        Err(e) => {
+            // A worktree can only hold a branch once, and main was just switched
+            // off `branch`, so if `branch` is checked out anywhere now it must be
+            // the worktree we just created (i.e. only a post-create step failed).
+            let worktree_created = git::list_worktrees(&repo_root)
+                .map(|wts| wts.iter().any(|w| w.branch.as_deref() == Some(branch.as_str())))
+                .unwrap_or(false);
+            return Err(convert_failure_message(&branch, &base, &e, worktree_created));
+        }
+    };
 
     println!("{}", worktree_path.display());
     Ok(())
@@ -1475,13 +1517,29 @@ mod tests {
     #[test]
     fn plan_convert_rejects_dirty_main() {
         let err = plan_convert(Some("feat/foo"), true, "main").unwrap_err();
-        assert!(err.contains("uncommitted changes"), "{err}");
+        assert!(err.contains("not clean"), "{err}");
+        assert!(err.contains("untracked"), "{err}");
     }
 
     #[test]
     fn plan_convert_returns_branch_on_clean_main() {
         let branch = plan_convert(Some("feat/foo"), false, "main").unwrap();
         assert_eq!(branch, "feat/foo");
+    }
+
+    #[test]
+    fn convert_failure_suggests_switch_when_worktree_not_created() {
+        let msg = convert_failure_message("feat/foo", "main", "boom", false);
+        assert!(msg.contains("git switch feat/foo"), "{msg}");
+        assert!(msg.contains("to undo"), "{msg}");
+    }
+
+    #[test]
+    fn convert_failure_omits_switch_when_worktree_created() {
+        let msg = convert_failure_message("feat/foo", "main", "boom", true);
+        assert!(!msg.contains("git switch feat/foo"), "{msg}");
+        assert!(msg.contains("post-create step failed"), "{msg}");
+        assert!(msg.contains("lives in its new worktree"), "{msg}");
     }
 
     #[test]

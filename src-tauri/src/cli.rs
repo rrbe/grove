@@ -1147,9 +1147,20 @@ fn cmd_attach(args: AttachArgs) -> Result<(), String> {
         return Err(e);
     }
 
-    // 3. Switch the main worktree onto the attached branch.
-    git::run_git_text(&repo_root, ["switch", &branch])
-        .map_err(|stderr| format!("failed to switch main worktree to '{branch}': {stderr}"))?;
+    // 3. Switch the main worktree onto the attached branch. The worktree is
+    //    already gone, so a failure here strands the stashed work — point the
+    //    user at the exact recovery steps instead of just the raw git error.
+    git::run_git_text(&repo_root, ["switch", &branch]).map_err(|stderr| {
+        let mut msg = format!("failed to switch main worktree to '{branch}': {stderr}");
+        if stashed {
+            msg.push_str(&format!(
+                "\nnote: your changes are safe in a stash — run `git switch {branch} && \
+                 git stash pop` in {} to recover",
+                repo_root.display()
+            ));
+        }
+        msg
+    })?;
     eprintln!("Switched main worktree to {branch}");
 
     // 4. Re-apply the stashed work onto the main worktree.

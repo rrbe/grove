@@ -201,14 +201,16 @@ grove config show --repo     # only this repo's overrides
 
 ```bash
 grove config get worktree_root                # effective value
-grove config set worktree-root .worktrees     # per-repo override
-grove config set worktree-root .wt --global   # app-wide default
-grove config unset worktree-root              # clear the per-repo value
+grove config set worktree_root .worktrees     # per-repo override
+grove config set worktree_root .wt --global   # app-wide default
+grove config unset worktree_root              # clear the per-repo value
 ```
 
-Supported keys: `worktree_root`, `default_base_branch`. Keys accept either
-snake_case or camelCase. Per-repo is the default scope; `--global` writes the
-app-wide default (only `worktree_root` supports a global layer).
+Supported keys: `worktree_root`, `default_base_branch`. The `config`
+subcommand accepts snake_case or camelCase (`worktree_root` / `worktreeRoot`) —
+note this differs from the kebab-case keys used in the TOML config file
+(`worktree-root`). Per-repo is the default scope; `--global` writes the app-wide
+default (only `worktree_root` supports a global layer).
 
 ### `grove config path` / `grove config edit`
 

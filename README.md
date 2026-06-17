@@ -8,7 +8,7 @@ English | [中文](./README_CN.md)
 
 ## Screenshot
 
-![Grove](./docs/screenshot.png)
+![Grove](./docs/grove_0.13.1.png)
 
 ## Features
 

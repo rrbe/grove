@@ -7,7 +7,7 @@
 
 ## 界面
 
-![Grove](./docs/screenshot.png)
+![Grove](./docs/grove_0.13.1.png)
 
 ## 功能
 

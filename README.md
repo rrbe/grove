@@ -1,114 +1,38 @@
 # Grove
 
-A macOS-first desktop app for managing Git worktrees — launch editors, terminals, and AI coding agents from worktrees, with lifecycle hooks for automating setup.
+A macOS-first desktop app for managing Git worktrees — launch editors,
+terminals, and AI coding agents from worktrees, with lifecycle hooks for
+automating setup.
+
+English | [中文](./README_CN.md)
 
 ## Screenshot
 
-![Image.png](./docs/screenshot.png)
+![Grove](./docs/grove_0.13.1.png)
 
 ## Features
 
-### Worktree
+- **Worktrees** — Scan, create, and remove worktrees with dirty / ahead /
+  behind / prunable / locked status. Create from a new branch, an existing local
+  branch, or a remote tracking branch, with random branch-name suggestions and
+  auto-filled paths.
+- **Launchers** — Built-in launchers for Terminal, Ghostty, iTerm2, VS Code,
+  Cursor, Claude CLI, Codex CLI, and Gemini CLI, plus custom launchers.
+- **Hooks** — 6 lifecycle events automate dependency installs, config-file
+  copying, and launches around worktree create / launch / remove. See
+  [docs/hooks.md](./docs/hooks.md).
+- **CLI** — A `grove` command (like VS Code's `code`) for managing worktrees,
+  hooks, and config from the terminal. See [docs/cli.md](./docs/cli.md).
+- **GitHub PRs** — Auto-queries and caches associated Pull Requests via the `gh`
+  CLI.
+- **Single instance** — Multiple `grove open` calls reuse the running app.
+- **i18n** — Chinese (default) and English.
 
-- **Scan** — Parses all worktrees via `git worktree list --porcelain`, showing dirty / ahead / behind / prunable / locked status
-- **Create** — New branch, existing local branch, or remote tracking branch modes with branch dropdowns, random branch name suggestions, and auto-filled target paths
-- **Remove** — Streamed execution logs, preview and execute `git worktree prune`
-- **Launch** — Built-in launchers for Terminal, Ghostty, iTerm2, VS Code, Cursor, Claude CLI, Codex CLI, Gemini CLI, plus custom launchers
+## Documentation
 
-### Hooks
-
-6 lifecycle hook events to automate custom actions during worktree creation, launch, and removal:
-
-| Event | Fires | Working directory |
-|-------|-------|-------------------|
-| `pre-create` | **Before** worktree creation | Repo root |
-| `post-create` | **After** worktree creation | Worktree path |
-| `pre-launch` | **Before** launcher execution | Worktree path |
-| `post-launch` | **After** launcher execution | Worktree path |
-| `pre-remove` | **Before** worktree removal | Worktree path |
-| `post-remove` | **After** worktree removal | Repo root |
-
-Each hook consists of one or more **steps**, with 4 step types:
-
-#### `script` — Run any shell command
-
-```toml
-[[hooks.post-create]]
-type = "script"
-run = "echo 'Worktree {branch} ready at {worktree_path}'"
-```
-
-#### `install` — Auto-detect package manager and install dependencies
-
-Without `run`, auto-detects: pnpm → bun → yarn → npm, poetry → pdm → pipenv → uv → pip, bundle, cargo build, go mod download, composer, dotnet restore, gradlew, mvn, etc. Or specify a custom command.
-
-```toml
-[[hooks.post-create]]
-type = "install"
-
-# Or specify manually
-[[hooks.post-create]]
-type = "install"
-run = "pip install -r requirements.txt"
-```
-
-#### `copy-files` — Copy files from repo root to new worktree
-
-For copying untracked config files like `.env.local`. Skips if target already exists.
-
-```toml
-[[hooks.post-create]]
-type = "copy-files"
-paths = [".env.local", ".npmrc", ".env.production"]
-```
-
-#### `launch` — Trigger a launcher within a hook
-
-```toml
-[[hooks.post-create]]
-type = "launch"
-launcherId = "vscode"
-```
-
-#### Template variables
-
-Use `{variable}` syntax in `run` fields to reference context variables:
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `{repo_root}` | Repo root path | `/Users/me/myrepo` |
-| `{worktree_path}` | Worktree path | `/Users/me/myrepo/.worktrees/feat` |
-| `{branch}` | Branch name | `feature/new-ui` |
-| `{base_branch}` | Base branch name | `main` |
-| `{head_sha}` | HEAD commit SHA | `a1b2c3d4...` |
-| `{default_remote}` | Default remote | `origin` |
-| `{is_main_worktree}` | Is main worktree | `true` / `false` |
-
-Scripts also receive uppercase environment variables: `$REPO_ROOT`, `$WORKTREE_PATH`, `$BRANCH`, `$BASE_BRANCH`, `$HEAD_SHA`, `$IS_MAIN_WORKTREE`, `$DEFAULT_REMOTE`.
-
-#### Re-run hooks
-
-Manually trigger any configured hook event from the "Re-run Hooks" section in the worktree detail panel.
-
-### CLI
-
-Grove provides a `grove` CLI command (like VS Code's `code`), following the `<noun> <verb>` pattern:
-
-```bash
-grove .                          # Open current repo in Grove GUI
-grove open [path]                # Open a repository in the GUI
-grove hook run <event>           # Run hooks for a given event
-grove hook list                  # List configured hooks
-grove worktree list              # List worktrees
-```
-
-Install the CLI via **Settings → CLI Command → Install CLI**, which creates a symlink at `/usr/local/bin/grove`. The `hook run` command auto-detects the repo root and worktree from the current directory.
-
-### Other
-
-- **GitHub PR integration** — Auto-queries and caches associated Pull Requests via `gh` CLI
-- **Single instance** — Multiple `grove open` calls reuse the running app instance
-- **i18n** — Chinese (default) and English
+- [CLI reference](./docs/cli.md) — every `grove` subcommand, flags, and examples
+- [Hooks](./docs/hooks.md) — lifecycle events, step types, template variables
+- [Configuration](./docs/configuration.md) — config layers, settings keys, storage
 
 ## Stack
 
@@ -124,42 +48,6 @@ pnpm tauri:dev      # Run in dev mode
 pnpm tauri:dist     # Build .dmg
 cd src-tauri && cargo test    # Rust tests
 cd src-tauri && cargo clippy  # Rust lint
-```
-
-## Config
-
-All config and app state is stored at `~/.grove/store.json` (recent repos, per-repo config, worktree root settings, default terminal, etc.). Grove does not write config files into the repository.
-
-Per-repo config is edited via the in-app settings page (TOML format). Config is merged in order (later overrides earlier):
-
-1. **Built-in defaults** — worktree root `.claude`, base branch `main`, built-in launchers
-2. **Repo config** — TOML config edited in the UI
-
-### Example config
-
-```toml
-[settings]
-worktree-root = ".worktrees"
-default-base-branch = "main"
-
-[[hooks.post-create]]
-type = "copy-files"
-paths = [".env.local", ".env.production"]
-
-[[hooks.post-create]]
-type = "install"
-
-[[hooks.post-create]]
-type = "script"
-run = "echo 'Worktree ready at $WORKTREE_PATH'"
-
-[[hooks.post-create]]
-type = "launch"
-launcherId = "vscode"
-
-[[hooks.pre-remove]]
-type = "script"
-run = "echo 'Cleaning up {branch}...'"
 ```
 
 ## License

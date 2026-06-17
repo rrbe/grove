@@ -53,6 +53,7 @@ Notes:
 - `store.rs` — persists recent repos, PR cache, per-repo config and worktree root overrides, and default terminal as JSON to `~/.grove/store.json`. All functions (`persist`, `load_store`, `store_path`) are Tauri-independent — no `AppHandle` required.
 - `cli.rs` — clap-based CLI. Worktree lifecycle verbs live under `grove worktree` (`list`, `new`, `detach`, `attach`, `rm`), with hidden top-level aliases (`grove new`/`detach`/`attach`/`rm`) kept for ergonomics. `detach`/`grove worktree detach` also accepts the legacy alias `convert` (the command was first shipped as `convert`). Other groups: `grove open`, `grove hook run/list/edit`, `grove config …`, `grove cd`, `grove shell-init`. `attach` is the inverse of `detach`: it removes a linked worktree and switches the main worktree onto its branch, carrying uncommitted changes via a stash. The binary is dual-mode: CLI args → terminal mode, no args → GUI. Detected in `main.rs` before Tauri init.
 - `platform/` — cross-platform terminal launch abstraction (`open_terminal_at`, `open_terminal_app`) with per-OS implementations (macOS/Windows/Linux)
+- `watcher.rs` — `notify`-based filesystem watcher on the repo's `.git/worktrees/` dir (falls back to `.git/` until it exists), emitting events so the frontend auto-refreshes the worktree list on external git changes. Managed in `lib.rs`; guarded against restart/event loops (#36).
 
 **IPC pattern**: Rust structs use `#[serde(rename_all = "camelCase")]`. The frontend calls `invoke<T>("command_name", { input })` and receives camelCase JSON. When adding a new command: register in `lib.rs` `invoke_handler` macro → add TS wrapper in `api.ts` → add type in `types.ts`.
 
@@ -84,6 +85,7 @@ All UI work **must** follow `DESIGN_SYSTEM.md`. Key rules:
 - `run_command_streaming` treats stderr as info-level during streaming; only escalates to error if exit code is non-zero (git writes informational messages like "Preparing worktree..." to stderr).
 - Split components when necessary—don’t let a single file take on too much responsibility (for example, exceeding 500 lines). This applies to both React UI components and Rust functional modules.
 - **Reuse `src/components/` components** — use `Input`, `Textarea`, `Select` from `FormControls.tsx` instead of native `<input>`, `<textarea>`, `<select>`; use `ModalShell` for modals, `Alert` for error banners. Do not introduce new wrapper components for things that already exist.
+- User-facing docs live in `docs/` (`cli.md`, `hooks.md`, `configuration.md`), linked from `README.md` / `README_CN.md`. Keep them in sync when changing CLI commands, hook step types, or config keys. `AGENTS.md` is a symlink to this file.
 
 ## UI Layout
 

@@ -202,7 +202,7 @@ export default function App({ repoPath }: { repoPath: string }) {
     return () => {
       if (unlisten) unlisten();
     };
-  }); // re-subscribe when repo changes so closure captures latest repo
+  }, [repo?.repoRoot]); // re-subscribe when repo changes so closure captures latest repo
 
   const selectedWorktree = repo?.worktrees.find((w) => w.id === selectedWorktreeId) ?? null;
 

@@ -19,6 +19,28 @@ cd src-tauri && cargo test # run Rust backend tests
 cd src-tauri && cargo clippy # lint Rust code
 ```
 
+## Releasing & Version Bump
+
+When asked to **bump version** to `X.Y.Z`, do the full release flow — bumping the version files alone ships nothing; the `vX.Y.Z` tag push is what triggers a release.
+
+1. Update the version in all four places, keeping them in sync:
+   - `package.json` → `"version"`
+   - `src-tauri/Cargo.toml` → `version`
+   - `src-tauri/tauri.conf.json` → `"version"`
+   - `src-tauri/Cargo.lock` → the `grove` package entry (run `cargo update -p grove --precise X.Y.Z` in `src-tauri/`, or `cargo check`, to refresh it after editing `Cargo.toml`)
+2. Commit on a branch and open a PR (per the branch rules): `chore: bump version to X.Y.Z`.
+3. After the PR merges to `main`, create an **annotated** tag on the merge commit and push it (message convention: `Grove vX.Y.Z`):
+   ```bash
+   git tag -a vX.Y.Z -m "Grove vX.Y.Z"
+   git push origin vX.Y.Z
+   ```
+4. The tag push triggers `.github/workflows/release.yml`, which builds macOS (universal) / Linux / Windows via `tauri-action` and creates a **draft** GitHub release with the bundles attached.
+5. Once all three platform builds finish, verify the artifacts then publish the draft: `gh release edit vX.Y.Z --draft=false` (or via the GitHub UI). Watch the build with `gh run watch` / `gh run list --workflow=release.yml`.
+
+Notes:
+- The tag **must** use the `v` prefix (`vX.Y.Z`); the workflow only fires on `tags: ['v*']`.
+- The release build does **not** sign artifacts — the updater plugin was removed (#29). Do not re-add updater config or `TAURI_SIGNING_PRIVATE_KEY`; a malformed signing key is what broke the v0.12.0 / v0.12.1 release builds.
+
 ## Architecture
 
 **Frontend** (`src/`): Single-page React app. All state lives in `App.tsx` — no router, no state library. `src/lib/api.ts` wraps every `@tauri-apps/api/core` `invoke()` call; `src/lib/types.ts` has the shared TypeScript types that mirror the Rust models. `src/lib/theme.tsx` provides ThemeProvider (light/dark/system); `src/lib/i18n.tsx` provides I18nProvider; `src/lib/branch-name-gen.ts` generates random branch name suggestions. Translations in `src/locales/`.

@@ -34,8 +34,8 @@ When asked to **bump version** to `X.Y.Z`, do the full release flow — bumping 
    git tag -a vX.Y.Z -m "Grove vX.Y.Z"
    git push origin vX.Y.Z
    ```
-4. The tag push triggers `.github/workflows/release.yml`, which builds macOS (universal) / Linux / Windows via `tauri-action` and creates a **draft** GitHub release with the bundles attached.
-5. Once all three platform builds finish, verify the artifacts then publish the draft: `gh release edit vX.Y.Z --draft=false` (or via the GitHub UI). Watch the build with `gh run watch` / `gh run list --workflow=release.yml`.
+4. The tag push triggers `.github/workflows/release.yml`, which builds macOS (universal) / Linux / Windows via `tauri-action` into a **draft** GitHub release with the bundles attached.
+5. **No manual publish needed** — once all three platform builds succeed, the `publish` job auto-flips the draft to a published release (marked latest). If any platform fails, the release stays a draft (safe). Watch with `gh run watch` / `gh run list --workflow=release.yml`.
 
 Notes:
 - The tag **must** use the `v` prefix (`vX.Y.Z`); the workflow only fires on `tags: ['v*']`.

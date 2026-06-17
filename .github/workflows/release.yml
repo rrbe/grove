@@ -79,7 +79,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Publish release
+      - name: Generate notes and publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft=false --latest
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          # GitHub auto-generates the "What's Changed" changelog (merged PRs +
+          # commits since the previous tag, plus a Full Changelog link).
+          notes=$(gh api "repos/$REPO/releases/generate-notes" -f tag_name="$TAG" --jq .body)
+          printf '%s\n\n_See the assets below to download the app._\n' "$notes" > notes.md
+          gh release edit "$TAG" --repo "$REPO" --notes-file notes.md --draft=false --latest
